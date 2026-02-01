@@ -21,7 +21,7 @@ import {
     getMedia,
     restoreMediaEntry
 } from '../utils/mediaStorage';
-import {Upload, Trash2, AlertCircle, Download, Plus, ExternalLink, Pencil, Check, X, ImageIcon, BookOpen, Facebook, MessageSquare} from 'lucide-react';
+import {Upload, Trash2, AlertCircle, Download, Plus, ExternalLink, Pencil, Check, X, ImageIcon, BookOpen, MessageSquare} from 'lucide-react';
 import {ThemeToggle} from './ThemeToggle';
 import {clsx} from 'clsx';
 
