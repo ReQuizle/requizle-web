@@ -21,7 +21,7 @@ import {
     getMedia,
     restoreMediaEntry
 } from '../utils/mediaStorage';
-import {Upload, Trash2, AlertCircle, Download, Plus, ExternalLink, Pencil, Check, X, ImageIcon, BookOpen, MessageSquare} from 'lucide-react';
+import {Upload, Trash2, AlertCircle, Download, Plus, ExternalLink, Pencil, Check, X, ImageIcon, BookOpen, MessageSquare, Github} from 'lucide-react';
 import {ThemeToggle} from './ThemeToggle';
 import {clsx} from 'clsx';
 
@@ -526,7 +526,6 @@ export const RightSidebar: React.FC = () => {
                     <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg text-sm text-blue-700 dark:text-blue-300 space-y-2">
                         <div className="flex items-start gap-2">
                             <AlertCircle size={18} className="mt-0.5 flex-shrink-0" />
-                            <AlertCircle size={18} className="mt-0.5 flex-shrink-0" />
                             <p>Import a .rqzl (Profile) or .json (Subjects) file.</p>
                         </div>
                         <a
@@ -950,7 +949,7 @@ export const RightSidebar: React.FC = () => {
                             >
                                 <div className="flex items-center gap-3">
                                     <div className="p-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg group-hover:bg-slate-200 dark:group-hover:bg-slate-600 transition-colors">
-                                        <ExternalLink size={16} /> {/* Using generic icon as Github might not be in the Lucide version installed, sticking to safer icon or standard library if I was sure, but Generic 'Code' or ExternalLink works */}
+                                        <Github size={16} />
                                     </div>
                                     <div className="text-left">
                                         <span className="text-sm font-medium text-slate-700 dark:text-slate-200 block">Source Code</span>
