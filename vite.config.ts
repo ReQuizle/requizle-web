@@ -40,4 +40,16 @@ export default defineConfig({
     })
   ],
   base: '/requizle-web/',
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom'],
+          'vendor-motion': ['framer-motion'],
+          'vendor-katex': ['katex', 'react-katex'],
+          'vendor-utils': ['zustand', 'clsx', 'canvas-confetti', 'lucide-react'],
+        }
+      }
+    }
+  }
 })
