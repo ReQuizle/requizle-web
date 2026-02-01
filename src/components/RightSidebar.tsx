@@ -2,7 +2,6 @@ import React, {useState, useRef} from 'react';
 import {createPortal} from 'react-dom';
 import {useQuizStore} from '../store/useQuizStore';
 import {calculateMastery, getActiveQuestions} from '../utils/quizLogic';
-import {storeMedia, createMediaRef, clearAllMedia, getAllMediaIds, deleteMedia, isIndexedDBMedia, extractMediaId} from '../utils/mediaStorage';
 import {
     validateSubjects,
     extractMediaReferencesWithContext,
@@ -11,6 +10,17 @@ import {
     replaceMediaByPath,
     type MediaGroup
 } from '../utils/importValidation';
+import {
+    storeMedia,
+    createMediaRef,
+    clearAllMedia,
+    getAllMediaIds,
+    deleteMedia,
+    isIndexedDBMedia,
+    extractMediaId,
+    getMedia,
+    restoreMediaEntry
+} from '../utils/mediaStorage';
 import {Upload, Trash2, AlertCircle, Download, Plus, ExternalLink, Pencil, Check, X, ImageIcon} from 'lucide-react';
 import {ThemeToggle} from './ThemeToggle';
 import {clsx} from 'clsx';
@@ -118,11 +128,39 @@ export const RightSidebar: React.FC = () => {
     };
 
     // Check for local media and either import directly or prompt for upload
-    const detectAndImport = (parsed: unknown): {type: 'profile' | 'subjects' | 'pending'; message: string} => {
+    const detectAndImport = async (parsed: unknown): Promise<{type: 'profile' | 'subjects' | 'pending'; message: string}> => {
+        // Check for embedded media in profile export
+        if (
+            typeof parsed === 'object' &&
+            parsed !== null &&
+            '_media' in parsed &&
+            Array.isArray((parsed as Record<string, unknown>)._media)
+        ) {
+            const mediaList = (parsed as Record<string, unknown>)._media as {id: string; data: string; filename: string}[];
+            let restoredCount = 0;
+
+            // Restore media to IndexedDB
+            for (const item of mediaList) {
+                // Check if already exists to avoid duplicate work
+                const existing = await getMedia(item.id);
+                if (!existing) {
+                    try {
+                        await restoreMediaEntry(item);
+                        restoredCount++;
+                    } catch (e) {
+                        console.error(`Failed to restore media ${item.id}`, e);
+                    }
+                }
+            }
+        }
+
         const allRefs = extractMediaReferencesWithContext(parsed);
         const localRefs = getLocalMediaRefs(allRefs);
 
         if (localRefs.length > 0) {
+            // Check for potential media conflicts
+            // Note: 'idb:' references are already filtered out by getLocalMediaRefs
+
             // Group by filename and detect conflicts
             const mediaGroups = groupMediaByFilename(localRefs);
             setPendingImport({
@@ -137,7 +175,7 @@ export const RightSidebar: React.FC = () => {
             };
         }
 
-        // No local media, import directly
+        // No local media (or all are idb/remote), import directly
         return performImport(parsed);
     };
 
@@ -363,17 +401,19 @@ export const RightSidebar: React.FC = () => {
     const handleImport = () => {
         try {
             const parsed: unknown = JSON.parse(jsonInput);
-            const result = detectAndImport(parsed);
+            detectAndImport(parsed).then(result => {
+                if (result.type === 'pending') {
+                    // Don't clear input or show success - waiting for images
+                    setImportError(null);
+                    return;
+                }
 
-            if (result.type === 'pending') {
-                // Don't clear input or show success - waiting for images
+                setJsonInput('');
                 setImportError(null);
-                return;
-            }
-
-            setJsonInput('');
-            setImportError(null);
-            alert(result.message);
+                alert(result.message);
+            }).catch(e => {
+                setImportError(`Import failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+            });
         } catch (e) {
             const errorMessage = e instanceof Error ? e.message : 'Unknown error';
             setImportError(`Import failed: ${errorMessage}`);
@@ -389,17 +429,19 @@ export const RightSidebar: React.FC = () => {
             try {
                 const content = event.target?.result as string;
                 const parsed: unknown = JSON.parse(content);
-                const result = detectAndImport(parsed);
+                detectAndImport(parsed).then(result => {
+                    if (result.type === 'pending') {
+                        // Don't clear or show success - waiting for images
+                        setImportError(null);
+                        return;
+                    }
 
-                if (result.type === 'pending') {
-                    // Don't clear or show success - waiting for images
+                    setJsonInput('');
                     setImportError(null);
-                    return;
-                }
-
-                setJsonInput('');
-                setImportError(null);
-                alert(result.message);
+                    alert(result.message);
+                }).catch(e => {
+                    setImportError(`Import failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+                });
             } catch (e) {
                 const errorMessage = e instanceof Error ? e.message : 'Unknown error';
                 setImportError(`File import failed: ${errorMessage}`);
@@ -486,7 +528,8 @@ export const RightSidebar: React.FC = () => {
                     <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg text-sm text-blue-700 dark:text-blue-300 space-y-2">
                         <div className="flex items-start gap-2">
                             <AlertCircle size={18} className="mt-0.5 flex-shrink-0" />
-                            <p>Import a JSON file to add custom subjects and questions.</p>
+                            <AlertCircle size={18} className="mt-0.5 flex-shrink-0" />
+                            <p>Import a .rqzl (Profile) or .json (Subjects) file.</p>
                         </div>
                         <a
                             href="https://github.com/haseebn19/ReQuizle#importing-custom-content"
@@ -503,7 +546,7 @@ export const RightSidebar: React.FC = () => {
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Upload File</label>
                         <input
                             type="file"
-                            accept=".json"
+                            accept=".rqzl,.json"
                             onChange={handleFileUpload}
                             className="block w-full text-sm text-slate-500 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 dark:file:bg-indigo-900/30 file:text-indigo-700 dark:file:text-indigo-300 hover:file:bg-indigo-100 dark:hover:file:bg-indigo-900/50"
                         />
@@ -628,11 +671,42 @@ export const RightSidebar: React.FC = () => {
                                         {editingProfileId !== profile.id && (
                                             <div className="flex items-center gap-1 flex-shrink-0">
                                                 <button
-                                                    onClick={() => {
-                                                        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(profile));
+                                                    onClick={async () => {
+                                                        // Extract media IDs from this profile
+                                                        const mediaIds = new Set<string>();
+                                                        profile.subjects.forEach(subject => {
+                                                            subject.topics.forEach(topic => {
+                                                                topic.questions.forEach(q => {
+                                                                    if (q.media && isIndexedDBMedia(q.media)) {
+                                                                        mediaIds.add(extractMediaId(q.media));
+                                                                    }
+                                                                });
+                                                            });
+                                                        });
+
+                                                        // Fetch media data
+                                                        const mediaExports = [];
+                                                        for (const id of mediaIds) {
+                                                            const media = await getMedia(id);
+                                                            if (media) {
+                                                                mediaExports.push({
+                                                                    id: media.id,
+                                                                    data: media.data,
+                                                                    filename: media.filename,
+                                                                    mimeType: media.mimeType
+                                                                });
+                                                            }
+                                                        }
+
+                                                        const exportData = {
+                                                            ...profile,
+                                                            _media: mediaExports
+                                                        };
+
+                                                        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData));
                                                         const downloadAnchorNode = document.createElement('a');
                                                         downloadAnchorNode.setAttribute("href", dataStr);
-                                                        downloadAnchorNode.setAttribute("download", `quiz-profile-${profile.name.toLowerCase().replace(/\s+/g, '-')}.json`);
+                                                        downloadAnchorNode.setAttribute("download", `quiz-profile-${profile.name.toLowerCase().replace(/\s+/g, '-')}.rqzl`);
                                                         document.body.appendChild(downloadAnchorNode);
                                                         downloadAnchorNode.click();
                                                         downloadAnchorNode.remove();
@@ -700,7 +774,7 @@ export const RightSidebar: React.FC = () => {
                                 Import Data
                                 <input
                                     type="file"
-                                    accept=".json"
+                                    accept=".rqzl,.json"
                                     className="hidden"
                                     onChange={(e) => {
                                         handleFileUpload(e, true);
@@ -829,8 +903,8 @@ export const RightSidebar: React.FC = () => {
 
                         {cacheClearResult && (
                             <div className={`p-2 rounded-lg text-xs text-center ${cacheClearResult.removed > 0
-                                    ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400'
-                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                                ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400'
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
                                 }`}>
                                 {cacheClearResult.message}
                             </div>

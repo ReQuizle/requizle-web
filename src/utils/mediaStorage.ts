@@ -75,6 +75,35 @@ export async function storeMedia(dataUri: string, filename: string): Promise<str
 }
 
 /**
+ * Restore a full media entry (used for import/export)
+ */
+export async function restoreMediaEntry(entry: {id: string; data: string; filename: string}): Promise<void> {
+    const db = await openDB();
+
+    // Extract mime type from data URI
+    const mimeMatch = entry.data.match(/^data:([^;]+);/);
+    const mimeType = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+
+    const fullEntry: MediaEntry = {
+        id: entry.id,
+        data: entry.data,
+        filename: entry.filename,
+        mimeType,
+        size: entry.data.length,
+        createdAt: Date.now()
+    };
+
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(STORE_NAME, 'readwrite');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.put(fullEntry);
+
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(new Error('Failed to restore media'));
+    });
+}
+
+/**
  * Retrieve media from IndexedDB
  */
 export async function getMedia(id: string): Promise<MediaEntry | null> {

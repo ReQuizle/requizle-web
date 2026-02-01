@@ -16,8 +16,8 @@ export default defineConfig({
         theme_color: '#6366f1',
         background_color: '#0f172a',
         display: 'standalone',
-        scope: '/requizle/',
-        start_url: '/requizle/',
+        scope: '/requizle-web/',
+        start_url: '/requizle-web/',
         icons: [
           {
             src: 'icon-192.png',
@@ -39,5 +39,5 @@ export default defineConfig({
       }
     })
   ],
-  base: '/requizle/',
+  base: '/requizle-web/',
 })
