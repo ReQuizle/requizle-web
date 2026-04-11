@@ -8,7 +8,7 @@ import {TrueFalseInput} from './inputs/TrueFalseInput';
 import {KeywordsInput} from './inputs/KeywordsInput';
 import {MatchingInput} from './inputs/MatchingInput';
 import {WordBankInput} from './inputs/WordBankInput';
-import {Latex} from './Latex';
+import {RichText} from './RichText';
 import {motion, AnimatePresence} from 'framer-motion';
 import confetti from 'canvas-confetti';
 import {ArrowRight, SkipForward, AlertCircle, CheckCircle2} from 'lucide-react';
@@ -183,7 +183,7 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                         })()}
 
                         <h2 className="text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100 leading-relaxed">
-                            <Latex>{question.prompt}</Latex>
+                            <RichText>{question.prompt}</RichText>
                         </h2>
                     </div>
 
@@ -258,7 +258,7 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                                             </h3>
                                             {result.explanation && (
                                                 <p className="mt-2 text-slate-600 dark:text-slate-300 leading-relaxed">
-                                                    <Latex>{result.explanation}</Latex>
+                                                    <RichText>{result.explanation}</RichText>
                                                 </p>
                                             )}
                                             {!result.correct && (
@@ -268,7 +268,7 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                                                         {question.type === 'multiple_choice' && (
                                                             <span className="inline-flex mt-1">
                                                                 <span className="px-2 py-1 bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300 rounded font-semibold">
-                                                                    <Latex>{question.choices[question.answerIndex]}</Latex>
+                                                                    <RichText>{question.choices[question.answerIndex]}</RichText>
                                                                 </span>
                                                             </span>
                                                         )}
@@ -276,7 +276,7 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                                                             <span className="flex flex-wrap gap-2 mt-1">
                                                                 {question.answerIndices.map((i) => (
                                                                     <span key={i} className="px-2 py-1 bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300 rounded font-semibold">
-                                                                        <Latex>{question.choices[i]}</Latex>
+                                                                        <RichText>{question.choices[i]}</RichText>
                                                                     </span>
                                                                 ))}
                                                             </span>
@@ -293,7 +293,7 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                                                                 {(Array.isArray(question.answer) ? question.answer : [question.answer]).map((keyword, i, arr) => (
                                                                     <React.Fragment key={i}>
                                                                         <span className="px-2 py-1 bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300 rounded font-semibold">
-                                                                            <Latex>{keyword}</Latex>
+                                                                            <RichText>{keyword}</RichText>
                                                                         </span>
                                                                         {i < arr.length - 1 && <span className="text-slate-400 self-center">or</span>}
                                                                     </React.Fragment>
@@ -305,11 +305,11 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                                                                 {question.pairs.map((pair, i) => (
                                                                     <div key={i} className="flex items-center gap-2 flex-wrap">
                                                                         <span className="px-2 py-1 bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300 rounded font-semibold">
-                                                                            <Latex>{pair.left}</Latex>
+                                                                            <RichText>{pair.left}</RichText>
                                                                         </span>
                                                                         <span className="text-slate-400">→</span>
                                                                         <span className="px-2 py-1 bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300 rounded font-semibold">
-                                                                            <Latex>{pair.right}</Latex>
+                                                                            <RichText>{pair.right}</RichText>
                                                                         </span>
                                                                     </div>
                                                                 ))}
@@ -325,7 +325,7 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                                                                     // The answer array corresponds to these blanks in order.
                                                                     // blankIndex = (i - 1) / 2
                                                                     const blankIndex = (i - 1) / 2;
-                                                                    return <span key={i} className="px-1.5 py-0.5 mx-0.5 bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300 rounded font-bold"><Latex>{question.answers[blankIndex]}</Latex></span>;
+                                                                    return <span key={i} className="px-1.5 py-0.5 mx-0.5 bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300 rounded font-bold"><RichText>{question.answers[blankIndex]}</RichText></span>;
                                                                 }
                                                                 return <span key={i}>{part}</span>;
                                                             })

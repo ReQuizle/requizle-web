@@ -2,13 +2,13 @@ import React from 'react';
 import 'katex/dist/katex.min.css';
 import {InlineMath, BlockMath} from 'react-katex';
 
-interface LatexProps {
+interface RichTextProps {
     children: string;
     className?: string;
 }
 
 /**
- * Renders text with LaTeX and code block support
+ * Renders text with rich formatting support:
  * - Inline math: \(...\)
  * - Block math: \[...\]
  * - Code blocks: ```language\ncode\n``` (with optional language tag)
@@ -16,13 +16,14 @@ interface LatexProps {
  *
  * Parsing order: code blocks → block math → inline code → inline math → plain text
  */
-export const Latex: React.FC<LatexProps> = ({children, className}) => {
+export const RichText: React.FC<RichTextProps> = ({children, className}) => {
     if (!children) return null;
 
     const parts = parseContent(children);
 
     return <span className={className}>{parts}</span>;
 };
+
 
 /** Top-level parser: splits on fenced code blocks first, then delegates */
 function parseContent(text: string): React.ReactNode[] {
