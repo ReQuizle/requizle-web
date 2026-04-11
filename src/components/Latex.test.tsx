@@ -1,6 +1,6 @@
 /**
  * Tests for Latex component
- * Tests Anki-style math delimiters parsing and rendering
+ * Tests math delimiters parsing, code blocks, and inline code rendering
  */
 import {describe, it, expect, vi} from 'vitest';
 import {render, screen} from '@testing-library/react';
@@ -39,7 +39,7 @@ describe('Latex', () => {
         });
     });
 
-    describe('inline math \\(...\\)', () => {
+    describe('inline math \\\\(...\\\\)', () => {
         it('should render inline math', () => {
             render(<Latex>{'The formula is \\(x^2\\)'}</Latex>);
 
@@ -70,7 +70,7 @@ describe('Latex', () => {
         });
     });
 
-    describe('block math \\[...\\]', () => {
+    describe('block math \\\\[...\\\\]', () => {
         it('should render block math', () => {
             render(<Latex>{'Check this: \\[E = mc^2\\]'}</Latex>);
 
@@ -137,6 +137,144 @@ describe('Latex', () => {
 
             const inlineElements = screen.getAllByTestId('inline-math');
             expect(inlineElements).toHaveLength(2);
+        });
+    });
+
+    describe('inline code', () => {
+        it('should render inline code with backticks', () => {
+            render(<Latex>{'Use the `console.log()` function'}</Latex>);
+
+            const codeEl = screen.getByTestId('inline-code');
+            expect(codeEl).toBeInTheDocument();
+            expect(codeEl.tagName).toBe('CODE');
+            expect(codeEl).toHaveTextContent('console.log()');
+        });
+
+        it('should render multiple inline code segments', () => {
+            render(<Latex>{'Use `let` or `const` to declare variables'}</Latex>);
+
+            const codes = screen.getAllByTestId('inline-code');
+            expect(codes).toHaveLength(2);
+            expect(codes[0]).toHaveTextContent('let');
+            expect(codes[1]).toHaveTextContent('const');
+        });
+
+        it('should preserve text around inline code', () => {
+            render(<Latex>{'Before `code` after'}</Latex>);
+
+            expect(screen.getByText(/Before/)).toBeInTheDocument();
+            expect(screen.getByText(/after/)).toBeInTheDocument();
+            expect(screen.getByTestId('inline-code')).toHaveTextContent('code');
+        });
+
+        it('should not match empty backticks', () => {
+            render(<Latex>{'Empty `` here'}</Latex>);
+
+            expect(screen.queryByTestId('inline-code')).toBeNull();
+            expect(screen.getByText(/Empty/)).toBeInTheDocument();
+        });
+
+        it('should apply the inline-code class', () => {
+            render(<Latex>{'The `x` variable'}</Latex>);
+
+            expect(screen.getByTestId('inline-code')).toHaveClass('inline-code');
+        });
+    });
+
+    describe('code blocks', () => {
+        it('should render a fenced code block', () => {
+            render(<Latex>{'```\nconsole.log("hello");\n```'}</Latex>);
+
+            const block = screen.getByTestId('code-block');
+            expect(block).toBeInTheDocument();
+            expect(block.tagName).toBe('PRE');
+            expect(block.querySelector('code')).toHaveTextContent('console.log("hello");');
+        });
+
+        it('should render a code block with language tag', () => {
+            render(<Latex>{'```python\nprint("hello")\n```'}</Latex>);
+
+            const block = screen.getByTestId('code-block');
+            expect(block).toBeInTheDocument();
+            expect(block).toHaveAttribute('data-language', 'python');
+            // Language label should be present
+            expect(screen.getByText('python')).toBeInTheDocument();
+            expect(block.querySelector('code')).toHaveTextContent('print("hello")');
+        });
+
+        it('should render multi-line code blocks', () => {
+            const code = '```js\nconst a = 1;\nconst b = 2;\nconsole.log(a + b);\n```';
+            render(<Latex>{code}</Latex>);
+
+            const block = screen.getByTestId('code-block');
+            expect(block.querySelector('code')!.textContent).toContain('const a = 1;');
+            expect(block.querySelector('code')!.textContent).toContain('console.log(a + b);');
+        });
+
+        it('should preserve text before and after code blocks', () => {
+            render(<Latex>{'Look at this:\n```\ncode\n```\nPretty cool!'}</Latex>);
+
+            expect(screen.getByText(/Look at this/)).toBeInTheDocument();
+            expect(screen.getByText(/Pretty cool/)).toBeInTheDocument();
+            expect(screen.getByTestId('code-block')).toBeInTheDocument();
+        });
+
+        it('should render multiple code blocks', () => {
+            const content = '```js\na();\n```\nThen:\n```py\nb()\n```';
+            render(<Latex>{content}</Latex>);
+
+            const blocks = screen.getAllByTestId('code-block');
+            expect(blocks).toHaveLength(2);
+        });
+
+        it('should apply the code-block class', () => {
+            render(<Latex>{'```\ntest\n```'}</Latex>);
+
+            expect(screen.getByTestId('code-block')).toHaveClass('code-block');
+        });
+
+        it('should not show language badge when no language specified', () => {
+            render(<Latex>{'```\ntest\n```'}</Latex>);
+
+            const block = screen.getByTestId('code-block');
+            expect(block.querySelector('.code-block-lang')).toBeNull();
+        });
+    });
+
+    describe('mixed code and math', () => {
+        it('should handle inline code and inline math together', () => {
+            render(<Latex>{'Use `x` where \\(x = 5\\)'}</Latex>);
+
+            expect(screen.getByTestId('inline-code')).toHaveTextContent('x');
+            expect(screen.getByTestId('inline-math')).toHaveTextContent('[INLINE:x = 5]');
+        });
+
+        it('should handle code blocks and block math together', () => {
+            const content = '```js\nvar x = 1;\n```\nGiven: \\[x + y = 10\\]';
+            render(<Latex>{content}</Latex>);
+
+            expect(screen.getByTestId('code-block')).toBeInTheDocument();
+            expect(screen.getByTestId('block-math')).toBeInTheDocument();
+        });
+
+        it('should handle all formats mixed together', () => {
+            const content = 'Use `map()` to transform \\(n\\) items:\n```js\narr.map(x => x * 2);\n```\nResult: \\[O(n)\\]';
+            render(<Latex>{content}</Latex>);
+
+            expect(screen.getByTestId('inline-code')).toHaveTextContent('map()');
+            expect(screen.getByTestId('inline-math')).toHaveTextContent('[INLINE:n]');
+            expect(screen.getByTestId('code-block')).toBeInTheDocument();
+            expect(screen.getByTestId('block-math')).toBeInTheDocument();
+        });
+
+        it('should not parse backticks inside code blocks as inline code', () => {
+            render(<Latex>{'```\nuse `backticks` here\n```'}</Latex>);
+
+            // The backticks should be inside the code block, not parsed as inline code
+            const block = screen.getByTestId('code-block');
+            expect(block.querySelector('code')!.textContent).toContain('`backticks`');
+            // No inline code should be rendered
+            expect(screen.queryByTestId('inline-code')).toBeNull();
         });
     });
 });

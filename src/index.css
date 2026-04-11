@@ -80,6 +80,30 @@
   .tab-button-active {
     @apply flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm;
   }
+
+  /* Code blocks (fenced: ```lang ... ```) */
+  .code-block {
+    @apply relative my-4 p-4 pt-8 rounded-xl text-sm leading-relaxed overflow-x-auto font-mono;
+    @apply bg-slate-900 text-slate-100 dark:bg-slate-950 dark:text-slate-200;
+    @apply border border-slate-700/50 dark:border-slate-700;
+    @apply shadow-md;
+  }
+
+  .code-block code {
+    @apply font-mono text-sm whitespace-pre;
+  }
+
+  .code-block-lang {
+    @apply absolute top-0 right-0 px-3 py-1 text-xs font-semibold rounded-bl-lg rounded-tr-xl;
+    @apply bg-indigo-600/80 text-indigo-100;
+  }
+
+  /* Inline code (`...`) */
+  .inline-code {
+    @apply px-1.5 py-0.5 rounded-md text-sm font-mono font-medium;
+    @apply bg-indigo-100/70 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300;
+    @apply border border-indigo-200/60 dark:border-indigo-700/40;
+  }
 }
 
 /* Custom Animations */
