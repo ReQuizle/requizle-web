@@ -250,15 +250,6 @@ const SAMPLE_SUBJECTS: Subject[] = [
             choices: ['display', 'flex', 'box', 'None'],
             answerIndex: 0,
             explanation: '`display` is the CSS property being set to the value `flex`.'
-          },
-          {
-            id: 'q-code-overflow',
-            type: 'multiple_choice',
-            topicId: 'code-blocks',
-            prompt: 'Debugging Question: How does this overflow?\n```javascript\n// ' + 'A VERY LONG LINE '.repeat(20) + '\n// ' + 'ANOTHER VERY LONG LINE '.repeat(20) + '\n' + 'function dummy() { return null; }\n'.repeat(40) + '```',
-            choices: ['It works fine', 'It looks bad', 'No idea', 'Help'],
-            answerIndex: 0,
-            explanation: 'Just a debug test.'
           }
         ]
       },
