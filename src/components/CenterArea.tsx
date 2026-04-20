@@ -1,6 +1,7 @@
 import React from 'react';
 import {useQuizStore} from '../store/useQuizStore';
 import {QuestionCard} from './QuestionCard';
+import {ErrorBoundary} from './ErrorBoundary';
 import {Shuffle, ListOrdered, RotateCcw, CheckCircle2} from 'lucide-react';
 
 
@@ -103,9 +104,15 @@ export const CenterArea: React.FC = () => {
 
             {/* Question Area */}
             <div className="flex-1 overflow-y-auto p-4 md:p-8">
-                <div className="min-h-full flex items-center justify-center">
-                    {/* Key uses turnCounter from store to force remount when advancing to same question */}
-                    <QuestionCard key={`${currentQuestion.id}-${session.turnCounter}`} question={currentQuestion} />
+                <div className="min-h-full flex flex-col items-center justify-center">
+                    <ErrorBoundary 
+                        key={`eb-${currentQuestion.id}-${session.turnCounter}`}
+                        fallbackMessage="This question contains invalid formatting or corrupted data."
+                        onSkip={() => useQuizStore.getState().skipQuestion()} // Skip safely
+                    >
+                        {/* Key uses turnCounter from store to force remount when advancing to same question */}
+                        <QuestionCard key={`${currentQuestion.id}-${session.turnCounter}`} question={currentQuestion} />
+                    </ErrorBoundary>
                 </div>
             </div>
         </div>

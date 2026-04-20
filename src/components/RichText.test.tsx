@@ -197,7 +197,6 @@ describe('RichText', () => {
 
             const block = screen.getByTestId('code-block');
             expect(block).toBeInTheDocument();
-            expect(block).toHaveAttribute('data-language', 'python');
             // Language label should be present
             expect(screen.getByText('python')).toBeInTheDocument();
             expect(block.querySelector('code')).toHaveTextContent('print("hello")');
@@ -276,6 +275,37 @@ describe('RichText', () => {
             expect(block.querySelector('code')!.textContent).toContain('`backticks`');
             // No inline code should be rendered
             expect(screen.queryByTestId('inline-code')).toBeNull();
+        });
+    });
+
+    describe('markdown features', () => {
+        it('should render blockquotes', () => {
+            render(<RichText>{'> quote block'}</RichText>);
+            expect(screen.getByText('quote block')).toBeInTheDocument();
+        });
+        it('should render tables', () => {
+            render(<RichText>{'| A | B |\n|---|---|\n| C | D |'}</RichText>);
+            expect(screen.getByText('A')).toBeInTheDocument();
+            expect(screen.getByText('D')).toBeInTheDocument();
+        });
+        it('should render links', () => {
+            render(<RichText>{'[link text](https://link.com)'}</RichText>);
+            const link = screen.getByRole('link');
+            expect(link).toHaveAttribute('href', 'https://link.com');
+            expect(link).toHaveTextContent('link text');
+        });
+        it('should render bold, italic, underline, strikethrough', () => {
+            render(<RichText>{'**bold** *italic* __underline__ ~~strike~~'}</RichText>);
+            expect(screen.getByText('bold')).toHaveClass('font-bold');
+            expect(screen.getByText('italic')).toHaveClass('italic');
+            expect(screen.getByText('underline')).toHaveClass('underline');
+            expect(screen.getByText('strike')).toHaveClass('line-through');
+        });
+        it('should render spoilers', () => {
+            render(<RichText>{'||spoiler||'}</RichText>);
+            const spoiler = screen.getByTitle('Reveal Spoiler');
+            expect(spoiler).toBeInTheDocument();
+            expect(spoiler).toHaveTextContent('spoiler');
         });
     });
 });

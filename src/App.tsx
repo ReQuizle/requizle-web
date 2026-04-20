@@ -233,6 +233,62 @@ const SAMPLE_SUBJECTS: Subject[] = [
             explanation: 'The icon clearly depicts headphones with two ear cups connected by a headband.'
           }
         ]
+      },
+      {
+        id: 'code-blocks',
+        name: 'Code Formatting',
+        questions: [
+          {
+            id: 'q-code-1',
+            type: 'multiple_choice',
+            topicId: 'code-blocks',
+            prompt: 'What does the following JavaScript code output?\n```javascript\nconst arr = [1, 2, 3];\nconsole.log(arr.length);\n```',
+            choices: ['1', '2', '3', 'undefined'],
+            answerIndex: 2,
+            explanation: 'The `length` property of an array returns the number of elements in it, which is `3`.'
+          },
+          {
+            id: 'q-code-2',
+            type: 'multiple_choice',
+            topicId: 'code-blocks',
+            prompt: 'Which CSS property is used here?\n```css\n.box {\n  display: flex;\n}\n```',
+            choices: ['display', 'flex', 'box', 'None'],
+            answerIndex: 0,
+            explanation: '`display` is the CSS property being set to the value `flex`.'
+          },
+          {
+            id: 'q-code-overflow',
+            type: 'multiple_choice',
+            topicId: 'code-blocks',
+            prompt: 'Debugging Question: How does this overflow?\n```javascript\n// ' + 'A VERY LONG LINE '.repeat(20) + '\n// ' + 'ANOTHER VERY LONG LINE '.repeat(20) + '\n' + 'function dummy() { return null; }\n'.repeat(40) + '```',
+            choices: ['It works fine', 'It looks bad', 'No idea', 'Help'],
+            answerIndex: 0,
+            explanation: 'Just a debug test.'
+          }
+        ]
+      },
+      {
+        id: 'markdown-features',
+        name: 'Markdown & Rich Text',
+        questions: [
+          {
+            id: 'q-md-1',
+            type: 'multiple_choice',
+            topicId: 'markdown-features',
+            prompt: 'Which of the following describes what the **ReQuizle** Markdown engine does best?\n\n> "The system efficiently balances the complexity of full Markdown parsers with the **absolute necessity** of *seamless* `inline math` and `code formatting`."\n\nTake your time to guess, if you need a hint, click this spoiler: ||It involves text rendering.|| Or check out [our Wikipedia](https://wikipedia.org) for more info!',
+            choices: ['Parses all markdown perfectly', 'Supports __underlines__, ~~strikethroughs~~, and spoilers', 'Replaces React entirely', 'Compiles Code'],
+            answerIndex: 1,
+            explanation: 'Yes! It seamlessly parses custom tags like **bold**, *italic*, __underline__, ~~strikethrough~~, spoilers ||hidden||, [links](https://google.com), and blockquotes.'
+          },
+          {
+            id: 'q-md-2',
+            type: 'true_false',
+            topicId: 'markdown-features',
+            prompt: 'Does ReQuizle also support beautiful Markdown tables like this one?\n\n| Feature | Supported? | Coolness |\n|---------|------------|----------|\n| Tables | **Yes** | 100/100 |\n| Code | *Yes* | 90/100 |\n| Math | \\(x^2\\) | 99/100 |',
+            answer: true,
+            explanation: 'Yes! Our custom regex engine intelligently parses standard markdown tables and renders them beautifully with alternating styles and seamless inline element support inside the cells.'
+          }
+        ]
       }
     ]
   }
