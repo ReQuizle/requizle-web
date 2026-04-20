@@ -1,6 +1,7 @@
 import {create} from 'zustand';
 import {persist, createJSONStorage} from 'zustand/middleware';
-import type {Subject, SessionState, StudyMode, QuestionProgress, Profile} from '../types';
+import type {Subject, SessionState, StudyMode, QuestionProgress, Profile, SubjectExportV1} from '../types';
+import {validateSubjects} from '../utils/importValidation';
 import {
     generateQueue,
     getActiveQuestions,
@@ -15,6 +16,10 @@ import {v4 as uuidv4} from 'uuid';
 interface Settings {
     confirmSubjectDelete: boolean;
     confirmProfileDelete: boolean;
+    /** When false, reset subject progress immediately (sidebar, context menu, data settings). */
+    confirmResetSubjectProgress: boolean;
+    /** When false, reset topic progress immediately from the context menu. */
+    confirmResetTopicProgress: boolean;
     /** When false, wrong answers do not put the question back in the queue (advance-only for this pass). */
     quizRequeueOnIncorrect: boolean;
     /** When false, skipped questions are not reinserted. */
@@ -47,6 +52,9 @@ interface QuizState {
     nextQuestion: () => void;
 
     resetSubjectProgress: (subjectId: string) => void;
+    importSubjectExport: (bundle: SubjectExportV1) => void;
+    resetTopicProgress: (subjectId: string, topicId: string) => void;
+    markTopicMastered: (subjectId: string, topicId: string) => void;
 
     // Profile Actions
     createProfile: (name: string) => void;
@@ -59,6 +67,8 @@ interface QuizState {
     // Settings Actions
     setConfirmSubjectDelete: (confirm: boolean) => void;
     setConfirmProfileDelete: (confirm: boolean) => void;
+    setConfirmResetSubjectProgress: (confirm: boolean) => void;
+    setConfirmResetTopicProgress: (confirm: boolean) => void;
     setQuizRequeueOnIncorrect: (value: boolean) => void;
     setQuizRequeueOnSkip: (value: boolean) => void;
     setQuizRequeueGaps: (minGap: number, maxGap: number) => void;
@@ -82,6 +92,83 @@ function flattenProgress(subjectProgress: Record<string, Record<string, Question
         Object.assign(flat, topicProgress);
     });
     return flat;
+}
+
+function mergeSubjectsIntoList(existing: Subject[], incoming: Subject[]): Subject[] {
+    const mergedSubjects = [...existing];
+
+    for (const newSubject of incoming) {
+        const existingIndex = mergedSubjects.findIndex(s => s.id === newSubject.id);
+
+        if (existingIndex === -1) {
+            mergedSubjects.push(newSubject);
+        } else {
+            const existingSubject = mergedSubjects[existingIndex];
+            const mergedTopics = [...existingSubject.topics];
+
+            for (const newTopic of newSubject.topics) {
+                const existingTopicIndex = mergedTopics.findIndex(t => t.id === newTopic.id);
+
+                if (existingTopicIndex === -1) {
+                    mergedTopics.push(newTopic);
+                } else {
+                    const existingTopic = mergedTopics[existingTopicIndex];
+                    const mergedQuestions = [...existingTopic.questions];
+
+                    for (const newQuestion of newTopic.questions) {
+                        const existingQuestionIndex = mergedQuestions.findIndex(q => q.id === newQuestion.id);
+
+                        if (existingQuestionIndex === -1) {
+                            mergedQuestions.push(newQuestion);
+                        } else {
+                            mergedQuestions[existingQuestionIndex] = newQuestion;
+                        }
+                    }
+
+                    mergedTopics[existingTopicIndex] = {
+                        ...existingTopic,
+                        ...newTopic,
+                        questions: mergedQuestions
+                    };
+                }
+            }
+
+            mergedSubjects[existingIndex] = {
+                ...existingSubject,
+                ...newSubject,
+                topics: mergedTopics
+            };
+        }
+    }
+
+    return mergedSubjects;
+}
+
+function rebuildSessionForSubjectIfActive(
+    profile: Profile,
+    subjectId: string,
+    mergedSubjects: Subject[],
+    subjectProgressSlice: Record<string, Record<string, QuestionProgress>> | undefined
+): SessionState {
+    if (profile.session.subjectId !== subjectId) {
+        return profile.session;
+    }
+    const subject = mergedSubjects.find(s => s.id === subjectId);
+    if (!subject) {
+        return profile.session;
+    }
+    const questions = getActiveQuestions(subject, profile.session.selectedTopicIds);
+    const queue = generateQueue(
+        questions,
+        flattenProgress(subjectProgressSlice),
+        profile.session.mode,
+        profile.session.includeMastered
+    );
+    return {
+        ...profile.session,
+        queue: queue.slice(1),
+        currentQuestionId: queue[0] || null
+    };
 }
 
 // Extract all IndexedDB media IDs from a subject
@@ -115,7 +202,7 @@ const DEFAULT_PROFILE_ID = 'default';
 export const DEFAULT_SESSION_STATE: SessionState = {
     subjectId: null,
     selectedTopicIds: [],
-    mode: 'random',
+    mode: 'topic_order',
     includeMastered: false,
     queue: [],
     currentQuestionId: null,
@@ -125,6 +212,8 @@ export const DEFAULT_SESSION_STATE: SessionState = {
 export const DEFAULT_SETTINGS: Settings = {
     confirmSubjectDelete: true,
     confirmProfileDelete: true,
+    confirmResetSubjectProgress: true,
+    confirmResetTopicProgress: true,
     quizRequeueOnIncorrect: true,
     quizRequeueOnSkip: true,
     quizRequeueGapMin: 4,
@@ -163,59 +252,7 @@ export const useQuizStore = create<QuizState>()(
 
             importSubjects: (newSubjects) => set((state) => {
                 const profile = getCurrentProfile(state);
-
-                // Merge subjects: update existing, add new
-                const mergedSubjects = [...profile.subjects];
-
-                for (const newSubject of newSubjects) {
-                    const existingIndex = mergedSubjects.findIndex(s => s.id === newSubject.id);
-
-                    if (existingIndex === -1) {
-                        // Subject doesn't exist, add it
-                        mergedSubjects.push(newSubject);
-                    } else {
-                        // Subject exists, merge topics
-                        const existingSubject = mergedSubjects[existingIndex];
-                        const mergedTopics = [...existingSubject.topics];
-
-                        for (const newTopic of newSubject.topics) {
-                            const existingTopicIndex = mergedTopics.findIndex(t => t.id === newTopic.id);
-
-                            if (existingTopicIndex === -1) {
-                                // Topic doesn't exist, add it
-                                mergedTopics.push(newTopic);
-                            } else {
-                                // Topic exists, merge questions
-                                const existingTopic = mergedTopics[existingTopicIndex];
-                                const mergedQuestions = [...existingTopic.questions];
-
-                                for (const newQuestion of newTopic.questions) {
-                                    const existingQuestionIndex = mergedQuestions.findIndex(q => q.id === newQuestion.id);
-
-                                    if (existingQuestionIndex === -1) {
-                                        // Question doesn't exist, add it
-                                        mergedQuestions.push(newQuestion);
-                                    } else {
-                                        // Question exists, overwrite it
-                                        mergedQuestions[existingQuestionIndex] = newQuestion;
-                                    }
-                                }
-
-                                mergedTopics[existingTopicIndex] = {
-                                    ...existingTopic,
-                                    ...newTopic,
-                                    questions: mergedQuestions
-                                };
-                            }
-                        }
-
-                        mergedSubjects[existingIndex] = {
-                            ...existingSubject,
-                            ...newSubject,
-                            topics: mergedTopics
-                        };
-                    }
-                }
+                const mergedSubjects = mergeSubjectsIntoList(profile.subjects, newSubjects);
 
                 return {
                     profiles: {
@@ -227,6 +264,107 @@ export const useQuizStore = create<QuizState>()(
                     }
                 };
             }),
+
+            importSubjectExport: (bundle) => {
+                const validated = validateSubjects([bundle.subject]);
+                set((state) => {
+                    const profile = getCurrentProfile(state);
+                    const mergedSubjects = mergeSubjectsIntoList(profile.subjects, validated);
+                    const sid = validated[0].id;
+                    const prevSlice = profile.progress[sid] || {};
+                    const mergedSlice: Record<string, Record<string, QuestionProgress>> = {...prevSlice};
+                    for (const [topicId, qMap] of Object.entries(bundle.progress || {})) {
+                        mergedSlice[topicId] = {...(mergedSlice[topicId] || {}), ...qMap};
+                    }
+                    const newProgress: Profile['progress'] = {...profile.progress, [sid]: mergedSlice};
+                    const newSession = rebuildSessionForSubjectIfActive(profile, sid, mergedSubjects, mergedSlice);
+
+                    return {
+                        profiles: {
+                            ...state.profiles,
+                            [state.activeProfileId]: {
+                                ...profile,
+                                subjects: mergedSubjects,
+                                progress: newProgress,
+                                session: newSession
+                            }
+                        }
+                    };
+                });
+            },
+
+            resetTopicProgress: (subjectId, topicId) => {
+                set((state) => {
+                    const profile = getCurrentProfile(state);
+                    const subjSlice = {...(profile.progress[subjectId] || {})};
+                    delete subjSlice[topicId];
+                    const newProgress = {...profile.progress};
+                    if (Object.keys(subjSlice).length === 0) {
+                        delete newProgress[subjectId];
+                    } else {
+                        newProgress[subjectId] = subjSlice;
+                    }
+                    const mergedSubjects = profile.subjects;
+                    const sliceForSession = newProgress[subjectId];
+                    const newSession = rebuildSessionForSubjectIfActive(
+                        profile,
+                        subjectId,
+                        mergedSubjects,
+                        sliceForSession
+                    );
+
+                    return {
+                        profiles: {
+                            ...state.profiles,
+                            [state.activeProfileId]: {
+                                ...profile,
+                                progress: newProgress,
+                                session: newSession
+                            }
+                        }
+                    };
+                });
+            },
+
+            markTopicMastered: (subjectId, topicId) => {
+                set((state) => {
+                    const profile = getCurrentProfile(state);
+                    const subject = profile.subjects.find(s => s.id === subjectId);
+                    if (!subject) return state;
+                    const topic = subject.topics.find(t => t.id === topicId);
+                    if (!topic) return state;
+
+                    const subjSlice = {...(profile.progress[subjectId] || {})};
+                    const topicSlice = {...(subjSlice[topicId] || {})};
+                    for (const q of topic.questions) {
+                        topicSlice[q.id] = {
+                            id: q.id,
+                            attempts: 1,
+                            correctStreak: 1,
+                            mastered: true
+                        };
+                    }
+                    subjSlice[topicId] = topicSlice;
+                    const newProgress = {...profile.progress, [subjectId]: subjSlice};
+                    const newSession = rebuildSessionForSubjectIfActive(
+                        profile,
+                        subjectId,
+                        profile.subjects,
+                        subjSlice
+                    );
+
+                    return {
+                        profiles: {
+                            ...state.profiles,
+                            [state.activeProfileId]: {
+                                ...profile,
+                                progress: newProgress,
+                                session: newSession
+                            }
+                        }
+                    };
+                });
+            },
 
             deleteSubject: (subjectId) => {
                 const state = get();
@@ -919,6 +1057,14 @@ export const useQuizStore = create<QuizState>()(
                 settings: {...state.settings, confirmProfileDelete: confirm}
             })),
 
+            setConfirmResetSubjectProgress: (confirm) => set((state) => ({
+                settings: {...state.settings, confirmResetSubjectProgress: confirm}
+            })),
+
+            setConfirmResetTopicProgress: (confirm) => set((state) => ({
+                settings: {...state.settings, confirmResetTopicProgress: confirm}
+            })),
+
             setQuizRequeueOnIncorrect: (value) => set((state) => ({
                 settings: {...state.settings, quizRequeueOnIncorrect: value}
             })),
@@ -995,6 +1141,12 @@ export const useQuizStore = create<QuizState>()(
                     }
                     if (typeof persistedState.settings.quizRequeueOnSkip !== 'boolean') {
                         persistedState.settings.quizRequeueOnSkip = DEFAULT_SETTINGS.quizRequeueOnSkip;
+                    }
+                    if (typeof persistedState.settings.confirmResetSubjectProgress !== 'boolean') {
+                        persistedState.settings.confirmResetSubjectProgress = DEFAULT_SETTINGS.confirmResetSubjectProgress;
+                    }
+                    if (typeof persistedState.settings.confirmResetTopicProgress !== 'boolean') {
+                        persistedState.settings.confirmResetTopicProgress = DEFAULT_SETTINGS.confirmResetTopicProgress;
                     }
                     const {min, max} = normalizeRequeueGapRange(
                         persistedState.settings.quizRequeueGapMin ?? DEFAULT_SETTINGS.quizRequeueGapMin,

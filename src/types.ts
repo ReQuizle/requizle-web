@@ -97,6 +97,15 @@ export interface SessionState {
     turnCounter: number; // Increments each time we advance to a new question
 }
 
+/** Single-subject backup for Import tab or left-sidebar export (optional progress + optional embedded media). */
+export interface SubjectExportV1 {
+    requizleSubjectExport: 1;
+    subject: Subject;
+    /** topicId -> questionId -> progress. Omit or leave empty to share the question set only. */
+    progress?: Record<string, Record<string, QuestionProgress>>;
+    _media?: Array<{id: string; data: string; filename: string; mimeType?: string}>;
+}
+
 export interface Profile {
     id: string;
     name: string;

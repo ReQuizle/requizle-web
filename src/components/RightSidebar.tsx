@@ -4,6 +4,7 @@ import {useQuizStore, DEFAULT_SESSION_STATE} from '../store/useQuizStore';
 import {calculateMastery, getActiveQuestions} from '../utils/quizLogic';
 import {
     validateSubjects,
+    isSubjectExportV1,
     extractMediaReferencesWithContext,
     getLocalMediaRefs,
     groupMediaByFilename,
@@ -67,10 +68,13 @@ export const RightSidebar: React.FC = () => {
         importProfile,
         resetAllData,
         importSubjects,
+        importSubjectExport,
         resetSubjectProgress,
         settings,
         setConfirmSubjectDelete,
         setConfirmProfileDelete,
+        setConfirmResetSubjectProgress,
+        setConfirmResetTopicProgress,
         setMode,
         setQuizRequeueOnIncorrect,
         setQuizRequeueOnSkip,
@@ -90,6 +94,7 @@ export const RightSidebar: React.FC = () => {
     const [cacheClearResult, setCacheClearResult] = useState<{removed: number; message: string} | null>(null);
     const [importDndActive, setImportDndActive] = useState(false);
     const importDndDepth = useRef(0);
+    const [resetSubjectDataConfirm, setResetSubjectDataConfirm] = useState<{id: string; name: string} | null>(null);
 
     // Image upload state
     const [pendingImport, setPendingImport] = useState<{
@@ -134,6 +139,13 @@ export const RightSidebar: React.FC = () => {
     // Perform the actual import after images are handled
     const performImport = (parsed: unknown): {type: 'profile' | 'subjects'; message: string} => {
         // Check if it's a profile (has profile-specific fields)
+        if (isSubjectExportV1(parsed)) {
+            importSubjectExport(parsed);
+            const subj = parsed.subject;
+            const label = typeof subj.name === 'string' ? subj.name : subj.id;
+            return {type: 'subjects', message: `Imported "${label}" with progress.`};
+        }
+
         if (
             typeof parsed === 'object' &&
             parsed !== null &&
@@ -1112,11 +1124,43 @@ export const RightSidebar: React.FC = () => {
                             </div>
                         </div>
 
+                        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider pt-1">Progress resets</p>
+                        <label className="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer gap-3">
+                            <div className="min-w-0">
+                                <span className="text-sm font-medium text-slate-700 dark:text-slate-200 block">Confirm reset subject progress</span>
+                                <span className="text-xs text-slate-500 dark:text-slate-400">Dialog before clearing all mastery for a subject</span>
+                            </div>
+                            <div className="relative flex items-center flex-shrink-0">
+                                <input
+                                    type="checkbox"
+                                    className="peer sr-only"
+                                    checked={settings.confirmResetSubjectProgress}
+                                    onChange={(e) => setConfirmResetSubjectProgress(e.target.checked)}
+                                />
+                                <div className="w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-100 dark:peer-focus:ring-indigo-900 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                            </div>
+                        </label>
+                        <label className="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer gap-3">
+                            <div className="min-w-0">
+                                <span className="text-sm font-medium text-slate-700 dark:text-slate-200 block">Confirm reset topic progress</span>
+                                <span className="text-xs text-slate-500 dark:text-slate-400">Dialog before clearing mastery for one topic</span>
+                            </div>
+                            <div className="relative flex items-center flex-shrink-0">
+                                <input
+                                    type="checkbox"
+                                    className="peer sr-only"
+                                    checked={settings.confirmResetTopicProgress}
+                                    onChange={(e) => setConfirmResetTopicProgress(e.target.checked)}
+                                />
+                                <div className="w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-100 dark:peer-focus:ring-indigo-900 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                            </div>
+                        </label>
+
                         <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider pt-1">Deletion safety</p>
                         <label className="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer">
                             <div>
                                 <span className="text-sm font-medium text-slate-700 dark:text-slate-200 block">Confirm Subject Deletion</span>
-                                <span className="text-xs text-slate-500 dark:text-slate-400">Require typing name to delete</span>
+                                <span className="text-xs text-slate-500 dark:text-slate-400">Require typing name to delete; when off, delete immediately</span>
                             </div>
                             <div className="relative flex items-center">
                                 <input
@@ -1157,10 +1201,13 @@ export const RightSidebar: React.FC = () => {
 
                         {currentSubject && (
                             <button
+                                type="button"
                                 onClick={() => {
-                                    if (confirm('Are you sure you want to reset progress for this subject?')) {
+                                    if (!settings.confirmResetSubjectProgress) {
                                         resetSubjectProgress(currentSubject.id);
+                                        return;
                                     }
+                                    setResetSubjectDataConfirm({id: currentSubject.id, name: currentSubject.name});
                                 }}
                                 className="w-full flex items-center justify-center gap-2 p-3 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors text-sm font-medium"
                             >
@@ -1310,6 +1357,37 @@ export const RightSidebar: React.FC = () => {
                     </div>
                     )}
                 </div>
+            )}
+
+            {resetSubjectDataConfirm && createPortal(
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[110] p-4">
+                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Reset subject progress?</h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-400">
+                            All mastery and attempts for <strong className="text-slate-900 dark:text-white">{resetSubjectDataConfirm.name}</strong> will be cleared. This cannot be undone.
+                        </p>
+                        <div className="flex gap-3 pt-2">
+                            <button
+                                type="button"
+                                onClick={() => setResetSubjectDataConfirm(null)}
+                                className="flex-1 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    resetSubjectProgress(resetSubjectDataConfirm.id);
+                                    setResetSubjectDataConfirm(null);
+                                }}
+                                className="flex-1 px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors bg-amber-600 hover:bg-amber-700 dark:bg-amber-600 dark:hover:bg-amber-500"
+                            >
+                                Reset progress
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
             )}
 
             {/* Delete Profile Confirmation Modal */}

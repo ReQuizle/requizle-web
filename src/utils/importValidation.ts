@@ -2,7 +2,7 @@
  * Import validation utilities for parsing and validating JSON quiz data.
  */
 
-import type {Subject, Question, QuestionType, Topic} from '../types';
+import type {Subject, Question, QuestionType, Topic, SubjectExportV1} from '../types';
 
 /** Media reference with context about where it's used */
 export interface MediaReference {
@@ -33,6 +33,19 @@ export const isRemoteOrStoredMedia = (media: string): boolean => {
 export const getFilename = (path: string): string => {
     const parts = path.split(/[/\\]/);
     return parts[parts.length - 1];
+};
+
+export const isSubjectExportV1 = (data: unknown): data is SubjectExportV1 => {
+    if (typeof data !== 'object' || data === null) return false;
+    const o = data as Record<string, unknown>;
+    const progressOk =
+        o.progress === undefined || (typeof o.progress === 'object' && o.progress !== null);
+    return (
+        o.requizleSubjectExport === 1 &&
+        typeof o.subject === 'object' &&
+        o.subject !== null &&
+        progressOk
+    );
 };
 
 /** Validate and parse imported subject data */
@@ -262,7 +275,9 @@ export const extractMediaReferencesWithContext = (data: unknown): MediaReference
         processSubjects(data);
     } else if (typeof data === 'object' && data !== null) {
         const obj = data as Record<string, unknown>;
-        if (Array.isArray(obj.subjects)) {
+        if (obj.requizleSubjectExport === 1 && typeof obj.subject === 'object' && obj.subject !== null) {
+            processSubjects([obj.subject]);
+        } else if (Array.isArray(obj.subjects)) {
             // It's a profile
             processSubjects(obj.subjects);
         } else if (obj.topics) {

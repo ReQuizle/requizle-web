@@ -6,10 +6,42 @@ import {
     groupMediaByFilename,
     replaceMediaByPath,
     isRemoteOrStoredMedia,
-    getFilename
+    getFilename,
+    isSubjectExportV1
 } from './importValidation';
 
 describe('importValidation', () => {
+    describe('isSubjectExportV1', () => {
+        it('accepts export with progress', () => {
+            expect(
+                isSubjectExportV1({
+                    requizleSubjectExport: 1,
+                    subject: {id: 's1', name: 'S', topics: []},
+                    progress: {}
+                })
+            ).toBe(true);
+        });
+
+        it('accepts export without progress (questions-only share)', () => {
+            expect(
+                isSubjectExportV1({
+                    requizleSubjectExport: 1,
+                    subject: {id: 's1', name: 'S', topics: []}
+                })
+            ).toBe(true);
+        });
+
+        it('rejects non-object progress', () => {
+            expect(
+                isSubjectExportV1({
+                    requizleSubjectExport: 1,
+                    subject: {id: 's1', name: 'S', topics: []},
+                    progress: 'nope'
+                })
+            ).toBe(false);
+        });
+    });
+
     describe('isRemoteOrStoredMedia', () => {
         it('should identify HTTP URLs', () => {
             expect(isRemoteOrStoredMedia('http://example.com/image.png')).toBe(true);

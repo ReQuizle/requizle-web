@@ -1,7 +1,7 @@
 import {describe, it, expect, beforeEach, vi} from 'vitest';
 import {useQuizStore, DEFAULT_SETTINGS, DEFAULT_SESSION_STATE} from './useQuizStore';
 import {act} from 'react';
-import type {Subject, Profile, TrueFalseQuestion, MultipleChoiceQuestion, QuestionProgress} from '../types';
+import type {Subject, Profile, TrueFalseQuestion, MultipleChoiceQuestion, QuestionProgress, SubjectExportV1} from '../types';
 
 // Mock persistence to avoid localStorage issues in tests
 type ZustandSet<T> = (partial: T | Partial<T> | ((state: T) => T | Partial<T>), replace?: boolean) => void;
@@ -676,6 +676,88 @@ describe('useQuizStore', () => {
 
             const state = useQuizStore.getState();
             expect(state.profiles['default'].session.currentQuestionId).not.toBeNull();
+        });
+    });
+
+    describe('importSubjectExport', () => {
+        it('merges subject structure and progress slice', () => {
+            const {setSubjects, importSubjectExport} = useQuizStore.getState();
+            act(() => {
+                setSubjects([createTestSubject()]);
+            });
+            const bundle: SubjectExportV1 = {
+                requizleSubjectExport: 1,
+                subject: createTestSubject(),
+                progress: {
+                    t1: {
+                        q1: {id: 'q1', attempts: 3, correctStreak: 2, mastered: true}
+                    }
+                }
+            };
+            act(() => {
+                importSubjectExport(bundle);
+            });
+            const q1 = useQuizStore.getState().profiles['default'].progress.s1?.t1?.q1;
+            expect(q1?.mastered).toBe(true);
+            expect(q1?.attempts).toBe(3);
+        });
+
+        it('does not clear existing progress when bundle omits progress', () => {
+            const {setSubjects, startSession, submitAnswer, importSubjectExport} = useQuizStore.getState();
+            act(() => {
+                setSubjects([createTestSubject()]);
+                startSession('s1');
+                submitAnswer(true);
+            });
+            const before = structuredClone(useQuizStore.getState().profiles['default'].progress);
+            expect(Object.keys(before.s1 || {})).toContain('t1');
+
+            const bundle: SubjectExportV1 = {
+                requizleSubjectExport: 1,
+                subject: createTestSubject()
+            };
+            act(() => {
+                importSubjectExport(bundle);
+            });
+            expect(useQuizStore.getState().profiles['default'].progress).toEqual(before);
+        });
+    });
+
+    describe('resetTopicProgress', () => {
+        beforeEach(() => {
+            const {setSubjects, startSession, submitAnswer} = useQuizStore.getState();
+            act(() => {
+                setSubjects([createTestSubject()]);
+                startSession('s1');
+                submitAnswer(true);
+            });
+        });
+
+        it('removes progress for one topic only', () => {
+            act(() => {
+                useQuizStore.getState().resetTopicProgress('s1', 't1');
+            });
+            const prog = useQuizStore.getState().profiles['default'].progress.s1;
+            expect(prog?.t1).toBeUndefined();
+        });
+    });
+
+    describe('markTopicMastered', () => {
+        beforeEach(() => {
+            const {setSubjects, startSession} = useQuizStore.getState();
+            act(() => {
+                setSubjects([createTestSubject()]);
+                startSession('s1');
+            });
+        });
+
+        it('sets all questions in the topic to mastered', () => {
+            act(() => {
+                useQuizStore.getState().markTopicMastered('s1', 't1');
+            });
+            const t1 = useQuizStore.getState().profiles['default'].progress.s1?.t1;
+            expect(t1?.q1?.mastered).toBe(true);
+            expect(t1?.q2?.mastered).toBe(true);
         });
     });
 
