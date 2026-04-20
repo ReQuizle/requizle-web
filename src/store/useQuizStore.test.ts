@@ -1,7 +1,14 @@
 import {describe, it, expect, beforeEach, vi} from 'vitest';
 import {useQuizStore, DEFAULT_SETTINGS, DEFAULT_SESSION_STATE} from './useQuizStore';
 import {act} from 'react';
-import type {Subject, Profile, TrueFalseQuestion, MultipleChoiceQuestion, QuestionProgress, SubjectExportV1} from '../types';
+import type {
+    Subject,
+    Profile,
+    TrueFalseQuestion,
+    MultipleChoiceQuestion,
+    QuestionProgress,
+    SubjectExportV1
+} from '../types';
 
 // Mock persistence to avoid localStorage issues in tests
 type ZustandSet<T> = (partial: T | Partial<T> | ((state: T) => T | Partial<T>), replace?: boolean) => void;
@@ -142,6 +149,97 @@ describe('useQuizStore', () => {
 
             const state = useQuizStore.getState();
             expect(state.profiles['default'].subjects).toHaveLength(2);
+        });
+    });
+
+    describe('content editing', () => {
+        it('createSubject adds a subject with one empty topic', () => {
+            const {createSubject} = useQuizStore.getState();
+            let id = '';
+            act(() => {
+                id = createSubject('Algebra');
+            });
+            const state = useQuizStore.getState();
+            const s = state.profiles['default'].subjects.find(x => x.id === id);
+            expect(s?.name).toBe('Algebra');
+            expect(s?.topics).toHaveLength(1);
+            expect(s?.topics[0].name).toBe('Topic 1');
+            expect(s?.topics[0].questions).toHaveLength(0);
+        });
+
+        it('renameSubject updates the name', () => {
+            const {setSubjects, renameSubject} = useQuizStore.getState();
+            act(() => {
+                setSubjects([createTestSubject()]);
+            });
+            act(() => {
+                renameSubject('s1', 'Renamed');
+            });
+            expect(useQuizStore.getState().profiles['default'].subjects[0].name).toBe('Renamed');
+        });
+
+        it('addTopic appends a topic and returns its id', () => {
+            const {setSubjects, addTopic} = useQuizStore.getState();
+            act(() => {
+                setSubjects([createTestSubject()]);
+            });
+            let tid = '';
+            act(() => {
+                tid = addTopic('s1', 'Extra');
+            });
+            const subj = useQuizStore.getState().profiles['default'].subjects[0];
+            expect(subj.topics.some(t => t.id === tid && t.name === 'Extra')).toBe(true);
+        });
+
+        it('addQuestion and deleteQuestion update the topic', () => {
+            const {setSubjects, addQuestion, deleteQuestion} = useQuizStore.getState();
+            act(() => {
+                setSubjects([createTestSubject()]);
+            });
+            const q: TrueFalseQuestion = {
+                id: 'new-q',
+                type: 'true_false',
+                topicId: 't1',
+                prompt: 'Test prompt',
+                answer: false
+            };
+            act(() => {
+                addQuestion('s1', 't1', q);
+            });
+            let topic = useQuizStore.getState().profiles['default'].subjects[0].topics[0];
+            expect(topic.questions.some(x => x.id === 'new-q')).toBe(true);
+
+            act(() => {
+                deleteQuestion('s1', 't1', 'new-q');
+            });
+            topic = useQuizStore.getState().profiles['default'].subjects[0].topics[0];
+            expect(topic.questions.some(x => x.id === 'new-q')).toBe(false);
+        });
+
+        it('updateQuestion replaces question data', () => {
+            const {setSubjects, addQuestion, updateQuestion} = useQuizStore.getState();
+            act(() => {
+                setSubjects([createTestSubject()]);
+            });
+            const q: TrueFalseQuestion = {
+                id: 'uq',
+                type: 'true_false',
+                topicId: 't1',
+                prompt: 'Old',
+                answer: true
+            };
+            act(() => {
+                addQuestion('s1', 't1', q);
+            });
+            const updated: TrueFalseQuestion = {...q, prompt: 'New', answer: false};
+            act(() => {
+                updateQuestion('s1', 't1', updated);
+            });
+            const found = useQuizStore.getState().profiles['default'].subjects[0].topics[0].questions.find(
+                x => x.id === 'uq'
+            ) as TrueFalseQuestion | undefined;
+            expect(found?.prompt).toBe('New');
+            expect(found?.answer).toBe(false);
         });
     });
 

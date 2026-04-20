@@ -35,11 +35,7 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
     const [mediaLoading, setMediaLoading] = useState(needsAsyncLoad ?? false);
     const [mediaError, setMediaError] = useState(false);
 
-    // Load media from IndexedDB if needed (with retry logic)
-    // Note: Parent uses key prop to force remount on question change,
-    // so state resets automatically when question changes
     useEffect(() => {
-        // Only need to load if it's an IndexedDB reference
         if (!question.media || !isIndexedDBMedia(question.media)) {
             return;
         }

@@ -1,6 +1,6 @@
 import {create} from 'zustand';
 import {persist, createJSONStorage} from 'zustand/middleware';
-import type {Subject, SessionState, StudyMode, QuestionProgress, Profile, SubjectExportV1} from '../types';
+import type {Subject, SessionState, StudyMode, QuestionProgress, Profile, SubjectExportV1, Question, Topic} from '../types';
 import {validateSubjects} from '../utils/importValidation';
 import {
     generateQueue,
@@ -9,6 +9,7 @@ import {
     randomRequeueInsertIndex,
     normalizeRequeueGapRange
 } from '../utils/quizLogic';
+import {getCanonicalAppLocationHref} from '../utils/appBaseUrl';
 import {indexedDBStorage, clearStoreData, migrateFromLocalStorage} from '../utils/indexedDBStorage';
 import {deleteMedia, isIndexedDBMedia, extractMediaId} from '../utils/mediaStorage';
 import {v4 as uuidv4} from 'uuid';
@@ -55,6 +56,15 @@ interface QuizState {
     importSubjectExport: (bundle: SubjectExportV1) => void;
     resetTopicProgress: (subjectId: string, topicId: string) => void;
     markTopicMastered: (subjectId: string, topicId: string) => void;
+
+    createSubject: (name: string) => string;
+    renameSubject: (subjectId: string, name: string) => void;
+    addTopic: (subjectId: string, name: string) => string;
+    renameTopic: (subjectId: string, topicId: string, name: string) => void;
+    deleteTopic: (subjectId: string, topicId: string) => void;
+    addQuestion: (subjectId: string, topicId: string, question: Question) => void;
+    updateQuestion: (subjectId: string, topicId: string, question: Question) => void;
+    deleteQuestion: (subjectId: string, topicId: string, questionId: string) => void;
 
     // Profile Actions
     createProfile: (name: string) => void;
@@ -169,6 +179,22 @@ function rebuildSessionForSubjectIfActive(
         queue: queue.slice(1),
         currentQuestionId: queue[0] || null
     };
+}
+
+function extractMediaIdsFromQuestion(question: Question): Set<string> {
+    const mediaIds = new Set<string>();
+    if (question.media && isIndexedDBMedia(question.media)) {
+        mediaIds.add(extractMediaId(question.media));
+    }
+    return mediaIds;
+}
+
+function extractMediaIdsFromTopic(topic: Topic): Set<string> {
+    const mediaIds = new Set<string>();
+    for (const q of topic.questions) {
+        extractMediaIdsFromQuestion(q).forEach(id => mediaIds.add(id));
+    }
+    return mediaIds;
 }
 
 // Extract all IndexedDB media IDs from a subject
@@ -415,6 +441,341 @@ export const useQuizStore = create<QuizState>()(
                     const stillInUse = extractAllMediaIds(updatedState.profiles);
 
                     // Delete media that's no longer used anywhere
+                    for (const mediaId of mediaToCheck) {
+                        if (!stillInUse.has(mediaId)) {
+                            deleteMedia(mediaId).catch(err => {
+                                console.error(`Failed to delete orphaned media ${mediaId}:`, err);
+                            });
+                        }
+                    }
+                }
+            },
+
+            createSubject: (name) => {
+                const subjectId = uuidv4();
+                const topicId = uuidv4();
+                const trimmed = name.trim();
+                const subject: Subject = {
+                    id: subjectId,
+                    name: trimmed || 'New subject',
+                    topics: [{id: topicId, name: 'Topic 1', questions: []}]
+                };
+                set((state) => {
+                    const profile = getCurrentProfile(state);
+                    return {
+                        profiles: {
+                            ...state.profiles,
+                            [state.activeProfileId]: {
+                                ...profile,
+                                subjects: [...profile.subjects, subject]
+                            }
+                        }
+                    };
+                });
+                return subjectId;
+            },
+
+            renameSubject: (subjectId, name) => {
+                const trimmed = name.trim();
+                if (!trimmed) return;
+                set((state) => {
+                    const profile = getCurrentProfile(state);
+                    const subjects = profile.subjects.map(s =>
+                        s.id === subjectId ? {...s, name: trimmed} : s
+                    );
+                    const newSession = rebuildSessionForSubjectIfActive(
+                        profile,
+                        subjectId,
+                        subjects,
+                        profile.progress[subjectId]
+                    );
+                    return {
+                        profiles: {
+                            ...state.profiles,
+                            [state.activeProfileId]: {
+                                ...profile,
+                                subjects,
+                                session: newSession
+                            }
+                        }
+                    };
+                });
+            },
+
+            addTopic: (subjectId, name) => {
+                const topicId = uuidv4();
+                const trimmed = name.trim() || 'New topic';
+                set((state) => {
+                    const profile = getCurrentProfile(state);
+                    const subjects = profile.subjects.map(s => {
+                        if (s.id !== subjectId) return s;
+                        return {...s, topics: [...s.topics, {id: topicId, name: trimmed, questions: []}]};
+                    });
+                    const newSession = rebuildSessionForSubjectIfActive(
+                        profile,
+                        subjectId,
+                        subjects,
+                        profile.progress[subjectId]
+                    );
+                    return {
+                        profiles: {
+                            ...state.profiles,
+                            [state.activeProfileId]: {
+                                ...profile,
+                                subjects,
+                                session: newSession
+                            }
+                        }
+                    };
+                });
+                return topicId;
+            },
+
+            renameTopic: (subjectId, topicId, name) => {
+                const trimmed = name.trim();
+                if (!trimmed) return;
+                set((state) => {
+                    const profile = getCurrentProfile(state);
+                    const subjects = profile.subjects.map(s => {
+                        if (s.id !== subjectId) return s;
+                        return {
+                            ...s,
+                            topics: s.topics.map(t => (t.id === topicId ? {...t, name: trimmed} : t))
+                        };
+                    });
+                    const newSession = rebuildSessionForSubjectIfActive(
+                        profile,
+                        subjectId,
+                        subjects,
+                        profile.progress[subjectId]
+                    );
+                    return {
+                        profiles: {
+                            ...state.profiles,
+                            [state.activeProfileId]: {
+                                ...profile,
+                                subjects,
+                                session: newSession
+                            }
+                        }
+                    };
+                });
+            },
+
+            deleteTopic: (subjectId, topicId) => {
+                const stateBefore = get();
+                const profileBefore = getCurrentProfile(stateBefore);
+                const subjectBefore = profileBefore.subjects.find(s => s.id === subjectId);
+                const topicBefore = subjectBefore?.topics.find(t => t.id === topicId);
+                const mediaToCheck = topicBefore ? extractMediaIdsFromTopic(topicBefore) : new Set<string>();
+
+                set((state) => {
+                    const profile = getCurrentProfile(state);
+                    const subject = profile.subjects.find(s => s.id === subjectId);
+                    if (!subject) return state;
+
+                    const newTopics = subject.topics.filter(t => t.id !== topicId);
+                    const subjects = profile.subjects.map(s =>
+                        s.id === subjectId ? {...s, topics: newTopics} : s
+                    );
+
+                    const subjSlice = {...(profile.progress[subjectId] || {})};
+                    delete subjSlice[topicId];
+                    const newProgress = {...profile.progress};
+                    if (Object.keys(subjSlice).length === 0) {
+                        delete newProgress[subjectId];
+                    } else {
+                        newProgress[subjectId] = subjSlice;
+                    }
+
+                    const selectedTopicIds = profile.session.selectedTopicIds.filter(id => id !== topicId);
+                    const sessionBase = {...profile.session, selectedTopicIds};
+                    const profileWithSession = {...profile, session: sessionBase};
+                    const sliceForSession = newProgress[subjectId];
+                    const newSession = rebuildSessionForSubjectIfActive(
+                        profileWithSession,
+                        subjectId,
+                        subjects,
+                        sliceForSession
+                    );
+
+                    return {
+                        profiles: {
+                            ...state.profiles,
+                            [state.activeProfileId]: {
+                                ...profile,
+                                subjects,
+                                progress: newProgress,
+                                session: newSession
+                            }
+                        }
+                    };
+                });
+
+                if (mediaToCheck.size > 0) {
+                    const updatedState = get();
+                    const stillInUse = extractAllMediaIds(updatedState.profiles);
+                    for (const mediaId of mediaToCheck) {
+                        if (!stillInUse.has(mediaId)) {
+                            deleteMedia(mediaId).catch(err => {
+                                console.error(`Failed to delete orphaned media ${mediaId}:`, err);
+                            });
+                        }
+                    }
+                }
+            },
+
+            addQuestion: (subjectId, topicId, question) => {
+                set((state) => {
+                    const profile = getCurrentProfile(state);
+                    const subjects = profile.subjects.map(s => {
+                        if (s.id !== subjectId) return s;
+                        return {
+                            ...s,
+                            topics: s.topics.map(t =>
+                                t.id === topicId ? {...t, questions: [...t.questions, question]} : t
+                            )
+                        };
+                    });
+                    const newSession = rebuildSessionForSubjectIfActive(
+                        profile,
+                        subjectId,
+                        subjects,
+                        profile.progress[subjectId]
+                    );
+                    return {
+                        profiles: {
+                            ...state.profiles,
+                            [state.activeProfileId]: {
+                                ...profile,
+                                subjects,
+                                session: newSession
+                            }
+                        }
+                    };
+                });
+            },
+
+            updateQuestion: (subjectId, topicId, question) => {
+                const stateBefore = get();
+                const profileBefore = getCurrentProfile(stateBefore);
+                const topicBefore = profileBefore.subjects
+                    .find(s => s.id === subjectId)
+                    ?.topics.find(t => t.id === topicId);
+                const oldQ = topicBefore?.questions.find(q => q.id === question.id);
+                const mediaToCheck = new Set<string>();
+                if (oldQ) {
+                    extractMediaIdsFromQuestion(oldQ).forEach(id => mediaToCheck.add(id));
+                }
+
+                set((state) => {
+                    const profile = getCurrentProfile(state);
+                    const subjects = profile.subjects.map(s => {
+                        if (s.id !== subjectId) return s;
+                        return {
+                            ...s,
+                            topics: s.topics.map(t => {
+                                if (t.id !== topicId) return t;
+                                return {
+                                    ...t,
+                                    questions: t.questions.map(q => (q.id === question.id ? question : q))
+                                };
+                            })
+                        };
+                    });
+                    const newSession = rebuildSessionForSubjectIfActive(
+                        profile,
+                        subjectId,
+                        subjects,
+                        profile.progress[subjectId]
+                    );
+                    return {
+                        profiles: {
+                            ...state.profiles,
+                            [state.activeProfileId]: {
+                                ...profile,
+                                subjects,
+                                session: newSession
+                            }
+                        }
+                    };
+                });
+
+                if (mediaToCheck.size > 0) {
+                    const updatedState = get();
+                    const stillInUse = extractAllMediaIds(updatedState.profiles);
+                    for (const mediaId of mediaToCheck) {
+                        if (!stillInUse.has(mediaId)) {
+                            deleteMedia(mediaId).catch(err => {
+                                console.error(`Failed to delete orphaned media ${mediaId}:`, err);
+                            });
+                        }
+                    }
+                }
+            },
+
+            deleteQuestion: (subjectId, topicId, questionId) => {
+                const stateBefore = get();
+                const profileBefore = getCurrentProfile(stateBefore);
+                const qBefore = profileBefore.subjects
+                    .find(s => s.id === subjectId)
+                    ?.topics.find(t => t.id === topicId)
+                    ?.questions.find(q => q.id === questionId);
+                const mediaToCheck = qBefore ? extractMediaIdsFromQuestion(qBefore) : new Set<string>();
+
+                set((state) => {
+                    const profile = getCurrentProfile(state);
+                    const subjects = profile.subjects.map(s => {
+                        if (s.id !== subjectId) return s;
+                        return {
+                            ...s,
+                            topics: s.topics.map(t => {
+                                if (t.id !== topicId) return t;
+                                return {...t, questions: t.questions.filter(q => q.id !== questionId)};
+                            })
+                        };
+                    });
+
+                    const subjSlice = {...(profile.progress[subjectId] || {})};
+                    const topicSlice = {...(subjSlice[topicId] || {})};
+                    delete topicSlice[questionId];
+                    const newSubjSlice = {...subjSlice};
+                    if (Object.keys(topicSlice).length === 0) {
+                        delete newSubjSlice[topicId];
+                    } else {
+                        newSubjSlice[topicId] = topicSlice;
+                    }
+                    const newProgress = {...profile.progress};
+                    if (Object.keys(newSubjSlice).length === 0) {
+                        delete newProgress[subjectId];
+                    } else {
+                        newProgress[subjectId] = newSubjSlice;
+                    }
+
+                    const sliceForSession = newProgress[subjectId];
+                    const newSession = rebuildSessionForSubjectIfActive(
+                        profile,
+                        subjectId,
+                        subjects,
+                        sliceForSession
+                    );
+
+                    return {
+                        profiles: {
+                            ...state.profiles,
+                            [state.activeProfileId]: {
+                                ...profile,
+                                subjects,
+                                progress: newProgress,
+                                session: newSession
+                            }
+                        }
+                    };
+                });
+
+                if (mediaToCheck.size > 0) {
+                    const updatedState = get();
+                    const stillInUse = extractAllMediaIds(updatedState.profiles);
                     for (const mediaId of mediaToCheck) {
                         if (!stillInUse.has(mediaId)) {
                             deleteMedia(mediaId).catch(err => {
@@ -1046,7 +1407,7 @@ export const useQuizStore = create<QuizState>()(
                 // Also clear localStorage (for legacy data and theme)
                 localStorage.removeItem('quiz-storage');
                 localStorage.removeItem('theme');
-                window.location.reload();
+                window.location.href = getCanonicalAppLocationHref();
             },
 
             setConfirmSubjectDelete: (confirm) => set((state) => ({

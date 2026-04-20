@@ -45,6 +45,7 @@ import {
     ListOrdered
 } from 'lucide-react';
 import {ThemeToggle} from './ThemeToggle';
+import {MessageModal, SimpleConfirmModal, TextPromptModal, TypeToConfirmModal} from './AppModals';
 import {clsx} from 'clsx';
 
 type SettingsSectionId = 'profiles' | 'appearance' | 'behavior' | 'data' | 'links';
@@ -87,9 +88,10 @@ export const RightSidebar: React.FC = () => {
     const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
     const [editingName, setEditingName] = useState('');
     const [deleteProfileConfirm, setDeleteProfileConfirm] = useState<{id: string; name: string} | null>(null);
-    const [deleteProfileInput, setDeleteProfileInput] = useState('');
+    const [lastProfileDeleteId, setLastProfileDeleteId] = useState<string | null>(null);
     const [factoryResetConfirm, setFactoryResetConfirm] = useState(false);
-    const [factoryResetInput, setFactoryResetInput] = useState('');
+    const [importSuccessMessage, setImportSuccessMessage] = useState<string | null>(null);
+    const [newProfileModalOpen, setNewProfileModalOpen] = useState(false);
     const [clearingCache, setClearingCache] = useState(false);
     const [cacheClearResult, setCacheClearResult] = useState<{removed: number; message: string} | null>(null);
     const [importDndActive, setImportDndActive] = useState(false);
@@ -213,10 +215,6 @@ export const RightSidebar: React.FC = () => {
         const localRefs = getLocalMediaRefs(allRefs);
 
         if (localRefs.length > 0) {
-            // Check for potential media conflicts
-            // Note: 'idb:' references are already filtered out by getLocalMediaRefs
-
-            // Group by filename and detect conflicts
             const mediaGroups = groupMediaByFilename(localRefs);
             setPendingImport({
                 data: parsed,
@@ -435,7 +433,7 @@ export const RightSidebar: React.FC = () => {
             setPendingImport(null);
             setJsonInput('');
             setImportError(null);
-            alert(result.message);
+            setImportSuccessMessage(result.message);
         } catch (e) {
             const errorMessage = e instanceof Error ? e.message : 'Unknown error';
             setPendingImport({
@@ -465,7 +463,7 @@ export const RightSidebar: React.FC = () => {
 
                 setJsonInput('');
                 setImportError(null);
-                alert(result.message);
+                setImportSuccessMessage(result.message);
             }).catch(e => {
                 setImportError(`Import failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
             });
@@ -489,7 +487,7 @@ export const RightSidebar: React.FC = () => {
 
                     setJsonInput('');
                     setImportError(null);
-                    alert(result.message);
+                    setImportSuccessMessage(result.message);
                 }).catch(e => {
                     setImportError(`Import failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
                 });
@@ -551,28 +549,37 @@ export const RightSidebar: React.FC = () => {
             {/* Tabs */}
             <div className="flex p-1 bg-slate-100 dark:bg-slate-800/50 rounded-lg">
                 <button
+                    type="button"
                     onClick={() => setActiveTab('mastery')}
                     className={clsx(
-                        "flex-1 py-1.5 text-sm font-medium rounded-md transition-all",
-                        activeTab === 'mastery' ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                        'flex-1 py-1.5 text-sm font-medium rounded-md transition-all',
+                        activeTab === 'mastery'
+                            ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm'
+                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                     )}
                 >
                     Mastery
                 </button>
                 <button
+                    type="button"
                     onClick={() => setActiveTab('import')}
                     className={clsx(
-                        "flex-1 py-1.5 text-sm font-medium rounded-md transition-all",
-                        activeTab === 'import' ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                        'flex-1 py-1.5 text-sm font-medium rounded-md transition-all',
+                        activeTab === 'import'
+                            ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm'
+                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                     )}
                 >
                     Import
                 </button>
                 <button
+                    type="button"
                     onClick={() => setActiveTab('settings')}
                     className={clsx(
-                        "flex-1 py-1.5 text-sm font-medium rounded-md transition-all",
-                        activeTab === 'settings' ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                        'flex-1 py-1.5 text-sm font-medium rounded-md transition-all',
+                        activeTab === 'settings'
+                            ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm'
+                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                     )}
                 >
                     Settings
@@ -913,16 +920,10 @@ export const RightSidebar: React.FC = () => {
                                                         const isLastProfile = Object.keys(profiles).length === 1;
 
                                                         if (settings.confirmProfileDelete) {
-                                                            // Confirmation enabled: use type-to-confirm modal
                                                             setDeleteProfileConfirm({id: profile.id, name: profile.name});
-                                                            setDeleteProfileInput('');
                                                         } else if (isLastProfile) {
-                                                            // Last profile with confirmation disabled: use browser confirm
-                                                            if (confirm("This is the last profile. Deleting it will reset the app to default state. Are you sure?")) {
-                                                                deleteProfile(profile.id);
-                                                            }
+                                                            setLastProfileDeleteId(profile.id);
                                                         } else {
-                                                            // Normal profile with confirmation disabled: delete immediately
                                                             deleteProfile(profile.id);
                                                         }
                                                     }}
@@ -952,10 +953,8 @@ export const RightSidebar: React.FC = () => {
 
                         <div className="grid grid-cols-2 gap-2 mt-2">
                             <button
-                                onClick={() => {
-                                    const name = prompt("Enter profile name:");
-                                    if (name) createProfile(name);
-                                }}
+                                type="button"
+                                onClick={() => setNewProfileModalOpen(true)}
                                 className="flex items-center justify-center gap-2 p-2 border border-dashed border-slate-300 dark:border-slate-600 rounded-lg text-slate-500 dark:text-slate-400 hover:border-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/10 transition-all text-xs font-medium"
                             >
                                 <Plus size={14} />
@@ -1279,10 +1278,8 @@ export const RightSidebar: React.FC = () => {
                         )}
 
                         <button
-                            onClick={() => {
-                                setFactoryResetConfirm(true);
-                                setFactoryResetInput('');
-                            }}
+                            type="button"
+                            onClick={() => setFactoryResetConfirm(true)}
                             className="w-full flex items-center justify-center gap-2 p-3 text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors text-sm font-medium"
                         >
                             <AlertCircle size={16} />
@@ -1359,152 +1356,115 @@ export const RightSidebar: React.FC = () => {
                 </div>
             )}
 
-            {resetSubjectDataConfirm && createPortal(
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[110] p-4">
-                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Reset subject progress?</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                            All mastery and attempts for <strong className="text-slate-900 dark:text-white">{resetSubjectDataConfirm.name}</strong> will be cleared. This cannot be undone.
-                        </p>
-                        <div className="flex gap-3 pt-2">
-                            <button
-                                type="button"
-                                onClick={() => setResetSubjectDataConfirm(null)}
-                                className="flex-1 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    resetSubjectProgress(resetSubjectDataConfirm.id);
-                                    setResetSubjectDataConfirm(null);
-                                }}
-                                className="flex-1 px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors bg-amber-600 hover:bg-amber-700 dark:bg-amber-600 dark:hover:bg-amber-500"
-                            >
-                                Reset progress
-                            </button>
-                        </div>
-                    </div>
-                </div>,
-                document.body
-            )}
+            <SimpleConfirmModal
+                open={!!resetSubjectDataConfirm}
+                title="Reset subject progress?"
+                confirmLabel="Reset progress"
+                confirmClassName="flex-1 px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors bg-amber-600 hover:bg-amber-700 dark:bg-amber-600 dark:hover:bg-amber-500"
+                onClose={() => setResetSubjectDataConfirm(null)}
+                onConfirm={() => {
+                    if (resetSubjectDataConfirm) {
+                        resetSubjectProgress(resetSubjectDataConfirm.id);
+                    }
+                    setResetSubjectDataConfirm(null);
+                }}
+            >
+                <p>
+                    All mastery and attempts for{' '}
+                    <strong className="text-slate-900 dark:text-white">{resetSubjectDataConfirm?.name}</strong> will be
+                    cleared. This cannot be undone.
+                </p>
+            </SimpleConfirmModal>
 
-            {/* Delete Profile Confirmation Modal */}
-            {deleteProfileConfirm && createPortal(
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Delete Profile</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                            This will permanently delete <strong className="text-slate-900 dark:text-white">{deleteProfileConfirm.name}</strong> and all its subjects, progress, and settings.
-                            {Object.keys(profiles).length === 1 && (
-                                <span className="block mt-2 text-amber-600 dark:text-amber-400">
-                                    This is your last profile. Deleting it will reset the app to default state.
-                                </span>
-                            )}
+            <TypeToConfirmModal
+                open={!!deleteProfileConfirm}
+                title="Delete Profile"
+                description={
+                    <>
+                        <p>
+                            This will permanently delete{' '}
+                            <strong className="text-slate-900 dark:text-white">{deleteProfileConfirm?.name}</strong>{' '}
+                            and all its subjects, progress, and settings.
                         </p>
-                        <div className="space-y-2">
-                            <label className="text-sm text-slate-600 dark:text-slate-400">
-                                Type <strong className="text-red-600 dark:text-red-400">{deleteProfileConfirm.name}</strong> to confirm:
-                            </label>
-                            <input
-                                type="text"
-                                value={deleteProfileInput}
-                                onChange={(e) => setDeleteProfileInput(e.target.value)}
-                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none"
-                                placeholder="Type profile name..."
-                                autoFocus
-                            />
-                        </div>
-                        <div className="flex gap-3 pt-2">
-                            <button
-                                onClick={() => {
-                                    setDeleteProfileConfirm(null);
-                                    setDeleteProfileInput('');
-                                }}
-                                className="flex-1 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={() => {
-                                    if (deleteProfileInput === deleteProfileConfirm.name) {
-                                        deleteProfile(deleteProfileConfirm.id);
-                                        setDeleteProfileConfirm(null);
-                                        setDeleteProfileInput('');
-                                    }
-                                }}
-                                disabled={deleteProfileInput !== deleteProfileConfirm.name}
-                                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:bg-red-300 dark:disabled:bg-red-900 disabled:cursor-not-allowed rounded-lg transition-colors"
-                            >
-                                Delete
-                            </button>
-                        </div>
-                    </div>
-                </div>,
-                document.body
-            )}
+                        {Object.keys(profiles).length === 1 && (
+                            <p className="block mt-2 text-amber-600 dark:text-amber-400">
+                                This is your last profile. Deleting it will reset the app to default state.
+                            </p>
+                        )}
+                    </>
+                }
+                phraseToMatch={deleteProfileConfirm?.name ?? ''}
+                inputPlaceholder="Type profile name..."
+                onClose={() => setDeleteProfileConfirm(null)}
+                onConfirm={() => {
+                    if (deleteProfileConfirm) deleteProfile(deleteProfileConfirm.id);
+                    setDeleteProfileConfirm(null);
+                }}
+            />
 
-            {/* Factory Reset Confirmation Modal */}
-            {factoryResetConfirm && createPortal(
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
-                        <h3 className="text-lg font-bold text-red-600 dark:text-red-400">⚠️ Factory Reset</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                            This will <strong className="text-red-600 dark:text-red-400">permanently delete ALL data</strong> including:
+            <TypeToConfirmModal
+                open={factoryResetConfirm}
+                title="Factory reset"
+                description={
+                    <>
+                        <p>
+                            This will{' '}
+                            <strong className="text-red-600 dark:text-red-400">permanently delete ALL data</strong>{' '}
+                            including:
                         </p>
-                        <ul className="text-sm text-slate-600 dark:text-slate-400 list-disc pl-5 space-y-1">
+                        <ul className="list-disc pl-5 space-y-1 mt-2">
                             <li>All profiles</li>
                             <li>All subjects and questions</li>
                             <li>All progress and mastery data</li>
                             <li>All settings</li>
                         </ul>
-                        <p className="text-sm text-red-600 dark:text-red-400 font-medium">
-                            This action cannot be undone!
-                        </p>
-                        <div className="space-y-2">
-                            <label className="text-sm text-slate-600 dark:text-slate-400">
-                                Type <strong className="text-red-600 dark:text-red-400">RESET</strong> to confirm:
-                            </label>
-                            <input
-                                type="text"
-                                value={factoryResetInput}
-                                onChange={(e) => setFactoryResetInput(e.target.value)}
-                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none"
-                                placeholder="Type RESET..."
-                                autoFocus
-                            />
-                        </div>
-                        <div className="flex gap-3 pt-2">
-                            <button
-                                onClick={() => {
-                                    setFactoryResetConfirm(false);
-                                    setFactoryResetInput('');
-                                }}
-                                className="flex-1 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={async () => {
-                                    if (factoryResetInput === 'RESET') {
-                                        // Clear IndexedDB media storage
-                                        await clearAllMedia();
-                                        resetAllData();
-                                        setFactoryResetConfirm(false);
-                                        setFactoryResetInput('');
-                                    }
-                                }}
-                                disabled={factoryResetInput !== 'RESET'}
-                                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:bg-red-300 dark:disabled:bg-red-900 disabled:cursor-not-allowed rounded-lg transition-colors"
-                            >
-                                Wipe All Data
-                            </button>
-                        </div>
-                    </div>
-                </div>,
-                document.body
-            )}
+                        <p className="text-red-600 dark:text-red-400 font-medium mt-2">This action cannot be undone.</p>
+                    </>
+                }
+                phraseToMatch="RESET"
+                inputPlaceholder="Type RESET..."
+                confirmLabel="Wipe all data"
+                onClose={() => setFactoryResetConfirm(false)}
+                onConfirm={() => {
+                    setFactoryResetConfirm(false);
+                    void (async () => {
+                        await clearAllMedia();
+                        resetAllData();
+                    })();
+                }}
+            />
+
+            <SimpleConfirmModal
+                open={!!lastProfileDeleteId}
+                title="Delete last profile?"
+                confirmLabel="Delete profile"
+                onClose={() => setLastProfileDeleteId(null)}
+                onConfirm={() => {
+                    if (lastProfileDeleteId) deleteProfile(lastProfileDeleteId);
+                    setLastProfileDeleteId(null);
+                }}
+            >
+                <p>
+                    This is your last profile. Deleting it will reset the app to default state. This cannot be undone.
+                </p>
+            </SimpleConfirmModal>
+
+            <MessageModal
+                open={!!importSuccessMessage}
+                title="Import"
+                message={importSuccessMessage ?? ''}
+                onClose={() => setImportSuccessMessage(null)}
+            />
+
+            <TextPromptModal
+                open={newProfileModalOpen}
+                title="New profile"
+                label="Profile name"
+                placeholder="My profile"
+                confirmLabel="Create"
+                onClose={() => setNewProfileModalOpen(false)}
+                onConfirm={name => createProfile(name)}
+            />
 
             {/* Image Upload Modal for Pending Import */}
             {pendingImport && createPortal(

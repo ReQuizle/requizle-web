@@ -13,13 +13,8 @@
  * GNU Affero General Public License for more details.
  */
 
-import {useEffect} from 'react';
-import {Layout} from './components/Layout';
-import {LeftSidebar} from './components/LeftSidebar';
-import {RightSidebar} from './components/RightSidebar';
-import {CenterArea} from './components/CenterArea';
-import {useQuizStore} from './store/useQuizStore';
 import {ThemeProvider} from './context/ThemeContext';
+import {AppRoutes} from './router';
 import type {Subject} from './types';
 
 // Sample data for initial load if empty
@@ -295,35 +290,9 @@ const SAMPLE_SUBJECTS: Subject[] = [
 ];
 
 function App() {
-  const {profiles, activeProfileId, setSubjects} = useQuizStore();
-  const subjects = profiles[activeProfileId]?.subjects || [];
-
-  useEffect(() => {
-    // Load sample data if no subjects exist (first run)
-    if (subjects.length === 0) {
-      // Convert relative media paths to absolute URLs for portability
-      const baseUrl = window.location.origin + import.meta.env.BASE_URL;
-      const subjectsWithAbsoluteMedia = SAMPLE_SUBJECTS.map(subject => ({
-        ...subject,
-        topics: subject.topics.map(topic => ({
-          ...topic,
-          questions: topic.questions.map(question => ({
-            ...question,
-            media: question.media ? baseUrl + question.media : undefined
-          }))
-        }))
-      }));
-      setSubjects(subjectsWithAbsoluteMedia);
-    }
-  }, [subjects.length, setSubjects]);
-
   return (
     <ThemeProvider>
-      <Layout
-        leftSidebar={<LeftSidebar />}
-        center={<CenterArea />}
-        rightSidebar={<RightSidebar />}
-      />
+      <AppRoutes sampleSubjects={SAMPLE_SUBJECTS} />
     </ThemeProvider>
   );
 }

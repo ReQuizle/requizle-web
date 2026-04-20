@@ -57,7 +57,7 @@ export const generateQueue = (
     return queue.map(q => q.id);
 };
 
-/** Clamp and order requeue gap bounds for “N positions ahead” in the queue (0 = front). */
+/** Clamp and order requeue gap bounds for "N positions ahead" in the queue (0 = front). */
 export const normalizeRequeueGapRange = (minGap: number, maxGap: number): {min: number; max: number} => {
     let min = Number.isFinite(minGap) ? Math.round(minGap) : 4;
     let max = Number.isFinite(maxGap) ? Math.round(maxGap) : 6;

@@ -22,6 +22,7 @@ ReQuizle is a modern web application designed to help users study efficiently th
 - **Media Support**: Add images or videos to questions via URL, base64, or local file upload.
 - **Data Persistence**: Progress automatically saved to IndexedDB for large datasets.
 - **Custom Content Import**: Import your own subjects and questions via JSON with automatic type detection.
+- **In-App Content Editor**: Create, rename, and delete subjects, topics, and questions (including media uploads) from a dedicated editor page.
 - **Profile Management**: Create, rename, and manage multiple study profiles.
 - **Dark Mode**: Built-in theme toggle for comfortable studying.
 - **Responsive Design**: Works seamlessly on desktop and mobile devices.
@@ -56,6 +57,12 @@ npm install
 ```bash
 npm run dev
 ```
+
+The project uses a **`/requizle-web/`** [Vite `base`](https://vitejs.dev/config/shared-options.html#base) so production matches GitHub Pages. In development, open:
+
+**http://localhost:5173/requizle-web/**
+
+(use the trailing slash, or accept the dev-server redirect from `/requizle-web`). The study UI is at that URL; the **content editor** is at **http://localhost:5173/requizle-web/edit** (or use **Edit content** in the left sidebar).
 
 1. **Select a Subject**:
    - Choose a subject from the left sidebar
@@ -113,21 +120,23 @@ The build files will be created in the `dist` directory.
 ## Project Structure
 
 ```
-requizle/
+requizle-web/
 ├── src/
-│   ├── components/       # React components
-│   │   └── inputs/       # Question type input components
-│   ├── context/          # React context providers
-│   ├── store/            # Zustand state management
-│   ├── test/             # Test setup
-│   ├── utils/            # Utility functions
-│   ├── App.tsx           # Main application component
-│   ├── main.tsx          # Application entry point
-│   ├── types.ts          # TypeScript type definitions
+│   ├── components/       # React components (Layout, sidebars, QuestionCard, AppModals, ...)
+│   │   └── inputs/       # Question-type inputs used during study
+│   ├── context/          # React context (e.g. theme)
+│   ├── pages/            # Full-page routes (e.g. EditorPage)
+│   ├── store/            # Zustand store (useQuizStore)
+│   ├── test/             # Vitest setup
+│   ├── utils/            # quizLogic, importValidation, mediaStorage, appBaseUrl, contentEditor, ...
+│   ├── App.tsx           # Root component (theme + routes)
+│   ├── main.tsx          # Entry (URL normalization, then React mount)
+│   ├── router.tsx        # React Router: study layout vs. /edit
+│   ├── types.ts          # Shared TypeScript types
 │   └── index.css         # Global styles
-├── public/               # Static assets
-├── .github/workflows/    # CI/CD configuration
-└── dist/                 # Production build output
+├── public/               # Static assets: icon.svg, PWA icon-192.png / icon-512.png, sample media
+├── .github/workflows/    # CI: lint, test:coverage, build
+└── dist/                 # Production build output (generated)
 ```
 
 ## Contributing
@@ -141,10 +150,16 @@ requizle/
 ## Credits
 
 - [React](https://react.dev/) - UI framework
+- [React Router](https://reactrouter.com/) - Client-side routing
 - [Zustand](https://github.com/pmndrs/zustand) - State management
 - [Framer Motion](https://www.framer.com/motion/) - Animations
-- [TailwindCSS](https://tailwindcss.com/) - Styling
+- [Tailwind CSS](https://tailwindcss.com/) - Styling
 - [Lucide](https://lucide.dev/) - Icons
+- [KaTeX](https://katex.org/) and [react-katex](https://github.com/MichaelDeBoey/react-katex) - Math rendering
+- [react-syntax-highlighter](https://github.com/react-syntax-highlighter/react-syntax-highlighter) - Code block highlighting
+- [canvas-confetti](https://www.npmjs.com/package/canvas-confetti) - Celebration effects
+- [Vite](https://vitejs.dev/) - Build tool and dev server
+- [vite-plugin-pwa](https://vite-pwa-org.netlify.app/) - Progressive Web App / offline support
 
 ## License
 

@@ -1,12 +1,14 @@
-import React from 'react';
+import React, {useState} from 'react';
 import {useQuizStore, DEFAULT_SESSION_STATE} from '../store/useQuizStore';
 import {QuestionCard} from './QuestionCard';
 import {ErrorBoundary} from './ErrorBoundary';
+import {SimpleConfirmModal} from './AppModals';
 import {Shuffle, ListOrdered, RotateCcw, CheckCircle2} from 'lucide-react';
 
 
 export const CenterArea: React.FC = () => {
-    const {profiles, activeProfileId, setMode, restartQueue} = useQuizStore();
+    const {profiles, activeProfileId, setMode, restartQueue, setIncludeMastered} = useQuizStore();
+    const [reviewMasteredOpen, setReviewMasteredOpen] = useState(false);
     const activeProfile = profiles[activeProfileId];
     const subjects = activeProfile?.subjects ?? [];
     const session = activeProfile?.session ?? DEFAULT_SESSION_STATE;
@@ -53,14 +55,8 @@ export const CenterArea: React.FC = () => {
                 </p>
                 <button
                     onClick={() => {
-                        // If we are here, it means the queue is empty.
-                        // If includeMastered is false, we need to enable it to restart.
                         if (!session.includeMastered) {
-                            if (confirm("All questions are mastered. Do you want to review them anyway?")) {
-                                useQuizStore.getState().setIncludeMastered(true);
-                                // We need to wait for state update or just force restart in next tick
-                                setTimeout(() => restartQueue(), 0);
-                            }
+                            setReviewMasteredOpen(true);
                         } else {
                             restartQueue();
                         }
@@ -70,6 +66,23 @@ export const CenterArea: React.FC = () => {
                     <RotateCcw size={18} />
                     Start Over
                 </button>
+                <SimpleConfirmModal
+                    open={reviewMasteredOpen}
+                    title="Review mastered questions?"
+                    confirmLabel="Include mastered"
+                    confirmClassName="flex-1 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors"
+                    onClose={() => setReviewMasteredOpen(false)}
+                    onConfirm={() => {
+                        setIncludeMastered(true);
+                        setReviewMasteredOpen(false);
+                        setTimeout(() => restartQueue(), 0);
+                    }}
+                >
+                    <p>
+                        All questions in your selection are mastered. Include mastered questions so you can review them
+                        again?
+                    </p>
+                </SimpleConfirmModal>
             </div>
         );
     }

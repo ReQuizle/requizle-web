@@ -1,10 +1,12 @@
 import React, {useState, useEffect, useCallback, useRef} from 'react';
+import {Link} from 'react-router-dom';
 import {createPortal} from 'react-dom';
 import {useQuizStore, DEFAULT_SESSION_STATE} from '../store/useQuizStore';
 import {calculateMastery} from '../utils/quizLogic';
-import {CheckCircle2, Circle, Trash2, Download, RotateCcw, CheckCheck, X} from 'lucide-react';
+import {CheckCircle2, Circle, Trash2, Download, RotateCcw, CheckCheck, X, SquarePen} from 'lucide-react';
 import {clsx} from 'clsx';
 import {Logo} from './Logo';
+import {SimpleConfirmModal, TypeToConfirmModal} from './AppModals';
 import type {Subject, Topic, SubjectExportV1, QuestionProgress} from '../types';
 import {getMedia, isIndexedDBMedia, extractMediaId} from '../utils/mediaStorage';
 
@@ -85,7 +87,6 @@ export const LeftSidebar: React.FC = () => {
         markTopicMastered
     } = useQuizStore();
     const [deleteConfirm, setDeleteConfirm] = useState<{id: string; name: string} | null>(null);
-    const [deleteInput, setDeleteInput] = useState('');
     const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
     const [simpleConfirm, setSimpleConfirm] = useState<SimpleConfirmState>(null);
     const [exportError, setExportError] = useState<string | null>(null);
@@ -245,6 +246,13 @@ export const LeftSidebar: React.FC = () => {
                     ReQuizle
                 </h1>
                 <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Master your subjects</p>
+                <Link
+                    to="/edit"
+                    className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 transition-colors"
+                >
+                    <SquarePen size={16} aria-hidden />
+                    Edit content
+                </Link>
             </div>
 
             {exportError && (
@@ -320,7 +328,6 @@ export const LeftSidebar: React.FC = () => {
                                         e.stopPropagation();
                                         if (settings.confirmSubjectDelete) {
                                             setDeleteConfirm({id: subject.id, name: subject.name});
-                                            setDeleteInput('');
                                         } else {
                                             deleteSubject(subject.id);
                                         }
@@ -493,7 +500,6 @@ export const LeftSidebar: React.FC = () => {
                                     closeContextMenu();
                                     if (settings.confirmSubjectDelete) {
                                         setDeleteConfirm({id: contextMenu.subject.id, name: contextMenu.subject.name});
-                                        setDeleteInput('');
                                     } else {
                                         deleteSubject(contextMenu.subject.id);
                                     }
@@ -546,105 +552,62 @@ export const LeftSidebar: React.FC = () => {
                 document.body
             )}
 
-            {simpleConfirm && createPortal(
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[110] p-4">
-                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
-                        {simpleConfirm.variant === 'resetSubject' && (
-                            <>
-                                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Reset subject progress?</h3>
-                                <p className="text-sm text-slate-600 dark:text-slate-400">
-                                    All mastery and attempts for <strong className="text-slate-900 dark:text-white">{simpleConfirm.subjectName}</strong> will be cleared. This cannot be undone.
-                                </p>
-                            </>
-                        )}
-                        {simpleConfirm.variant === 'resetTopic' && (
-                            <>
-                                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Reset topic progress?</h3>
-                                <p className="text-sm text-slate-600 dark:text-slate-400">
-                                    Progress for <strong className="text-slate-900 dark:text-white">{simpleConfirm.topicName}</strong> in {simpleConfirm.subjectName} will be cleared. This cannot be undone.
-                                </p>
-                            </>
-                        )}
-                        <div className="flex gap-3 pt-2">
-                            <button
-                                type="button"
-                                onClick={() => setSimpleConfirm(null)}
-                                className="flex-1 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    if (simpleConfirm.variant === 'resetSubject') {
-                                        resetSubjectProgress(simpleConfirm.subjectId);
-                                    } else if (simpleConfirm.variant === 'resetTopic' && simpleConfirm.topicId) {
-                                        resetTopicProgress(simpleConfirm.subjectId, simpleConfirm.topicId);
-                                    }
-                                    setSimpleConfirm(null);
-                                }}
-                                className="flex-1 px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors bg-amber-600 hover:bg-amber-700 dark:bg-amber-600 dark:hover:bg-amber-500"
-                            >
-                                {simpleConfirm.variant === 'resetSubject' && 'Reset progress'}
-                                {simpleConfirm.variant === 'resetTopic' && 'Reset topic'}
-                            </button>
-                        </div>
-                    </div>
-                </div>,
-                document.body
-            )}
+            <SimpleConfirmModal
+                open={!!simpleConfirm}
+                title={
+                    simpleConfirm?.variant === 'resetSubject'
+                        ? 'Reset subject progress?'
+                        : 'Reset topic progress?'
+                }
+                confirmLabel={
+                    simpleConfirm?.variant === 'resetSubject' ? 'Reset progress' : 'Reset topic'
+                }
+                confirmClassName="flex-1 px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors bg-amber-600 hover:bg-amber-700 dark:bg-amber-600 dark:hover:bg-amber-500"
+                onClose={() => setSimpleConfirm(null)}
+                onConfirm={() => {
+                    if (!simpleConfirm) return;
+                    if (simpleConfirm.variant === 'resetSubject') {
+                        resetSubjectProgress(simpleConfirm.subjectId);
+                    } else if (simpleConfirm.variant === 'resetTopic' && simpleConfirm.topicId) {
+                        resetTopicProgress(simpleConfirm.subjectId, simpleConfirm.topicId);
+                    }
+                    setSimpleConfirm(null);
+                }}
+            >
+                {simpleConfirm?.variant === 'resetSubject' && (
+                    <p>
+                        All mastery and attempts for{' '}
+                        <strong className="text-slate-900 dark:text-white">{simpleConfirm.subjectName}</strong> will be
+                        cleared. This cannot be undone.
+                    </p>
+                )}
+                {simpleConfirm?.variant === 'resetTopic' && (
+                    <p>
+                        Progress for{' '}
+                        <strong className="text-slate-900 dark:text-white">{simpleConfirm.topicName}</strong> in{' '}
+                        {simpleConfirm.subjectName} will be cleared. This cannot be undone.
+                    </p>
+                )}
+            </SimpleConfirmModal>
 
-            {/* Delete Confirmation Modal */}
-            {deleteConfirm && createPortal(
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Delete Subject</h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                            This will permanently delete <strong className="text-slate-900 dark:text-white">{deleteConfirm.name}</strong> and all its topics, questions, and progress.
-                        </p>
-                        <div className="space-y-2">
-                            <label className="text-sm text-slate-600 dark:text-slate-400">
-                                Type <strong className="text-red-600 dark:text-red-400">{deleteConfirm.name}</strong> to confirm:
-                            </label>
-                            <input
-                                type="text"
-                                value={deleteInput}
-                                onChange={(e) => setDeleteInput(e.target.value)}
-                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none"
-                                placeholder="Type subject name..."
-                                autoFocus
-                            />
-                        </div>
-                        <div className="flex gap-3 pt-2">
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setDeleteConfirm(null);
-                                    setDeleteInput('');
-                                }}
-                                className="flex-1 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    if (deleteInput === deleteConfirm.name) {
-                                        deleteSubject(deleteConfirm.id);
-                                        setDeleteConfirm(null);
-                                        setDeleteInput('');
-                                    }
-                                }}
-                                disabled={deleteInput !== deleteConfirm.name}
-                                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:bg-red-300 dark:disabled:bg-red-900 disabled:cursor-not-allowed rounded-lg transition-colors"
-                            >
-                                Delete
-                            </button>
-                        </div>
-                    </div>
-                </div>,
-                document.body
-            )}
+            <TypeToConfirmModal
+                open={!!deleteConfirm}
+                title="Delete Subject"
+                description={
+                    <>
+                        This will permanently delete{' '}
+                        <strong className="text-slate-900 dark:text-white">{deleteConfirm?.name}</strong> and all its
+                        topics, questions, and progress.
+                    </>
+                }
+                phraseToMatch={deleteConfirm?.name ?? ''}
+                inputPlaceholder="Type subject name..."
+                onClose={() => setDeleteConfirm(null)}
+                onConfirm={() => {
+                    if (deleteConfirm) deleteSubject(deleteConfirm.id);
+                    setDeleteConfirm(null);
+                }}
+            />
         </div>
     );
 };
