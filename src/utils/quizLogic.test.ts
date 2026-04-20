@@ -1,5 +1,12 @@
-import {describe, it, expect} from 'vitest';
-import {generateQueue, checkAnswer, getActiveQuestions, calculateMastery} from './quizLogic';
+import {describe, it, expect, vi} from 'vitest';
+import {
+    generateQueue,
+    checkAnswer,
+    getActiveQuestions,
+    calculateMastery,
+    normalizeRequeueGapRange,
+    randomRequeueInsertIndex
+} from './quizLogic';
 import type {Question, Subject, QuestionProgress, MultipleChoiceQuestion, MultipleAnswerQuestion, TrueFalseQuestion, KeywordsQuestion, MatchingQuestion, WordBankQuestion} from '../types';
 
 // Helper to create typed questions
@@ -254,6 +261,27 @@ describe('quizLogic', () => {
         it('should return empty array for empty questions array', () => {
             const queue = generateQueue([], {}, 'random', false);
             expect(queue).toHaveLength(0);
+        });
+    });
+
+    describe('normalizeRequeueGapRange', () => {
+        it('should order min and max and clamp to 0-100', () => {
+            expect(normalizeRequeueGapRange(8, 4)).toEqual({min: 4, max: 8});
+            expect(normalizeRequeueGapRange(-5, 150)).toEqual({min: 0, max: 100});
+        });
+    });
+
+    describe('randomRequeueInsertIndex', () => {
+        it('should not exceed queue length', () => {
+            const rnd = vi.spyOn(Math, 'random').mockReturnValue(0);
+            expect(randomRequeueInsertIndex(2, 4, 6)).toBe(2);
+            rnd.mockRestore();
+        });
+
+        it('should pick min offset when random draws 0', () => {
+            const rnd = vi.spyOn(Math, 'random').mockReturnValue(0);
+            expect(randomRequeueInsertIndex(20, 4, 6)).toBe(4);
+            rnd.mockRestore();
         });
     });
 

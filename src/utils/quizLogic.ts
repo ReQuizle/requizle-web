@@ -57,6 +57,29 @@ export const generateQueue = (
     return queue.map(q => q.id);
 };
 
+/** Clamp and order requeue gap bounds for “N positions ahead” in the queue (0 = front). */
+export const normalizeRequeueGapRange = (minGap: number, maxGap: number): {min: number; max: number} => {
+    let min = Number.isFinite(minGap) ? Math.round(minGap) : 4;
+    let max = Number.isFinite(maxGap) ? Math.round(maxGap) : 6;
+    min = Math.max(0, Math.min(100, min));
+    max = Math.max(0, Math.min(100, max));
+    if (min > max) {
+        [min, max] = [max, min];
+    }
+    return {min, max};
+};
+
+/**
+ * Random insert index for re-queuing the current question after a wrong answer or skip.
+ * Matches previous behavior: pick offset in [minGap, maxGap], then cap at queue length.
+ */
+export const randomRequeueInsertIndex = (queueLength: number, minGap: number, maxGap: number): number => {
+    const {min, max} = normalizeRequeueGapRange(minGap, maxGap);
+    const span = max - min + 1;
+    const offset = min + Math.floor(Math.random() * span);
+    return Math.min(offset, queueLength);
+};
+
 export const checkAnswer = (question: Question, userAnswer: unknown): boolean => {
     switch (question.type) {
         case 'multiple_choice':

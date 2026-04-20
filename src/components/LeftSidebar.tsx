@@ -1,6 +1,6 @@
 import React, {useState} from 'react';
 import {createPortal} from 'react-dom';
-import {useQuizStore} from '../store/useQuizStore';
+import {useQuizStore, DEFAULT_SESSION_STATE} from '../store/useQuizStore';
 import {calculateMastery} from '../utils/quizLogic';
 import {CheckCircle2, Circle, Trash2} from 'lucide-react';
 import {clsx} from 'clsx';
@@ -11,7 +11,9 @@ export const LeftSidebar: React.FC = () => {
     const [deleteConfirm, setDeleteConfirm] = useState<{id: string; name: string} | null>(null);
     const [deleteInput, setDeleteInput] = useState('');
     const activeProfile = profiles[activeProfileId];
-    const {subjects, progress, session} = activeProfile;
+    const subjects = activeProfile?.subjects ?? [];
+    const progress = activeProfile?.progress ?? {};
+    const session = activeProfile?.session ?? DEFAULT_SESSION_STATE;
 
     const currentSubject = subjects.find(s => s.id === session.subjectId);
 

@@ -1,6 +1,6 @@
-import React, {useState, useRef} from 'react';
+import React, {useState, useRef, useEffect} from 'react';
 import {createPortal} from 'react-dom';
-import {useQuizStore} from '../store/useQuizStore';
+import {useQuizStore, DEFAULT_SESSION_STATE} from '../store/useQuizStore';
 import {calculateMastery, getActiveQuestions} from '../utils/quizLogic';
 import {
     validateSubjects,
@@ -21,9 +21,40 @@ import {
     getMedia,
     restoreMediaEntry
 } from '../utils/mediaStorage';
-import {Upload, Trash2, AlertCircle, Download, Plus, ExternalLink, Pencil, Check, X, ImageIcon, BookOpen, MessageSquare, Github} from 'lucide-react';
+import {
+    Upload,
+    Trash2,
+    AlertCircle,
+    Download,
+    Plus,
+    ExternalLink,
+    Pencil,
+    Check,
+    X,
+    ImageIcon,
+    BookOpen,
+    MessageSquare,
+    Github,
+    Users,
+    Palette,
+    SlidersHorizontal,
+    Database,
+    Link2,
+    Shuffle,
+    ListOrdered
+} from 'lucide-react';
 import {ThemeToggle} from './ThemeToggle';
 import {clsx} from 'clsx';
+
+type SettingsSectionId = 'profiles' | 'appearance' | 'behavior' | 'data' | 'links';
+
+const SETTINGS_SECTIONS: {id: SettingsSectionId; label: string; icon: typeof Users}[] = [
+    {id: 'profiles', label: 'Profiles', icon: Users},
+    {id: 'appearance', label: 'Appearance', icon: Palette},
+    {id: 'behavior', label: 'Behavior', icon: SlidersHorizontal},
+    {id: 'data', label: 'Data', icon: Database},
+    {id: 'links', label: 'Links & help', icon: Link2}
+];
 
 export const RightSidebar: React.FC = () => {
     const {
@@ -39,9 +70,14 @@ export const RightSidebar: React.FC = () => {
         resetSubjectProgress,
         settings,
         setConfirmSubjectDelete,
-        setConfirmProfileDelete
+        setConfirmProfileDelete,
+        setMode,
+        setQuizRequeueOnIncorrect,
+        setQuizRequeueOnSkip,
+        setQuizRequeueGaps
     } = useQuizStore();
     const [activeTab, setActiveTab] = useState<'mastery' | 'import' | 'settings'>('mastery');
+    const [settingsSection, setSettingsSection] = useState<SettingsSectionId>('profiles');
     const [jsonInput, setJsonInput] = useState('');
     const [importError, setImportError] = useState<string | null>(null);
     const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
@@ -52,8 +88,8 @@ export const RightSidebar: React.FC = () => {
     const [factoryResetInput, setFactoryResetInput] = useState('');
     const [clearingCache, setClearingCache] = useState(false);
     const [cacheClearResult, setCacheClearResult] = useState<{removed: number; message: string} | null>(null);
-
-
+    const [importDndActive, setImportDndActive] = useState(false);
+    const importDndDepth = useRef(0);
 
     // Image upload state
     const [pendingImport, setPendingImport] = useState<{
@@ -63,8 +99,17 @@ export const RightSidebar: React.FC = () => {
     } | null>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
 
+    useEffect(() => {
+        if (activeTab !== 'import') {
+            importDndDepth.current = 0;
+            setImportDndActive(false);
+        }
+    }, [activeTab]);
+
     const currentProfile = profiles[activeProfileId];
-    const {subjects, progress, session} = currentProfile;
+    const subjects = currentProfile?.subjects ?? [];
+    const progress = currentProfile?.progress ?? {};
+    const session = currentProfile?.session ?? DEFAULT_SESSION_STATE;
     const currentSubject = subjects.find(s => s.id === session.subjectId);
 
     // Calculate stats
@@ -109,7 +154,7 @@ export const RightSidebar: React.FC = () => {
 
         // Otherwise, try to import as subjects
         const validatedSubjects = validateSubjects(parsed);
-        const existingSubjectIds = currentProfile.subjects.map(s => s.id);
+        const existingSubjectIds = subjects.map(s => s.id);
         const mergedCount = validatedSubjects.filter(s => existingSubjectIds.includes(s.id)).length;
         const newCount = validatedSubjects.length - mergedCount;
 
@@ -418,10 +463,7 @@ export const RightSidebar: React.FC = () => {
         }
     };
 
-    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, resetInput = true) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
+    const readAndImportFile = (file: File) => {
         const reader = new FileReader();
         reader.onload = (event) => {
             try {
@@ -429,7 +471,6 @@ export const RightSidebar: React.FC = () => {
                 const parsed: unknown = JSON.parse(content);
                 detectAndImport(parsed).then(result => {
                     if (result.type === 'pending') {
-                        // Don't clear or show success - waiting for images
                         setImportError(null);
                         return;
                     }
@@ -445,10 +486,52 @@ export const RightSidebar: React.FC = () => {
                 setImportError(`File import failed: ${errorMessage}`);
             }
         };
+        reader.onerror = () => {
+            setImportError('Could not read that file. Try another file or paste JSON below.');
+        };
         reader.readAsText(file);
+    };
+
+    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, resetInput = true) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        readAndImportFile(file);
         if (resetInput) {
             e.target.value = '';
         }
+    };
+
+    const handleImportDragEnter = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        importDndDepth.current += 1;
+        setImportDndActive(true);
+    };
+
+    const handleImportDragLeave = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        importDndDepth.current -= 1;
+        if (importDndDepth.current <= 0) {
+            importDndDepth.current = 0;
+            setImportDndActive(false);
+        }
+    };
+
+    const handleImportDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'copy';
+    };
+
+    const handleImportDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        importDndDepth.current = 0;
+        setImportDndActive(false);
+        const file = e.dataTransfer.files?.[0];
+        if (!file) return;
+        readAndImportFile(file);
     };
 
     return (
@@ -540,13 +623,51 @@ export const RightSidebar: React.FC = () => {
                     </div>
 
                     <div className="space-y-2">
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Upload File</label>
-                        <input
-                            type="file"
-                            accept=".rqzl,.json"
-                            onChange={handleFileUpload}
-                            className="block w-full text-sm text-slate-500 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 dark:file:bg-indigo-900/30 file:text-indigo-700 dark:file:text-indigo-300 hover:file:bg-indigo-100 dark:hover:file:bg-indigo-900/50"
-                        />
+                        <span className="block text-sm font-medium text-slate-700 dark:text-slate-300">Import file</span>
+                        <div
+                            role="group"
+                            aria-label="Drop a quiz file here or choose from device"
+                            onDragEnter={handleImportDragEnter}
+                            onDragLeave={handleImportDragLeave}
+                            onDragOver={handleImportDragOver}
+                            onDrop={handleImportDrop}
+                            className={clsx(
+                                'rounded-xl border-2 border-dashed transition-colors outline-none focus-within:ring-2 focus-within:ring-indigo-500 focus-within:ring-offset-2 dark:focus-within:ring-offset-slate-900',
+                                importDndActive
+                                    ? 'border-indigo-500 bg-indigo-50/90 dark:bg-indigo-900/35'
+                                    : 'border-slate-300 dark:border-slate-600 bg-slate-50/80 dark:bg-slate-800/40'
+                            )}
+                        >
+                            <input
+                                id="import-file-input"
+                                type="file"
+                                accept=".rqzl,.json,application/json"
+                                onChange={handleFileUpload}
+                                className="sr-only"
+                            />
+                            <div className="flex flex-col items-center gap-2 py-8 px-4 text-center">
+                                <div
+                                    className={clsx(
+                                        'p-3 rounded-full transition-colors',
+                                        importDndActive
+                                            ? 'bg-indigo-200/80 dark:bg-indigo-800/50 text-indigo-700 dark:text-indigo-200'
+                                            : 'bg-slate-200/80 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300'
+                                    )}
+                                >
+                                    <Upload size={22} strokeWidth={2} aria-hidden />
+                                </div>
+                                <p className="text-sm text-slate-600 dark:text-slate-300">
+                                    <label
+                                        htmlFor="import-file-input"
+                                        className="font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 underline-offset-2 hover:underline cursor-pointer"
+                                    >
+                                        Choose a file
+                                    </label>
+                                    <span className="text-slate-500 dark:text-slate-400"> or drag and drop</span>
+                                </p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">.rqzl (profile) or .json (subjects)</p>
+                            </div>
+                        </div>
                     </div>
 
                     <div className="relative">
@@ -584,9 +705,71 @@ export const RightSidebar: React.FC = () => {
             )}
 
             {activeTab === 'settings' && (
-                <div className="space-y-6 animate-in fade-in duration-300">
-                    {/* Profiles */}
-                    <div className="space-y-3">
+                <div
+                    className="flex flex-col gap-4 animate-in fade-in duration-300 min-h-0 -mx-1"
+                    role="region"
+                    aria-label="Settings"
+                >
+                    <div
+                        className="sticky top-0 z-10 -mx-2 px-2 pt-0 pb-2 -mt-1 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-100 dark:border-slate-800"
+                    >
+                        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 px-0.5">
+                            Settings
+                        </p>
+                        <div
+                            className="flex flex-col gap-1.5"
+                            role="tablist"
+                            aria-label="Settings categories"
+                            aria-orientation="vertical"
+                        >
+                            {SETTINGS_SECTIONS.map(({id, label, icon: Icon}, sectionIndex) => {
+                                const selected = settingsSection === id;
+                                return (
+                                    <button
+                                        key={id}
+                                        type="button"
+                                        role="tab"
+                                        id={`settings-tab-${id}`}
+                                        aria-selected={selected}
+                                        aria-controls={`settings-panel-${id}`}
+                                        tabIndex={selected ? 0 : -1}
+                                        onKeyDown={(e) => {
+                                            if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+                                            e.preventDefault();
+                                            const dir = e.key === 'ArrowDown' ? 1 : -1;
+                                            const next =
+                                                SETTINGS_SECTIONS[
+                                                    (sectionIndex + dir + SETTINGS_SECTIONS.length) %
+                                                        SETTINGS_SECTIONS.length
+                                                ];
+                                            setSettingsSection(next.id);
+                                            requestAnimationFrame(() => {
+                                                document.getElementById(`settings-tab-${next.id}`)?.focus();
+                                            });
+                                        }}
+                                        onClick={() => setSettingsSection(id)}
+                                        className={clsx(
+                                            'w-full flex items-center gap-3 min-h-[44px] px-3 py-2 rounded-lg text-sm font-medium text-left transition-colors border',
+                                            selected
+                                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                                                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:border-indigo-300 dark:hover:border-indigo-600 hover:text-slate-900 dark:hover:text-white'
+                                        )}
+                                    >
+                                        <Icon size={18} className="shrink-0 opacity-90" aria-hidden />
+                                        <span className="min-w-0">{label}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {settingsSection === 'profiles' && (
+                        <div
+                            id="settings-panel-profiles"
+                            role="tabpanel"
+                            aria-labelledby="settings-tab-profiles"
+                            className="space-y-3"
+                        >
                         <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Profiles</h3>
 
                         <div className="space-y-2">
@@ -779,22 +962,157 @@ export const RightSidebar: React.FC = () => {
                                 />
                             </label>
                         </div>
-                    </div>
+                        </div>
+                    )}
 
-                    <div className="border-t border-slate-100 dark:border-slate-700 my-4"></div>
-
-                    {/* Appearance */}
-                    <div className="space-y-3">
+                    {settingsSection === 'appearance' && (
+                        <div
+                            id="settings-panel-appearance"
+                            role="tabpanel"
+                            aria-labelledby="settings-tab-appearance"
+                            className="space-y-3"
+                        >
                         <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Appearance</h3>
-                        <div className="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+                        <div className="flex items-center justify-between p-3 min-h-[52px] bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
                             <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Theme</span>
                             <ThemeToggle />
                         </div>
-                    </div>
+                        </div>
+                    )}
 
-                    {/* Behavior */}
-                    <div className="space-y-3">
+                    {settingsSection === 'behavior' && (
+                        <div
+                            id="settings-panel-behavior"
+                            role="tabpanel"
+                            aria-labelledby="settings-tab-behavior"
+                            className="space-y-3"
+                        >
                         <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Behavior</h3>
+
+                        <div className="space-y-2">
+                            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                Controls how study queues are built and how missed or skipped questions come back. The shuffle button in the quiz header uses the same order setting.
+                            </p>
+                            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Quiz order</p>
+                            <div className="grid grid-cols-2 gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setMode('random')}
+                                    className={clsx(
+                                        'flex items-center justify-center gap-2 min-h-[44px] px-2 rounded-lg text-xs font-semibold border transition-colors',
+                                        session?.mode === 'random'
+                                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:border-indigo-300 dark:hover:border-indigo-600'
+                                    )}
+                                >
+                                    <Shuffle size={16} aria-hidden />
+                                    Random
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setMode('topic_order')}
+                                    className={clsx(
+                                        'flex items-center justify-center gap-2 min-h-[44px] px-2 rounded-lg text-xs font-semibold border transition-colors',
+                                        session?.mode === 'topic_order'
+                                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:border-indigo-300 dark:hover:border-indigo-600'
+                                    )}
+                                >
+                                    <ListOrdered size={16} aria-hidden />
+                                    Topic order
+                                </button>
+                            </div>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                Random shuffles the active pool; topic order follows sidebar topic order.
+                            </p>
+                        </div>
+
+                        <div className="space-y-2 pt-1">
+                            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Missed &amp; skipped questions</p>
+                            <label className="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer gap-3">
+                                <div className="min-w-0">
+                                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200 block">Requeue after wrong answer</span>
+                                    <span className="text-xs text-slate-500 dark:text-slate-400">Put the card back in the queue so it returns later</span>
+                                </div>
+                                <div className="relative flex items-center flex-shrink-0">
+                                    <input
+                                        type="checkbox"
+                                        className="peer sr-only"
+                                        checked={settings.quizRequeueOnIncorrect}
+                                        onChange={(e) => setQuizRequeueOnIncorrect(e.target.checked)}
+                                    />
+                                    <div className="w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-100 dark:peer-focus:ring-indigo-900 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                                </div>
+                            </label>
+                            <label className="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer gap-3">
+                                <div className="min-w-0">
+                                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200 block">Requeue after skip</span>
+                                    <span className="text-xs text-slate-500 dark:text-slate-400">Same spacing as wrong answers when enabled</span>
+                                </div>
+                                <div className="relative flex items-center flex-shrink-0">
+                                    <input
+                                        type="checkbox"
+                                        className="peer sr-only"
+                                        checked={settings.quizRequeueOnSkip}
+                                        onChange={(e) => setQuizRequeueOnSkip(e.target.checked)}
+                                    />
+                                    <div className="w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-100 dark:peer-focus:ring-indigo-900 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                                </div>
+                            </label>
+                            <div
+                                className={clsx(
+                                    'space-y-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3',
+                                    !settings.quizRequeueOnIncorrect && !settings.quizRequeueOnSkip && 'opacity-50 pointer-events-none'
+                                )}
+                            >
+                                <p className="text-xs font-medium text-slate-700 dark:text-slate-200">Reinsert spacing</p>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                                    Random number of positions ahead (0 = front of remaining queue). App default was 4-6.
+                                </p>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label htmlFor="quiz-gap-min" className="text-[11px] text-slate-500 dark:text-slate-400 block mb-1">
+                                            Min
+                                        </label>
+                                        <input
+                                            id="quiz-gap-min"
+                                            type="number"
+                                            min={0}
+                                            max={100}
+                                            inputMode="numeric"
+                                            value={settings.quizRequeueGapMin}
+                                            onChange={(e) => {
+                                                const v = parseInt(e.target.value, 10);
+                                                if (Number.isNaN(v)) return;
+                                                setQuizRequeueGaps(v, settings.quizRequeueGapMax);
+                                            }}
+                                            className="w-full px-2 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label htmlFor="quiz-gap-max" className="text-[11px] text-slate-500 dark:text-slate-400 block mb-1">
+                                            Max
+                                        </label>
+                                        <input
+                                            id="quiz-gap-max"
+                                            type="number"
+                                            min={0}
+                                            max={100}
+                                            inputMode="numeric"
+                                            value={settings.quizRequeueGapMax}
+                                            onChange={(e) => {
+                                                const v = parseInt(e.target.value, 10);
+                                                if (Number.isNaN(v)) return;
+                                                setQuizRequeueGaps(settings.quizRequeueGapMin, v);
+                                            }}
+                                            className="w-full px-2 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider pt-1">Deletion safety</p>
                         <label className="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer">
                             <div>
                                 <span className="text-sm font-medium text-slate-700 dark:text-slate-200 block">Confirm Subject Deletion</span>
@@ -825,10 +1143,16 @@ export const RightSidebar: React.FC = () => {
                                 <div className="w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-100 dark:peer-focus:ring-indigo-900 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
                             </div>
                         </label>
-                    </div>
+                        </div>
+                    )}
 
-                    {/* Data Management */}
-                    <div className="space-y-3">
+                    {settingsSection === 'data' && (
+                    <div
+                        id="settings-panel-data"
+                        role="tabpanel"
+                        aria-labelledby="settings-tab-data"
+                        className="space-y-3"
+                    >
                         <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Data Management</h3>
 
                         {currentSubject && (
@@ -918,10 +1242,16 @@ export const RightSidebar: React.FC = () => {
                             Wipe All Data (Factory Reset)
                         </button>
                     </div>
+                    )}
 
-                    {/* Resources */}
-                    <div className="space-y-3">
-                        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Resources</h3>
+                    {settingsSection === 'links' && (
+                    <div
+                        id="settings-panel-links"
+                        role="tabpanel"
+                        aria-labelledby="settings-tab-links"
+                        className="space-y-3"
+                    >
+                        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Links &amp; help</h3>
                         <div className="grid grid-cols-1 gap-2">
                             <a
                                 href="https://requizle.github.io/requizle-wiki/"
@@ -978,6 +1308,7 @@ export const RightSidebar: React.FC = () => {
                             </a>
                         </div>
                     </div>
+                    )}
                 </div>
             )}
 

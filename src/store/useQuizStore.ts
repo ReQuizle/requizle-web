@@ -1,7 +1,13 @@
 import {create} from 'zustand';
 import {persist, createJSONStorage} from 'zustand/middleware';
 import type {Subject, SessionState, StudyMode, QuestionProgress, Profile} from '../types';
-import {generateQueue, getActiveQuestions, checkAnswer} from '../utils/quizLogic';
+import {
+    generateQueue,
+    getActiveQuestions,
+    checkAnswer,
+    randomRequeueInsertIndex,
+    normalizeRequeueGapRange
+} from '../utils/quizLogic';
 import {indexedDBStorage, clearStoreData, migrateFromLocalStorage} from '../utils/indexedDBStorage';
 import {deleteMedia, isIndexedDBMedia, extractMediaId} from '../utils/mediaStorage';
 import {v4 as uuidv4} from 'uuid';
@@ -9,6 +15,14 @@ import {v4 as uuidv4} from 'uuid';
 interface Settings {
     confirmSubjectDelete: boolean;
     confirmProfileDelete: boolean;
+    /** When false, wrong answers do not put the question back in the queue (advance-only for this pass). */
+    quizRequeueOnIncorrect: boolean;
+    /** When false, skipped questions are not reinserted. */
+    quizRequeueOnSkip: boolean;
+    /** Minimum positions ahead to reinsert (inclusive). Default 4 matches previous app behavior. */
+    quizRequeueGapMin: number;
+    /** Maximum positions ahead to reinsert (inclusive). */
+    quizRequeueGapMax: number;
 }
 
 interface QuizState {
@@ -45,6 +59,9 @@ interface QuizState {
     // Settings Actions
     setConfirmSubjectDelete: (confirm: boolean) => void;
     setConfirmProfileDelete: (confirm: boolean) => void;
+    setQuizRequeueOnIncorrect: (value: boolean) => void;
+    setQuizRequeueOnSkip: (value: boolean) => void;
+    setQuizRequeueGaps: (minGap: number, maxGap: number) => void;
 }
 
 // Helper to get current profile
@@ -94,6 +111,26 @@ function extractAllMediaIds(profiles: Record<string, Profile>): Set<string> {
 
 const DEFAULT_PROFILE_ID = 'default';
 
+/** Fresh study session before a subject is chosen. Exported for UI fallbacks. */
+export const DEFAULT_SESSION_STATE: SessionState = {
+    subjectId: null,
+    selectedTopicIds: [],
+    mode: 'random',
+    includeMastered: false,
+    queue: [],
+    currentQuestionId: null,
+    turnCounter: 0
+};
+
+export const DEFAULT_SETTINGS: Settings = {
+    confirmSubjectDelete: true,
+    confirmProfileDelete: true,
+    quizRequeueOnIncorrect: true,
+    quizRequeueOnSkip: true,
+    quizRequeueGapMin: 4,
+    quizRequeueGapMax: 6
+};
+
 export const useQuizStore = create<QuizState>()(
     persist(
         (set, get) => ({
@@ -103,24 +140,13 @@ export const useQuizStore = create<QuizState>()(
                     name: 'Default',
                     subjects: [],
                     progress: {},
-                    session: {
-                        subjectId: null,
-                        selectedTopicIds: [],
-                        mode: 'random',
-                        includeMastered: false,
-                        queue: [],
-                        currentQuestionId: null,
-                        turnCounter: 0,
-                    },
+                    session: {...DEFAULT_SESSION_STATE},
                     createdAt: Date.now()
 
                 }
             },
             activeProfileId: DEFAULT_PROFILE_ID,
-            settings: {
-                confirmSubjectDelete: true,
-                confirmProfileDelete: true
-            },
+            settings: {...DEFAULT_SETTINGS},
 
             setSubjects: (subjects) => set((state) => {
                 const profile = getCurrentProfile(state);
@@ -418,12 +444,39 @@ export const useQuizStore = create<QuizState>()(
             setIncludeMastered: (include) => {
                 set((state) => {
                     const profile = getCurrentProfile(state);
+                    const subject = getCurrentSubject(state);
+
+                    if (!subject) {
+                        return {
+                            profiles: {
+                                ...state.profiles,
+                                [state.activeProfileId]: {
+                                    ...profile,
+                                    session: {...profile.session, includeMastered: include}
+                                }
+                            }
+                        };
+                    }
+
+                    const questions = getActiveQuestions(subject, profile.session.selectedTopicIds);
+                    const queue = generateQueue(
+                        questions,
+                        flattenProgress(profile.progress[subject.id]),
+                        profile.session.mode,
+                        include
+                    );
+
                     return {
                         profiles: {
                             ...state.profiles,
                             [state.activeProfileId]: {
                                 ...profile,
-                                session: {...profile.session, includeMastered: include}
+                                session: {
+                                    ...profile.session,
+                                    includeMastered: include,
+                                    queue: queue.slice(1),
+                                    currentQuestionId: queue[0] || null
+                                }
                             }
                         }
                     };
@@ -517,10 +570,13 @@ export const useQuizStore = create<QuizState>()(
                     // Queue management
                     const newQueue = [...currentProfile.session.queue];
 
-                    if (!isCorrect) {
-                        // Reinsert 4-6 positions later
-                        const offset = Math.floor(Math.random() * 3) + 4; // 4, 5, or 6
-                        const insertIndex = Math.min(offset, newQueue.length);
+                    const quizSettings = state.settings;
+                    if (!isCorrect && quizSettings.quizRequeueOnIncorrect) {
+                        const insertIndex = randomRequeueInsertIndex(
+                            newQueue.length,
+                            quizSettings.quizRequeueGapMin,
+                            quizSettings.quizRequeueGapMax
+                        );
                         newQueue.splice(insertIndex, 0, currentQuestionId);
                     }
 
@@ -611,9 +667,15 @@ export const useQuizStore = create<QuizState>()(
                     };
 
                     const newQueue = [...currentProfile.session.queue];
-                    const offset = Math.floor(Math.random() * 3) + 4;
-                    const insertIndex = Math.min(offset, newQueue.length);
-                    newQueue.splice(insertIndex, 0, currentQuestionId);
+                    const quizSettings = state.settings;
+                    if (quizSettings.quizRequeueOnSkip) {
+                        const insertIndex = randomRequeueInsertIndex(
+                            newQueue.length,
+                            quizSettings.quizRequeueGapMin,
+                            quizSettings.quizRequeueGapMax
+                        );
+                        newQueue.splice(insertIndex, 0, currentQuestionId);
+                    }
 
                     const nextQuestionId = newQueue.shift() || null;
 
@@ -675,15 +737,7 @@ export const useQuizStore = create<QuizState>()(
                     name,
                     subjects: [],
                     progress: {},
-                    session: {
-                        subjectId: null,
-                        selectedTopicIds: [],
-                        mode: 'random',
-                        includeMastered: false,
-                        queue: [],
-                        currentQuestionId: null,
-                        turnCounter: 0,
-                    },
+                    session: {...DEFAULT_SESSION_STATE},
                     createdAt: Date.now()
                 };
 
@@ -728,15 +782,7 @@ export const useQuizStore = create<QuizState>()(
                             name: 'Default',
                             subjects: [],
                             progress: {},
-                            session: {
-                                subjectId: null,
-                                selectedTopicIds: [],
-                                mode: 'random',
-                                includeMastered: false,
-                                queue: [],
-                                currentQuestionId: null,
-                                turnCounter: 0,
-                            },
+                            session: {...DEFAULT_SESSION_STATE},
                             createdAt: Date.now()
                         };
                         return {
@@ -871,7 +917,26 @@ export const useQuizStore = create<QuizState>()(
 
             setConfirmProfileDelete: (confirm) => set((state) => ({
                 settings: {...state.settings, confirmProfileDelete: confirm}
-            }))
+            })),
+
+            setQuizRequeueOnIncorrect: (value) => set((state) => ({
+                settings: {...state.settings, quizRequeueOnIncorrect: value}
+            })),
+
+            setQuizRequeueOnSkip: (value) => set((state) => ({
+                settings: {...state.settings, quizRequeueOnSkip: value}
+            })),
+
+            setQuizRequeueGaps: (minGap, maxGap) => set((state) => {
+                const {min, max} = normalizeRequeueGapRange(minGap, maxGap);
+                return {
+                    settings: {
+                        ...state.settings,
+                        quizRequeueGapMin: min,
+                        quizRequeueGapMax: max
+                    }
+                };
+            })
         }),
         {
             name: 'quiz-storage',
@@ -894,13 +959,7 @@ export const useQuizStore = create<QuizState>()(
                         subjects: persistedState.subjects || [],
                         progress: persistedState.progress || {},
                         session: {
-                            subjectId: null,
-                            selectedTopicIds: [],
-                            mode: 'random',
-                            includeMastered: false,
-                            queue: [],
-                            currentQuestionId: null,
-                            turnCounter: 0,
+                            ...DEFAULT_SESSION_STATE,
                             ...(persistedState.session || {}),
                         },
                         createdAt: Date.now()
@@ -908,7 +967,8 @@ export const useQuizStore = create<QuizState>()(
 
                     return {
                         profiles: {[DEFAULT_PROFILE_ID]: defaultProfile},
-                        activeProfileId: DEFAULT_PROFILE_ID
+                        activeProfileId: DEFAULT_PROFILE_ID,
+                        settings: {...DEFAULT_SETTINGS}
                         // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     } as any;
                 }
@@ -921,6 +981,27 @@ export const useQuizStore = create<QuizState>()(
                             profile.session.turnCounter = 0;
                         }
                     }
+                }
+
+                if (!persistedState.settings || typeof persistedState.settings !== 'object') {
+                    persistedState.settings = {...DEFAULT_SETTINGS};
+                } else {
+                    persistedState.settings = {
+                        ...DEFAULT_SETTINGS,
+                        ...persistedState.settings
+                    };
+                    if (typeof persistedState.settings.quizRequeueOnIncorrect !== 'boolean') {
+                        persistedState.settings.quizRequeueOnIncorrect = DEFAULT_SETTINGS.quizRequeueOnIncorrect;
+                    }
+                    if (typeof persistedState.settings.quizRequeueOnSkip !== 'boolean') {
+                        persistedState.settings.quizRequeueOnSkip = DEFAULT_SETTINGS.quizRequeueOnSkip;
+                    }
+                    const {min, max} = normalizeRequeueGapRange(
+                        persistedState.settings.quizRequeueGapMin ?? DEFAULT_SETTINGS.quizRequeueGapMin,
+                        persistedState.settings.quizRequeueGapMax ?? DEFAULT_SETTINGS.quizRequeueGapMax
+                    );
+                    persistedState.settings.quizRequeueGapMin = min;
+                    persistedState.settings.quizRequeueGapMax = max;
                 }
 
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any

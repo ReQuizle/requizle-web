@@ -1,5 +1,5 @@
 import React from 'react';
-import {useQuizStore} from '../store/useQuizStore';
+import {useQuizStore, DEFAULT_SESSION_STATE} from '../store/useQuizStore';
 import {QuestionCard} from './QuestionCard';
 import {ErrorBoundary} from './ErrorBoundary';
 import {Shuffle, ListOrdered, RotateCcw, CheckCircle2} from 'lucide-react';
@@ -8,7 +8,8 @@ import {Shuffle, ListOrdered, RotateCcw, CheckCircle2} from 'lucide-react';
 export const CenterArea: React.FC = () => {
     const {profiles, activeProfileId, setMode, restartQueue} = useQuizStore();
     const activeProfile = profiles[activeProfileId];
-    const {subjects, session} = activeProfile;
+    const subjects = activeProfile?.subjects ?? [];
+    const session = activeProfile?.session ?? DEFAULT_SESSION_STATE;
 
     const currentSubject = subjects.find(s => s.id === session.subjectId);
 

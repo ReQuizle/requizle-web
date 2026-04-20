@@ -1,7 +1,7 @@
 import {describe, it, expect, beforeEach, vi} from 'vitest';
-import {useQuizStore} from './useQuizStore';
+import {useQuizStore, DEFAULT_SETTINGS, DEFAULT_SESSION_STATE} from './useQuizStore';
 import {act} from 'react';
-import type {Subject, Profile, TrueFalseQuestion, MultipleChoiceQuestion} from '../types';
+import type {Subject, Profile, TrueFalseQuestion, MultipleChoiceQuestion, QuestionProgress} from '../types';
 
 // Mock persistence to avoid localStorage issues in tests
 type ZustandSet<T> = (partial: T | Partial<T> | ((state: T) => T | Partial<T>), replace?: boolean) => void;
@@ -69,19 +69,12 @@ const resetStore = () => {
                     name: 'Default',
                     subjects: [],
                     progress: {},
-                    session: {
-                        subjectId: null,
-                        selectedTopicIds: [],
-                        mode: 'random',
-                        includeMastered: false,
-                        queue: [],
-                        currentQuestionId: null,
-                        turnCounter: 0,
-                    },
+                    session: {...DEFAULT_SESSION_STATE},
                     createdAt: Date.now()
                 }
             },
-            activeProfileId: 'default'
+            activeProfileId: 'default',
+            settings: {...DEFAULT_SETTINGS}
         });
     });
 };
@@ -343,6 +336,60 @@ describe('useQuizStore', () => {
             const state = useQuizStore.getState();
             expect(state.profiles['default'].session.includeMastered).toBe(false);
         });
+
+        it('should rebuild queue when toggling on with an active subject and all questions mastered', () => {
+            const {setSubjects, startSession, setIncludeMastered} = useQuizStore.getState();
+
+            act(() => {
+                setSubjects([createTestSubject()]);
+                startSession('s1');
+            });
+
+            act(() => {
+                useQuizStore.setState(s => {
+                    const profile = s.profiles['default'];
+                    const subjectId = 's1';
+                    const subject = profile.subjects.find(x => x.id === subjectId)!;
+                    const topicProgress: Record<string, Record<string, QuestionProgress>> = {};
+                    for (const topic of subject.topics) {
+                        topicProgress[topic.id] = {};
+                        for (const q of topic.questions) {
+                            topicProgress[topic.id][q.id] = {
+                                id: q.id,
+                                attempts: 1,
+                                correctStreak: 1,
+                                mastered: true
+                            };
+                        }
+                    }
+                    return {
+                        profiles: {
+                            ...s.profiles,
+                            default: {
+                                ...profile,
+                                progress: {...profile.progress, [subjectId]: topicProgress},
+                                session: {
+                                    ...profile.session,
+                                    queue: [],
+                                    currentQuestionId: null
+                                }
+                            }
+                        }
+                    };
+                });
+            });
+
+            expect(useQuizStore.getState().profiles['default'].session.currentQuestionId).toBeNull();
+
+            act(() => {
+                setIncludeMastered(true);
+            });
+
+            const state = useQuizStore.getState();
+            expect(state.profiles['default'].session.includeMastered).toBe(true);
+            expect(state.profiles['default'].session.currentQuestionId).not.toBeNull();
+            expect(state.profiles['default'].session.queue.length).toBeGreaterThan(0);
+        });
     });
 
     describe('restartQueue', () => {
@@ -454,6 +501,22 @@ describe('useQuizStore', () => {
             expect(stateAfter.profiles['default'].session.queue).toContain(currentId);
         });
 
+        it('should not reinsert question when requeue on incorrect is disabled', () => {
+            act(() => {
+                useQuizStore.getState().setQuizRequeueOnIncorrect(false);
+            });
+            const stateBefore = useQuizStore.getState();
+            const currentId = stateBefore.profiles['default'].session.currentQuestionId!;
+
+            act(() => {
+                useQuizStore.getState().submitAnswer('wrong');
+            });
+
+            const stateAfter = useQuizStore.getState();
+            expect(stateAfter.profiles['default'].session.queue).not.toContain(currentId);
+            expect(stateAfter.profiles['default'].session.currentQuestionId).toBe(currentId);
+        });
+
         it('should return correct: false if no subject or question', () => {
             resetStore();
 
@@ -536,6 +599,22 @@ describe('useQuizStore', () => {
             const stateAfter = useQuizStore.getState();
             expect(stateAfter.profiles['default'].session.currentQuestionId).not.toBe(skippedId);
             expect(stateAfter.profiles['default'].session.queue).toContain(skippedId);
+        });
+
+        it('should not reinsert skipped question when requeue on skip is disabled', () => {
+            act(() => {
+                useQuizStore.getState().setQuizRequeueOnSkip(false);
+            });
+            const stateBefore = useQuizStore.getState();
+            const skippedId = stateBefore.profiles['default'].session.currentQuestionId!;
+
+            act(() => {
+                useQuizStore.getState().skipQuestion();
+            });
+
+            const stateAfter = useQuizStore.getState();
+            expect(stateAfter.profiles['default'].session.currentQuestionId).not.toBe(skippedId);
+            expect(stateAfter.profiles['default'].session.queue).not.toContain(skippedId);
         });
 
         it('should update progress (reset streak)', () => {
