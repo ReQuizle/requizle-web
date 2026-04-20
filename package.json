@@ -12,7 +12,7 @@
     "test:coverage": "vitest run --coverage",
     "preview": "vite preview",
     "predeploy": "npm run build",
-    "deploy": "gh-pages -d dist"
+    "deploy": "node scripts/deploy-pages.cjs"
   },
   "dependencies": {
     "canvas-confetti": "^1.9.4",
