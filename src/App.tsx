@@ -261,7 +261,7 @@ const SAMPLE_SUBJECTS: Subject[] = [
             id: 'q-md-1',
             type: 'multiple_choice',
             topicId: 'markdown-features',
-            prompt: 'Which of the following describes what the **ReQuizle** Markdown engine does best?\n\n> "The system efficiently balances the complexity of full Markdown parsers with the **absolute necessity** of *seamless* `inline math` and `code formatting`."\n\nTake your time to guess, if you need a hint, click this spoiler: ||It involves text rendering.|| Or check out [our Wikipedia](https://wikipedia.org) for more info!',
+            prompt: 'Which of the following describes what the **ReQuizle** Markdown engine does best?\n\n> "The system efficiently balances the complexity of full Markdown parsers with the **absolute necessity** of *seamless* `inline math` and `code formatting`."\n\nTake your time to guess, if you need a hint, click this spoiler: ||It involves text rendering.|| Or check out [our Wiki](https://requizle.github.io/requizle-wiki/) for more info!',
             choices: ['Parses all markdown perfectly', 'Supports __underlines__, ~~strikethroughs~~, and spoilers', 'Replaces React entirely', 'Compiles Code'],
             answerIndex: 1,
             explanation: 'Yes! It seamlessly parses custom tags like **bold**, *italic*, __underline__, ~~strikethrough~~, spoilers ||hidden||, [links](https://google.com), and blockquotes.'
