@@ -201,11 +201,7 @@ function extractMediaIdsFromTopic(topic: Topic): Set<string> {
 function extractMediaIdsFromSubject(subject: Subject): Set<string> {
     const mediaIds = new Set<string>();
     for (const topic of subject.topics) {
-        for (const question of topic.questions) {
-            if (question.media && isIndexedDBMedia(question.media)) {
-                mediaIds.add(extractMediaId(question.media));
-            }
-        }
+        extractMediaIdsFromTopic(topic).forEach(id => mediaIds.add(id));
     }
     return mediaIds;
 }
@@ -483,19 +479,12 @@ export const useQuizStore = create<QuizState>()(
                     const subjects = profile.subjects.map(s =>
                         s.id === subjectId ? {...s, name: trimmed} : s
                     );
-                    const newSession = rebuildSessionForSubjectIfActive(
-                        profile,
-                        subjectId,
-                        subjects,
-                        profile.progress[subjectId]
-                    );
                     return {
                         profiles: {
                             ...state.profiles,
                             [state.activeProfileId]: {
                                 ...profile,
-                                subjects,
-                                session: newSession
+                                subjects
                             }
                         }
                     };
@@ -543,19 +532,12 @@ export const useQuizStore = create<QuizState>()(
                             topics: s.topics.map(t => (t.id === topicId ? {...t, name: trimmed} : t))
                         };
                     });
-                    const newSession = rebuildSessionForSubjectIfActive(
-                        profile,
-                        subjectId,
-                        subjects,
-                        profile.progress[subjectId]
-                    );
                     return {
                         profiles: {
                             ...state.profiles,
                             [state.activeProfileId]: {
                                 ...profile,
-                                subjects,
-                                session: newSession
+                                subjects
                             }
                         }
                     };
@@ -1326,52 +1308,7 @@ export const useQuizStore = create<QuizState>()(
                     }
 
                     // Profile exists, merge it
-                    // Merge subjects using the same logic
-                    const mergedSubjects = [...existingProfile.subjects];
-
-                    for (const newSubject of profile.subjects) {
-                        const existingIndex = mergedSubjects.findIndex(s => s.id === newSubject.id);
-
-                        if (existingIndex === -1) {
-                            mergedSubjects.push(newSubject);
-                        } else {
-                            const existingSubject = mergedSubjects[existingIndex];
-                            const mergedTopics = [...existingSubject.topics];
-
-                            for (const newTopic of newSubject.topics) {
-                                const existingTopicIndex = mergedTopics.findIndex(t => t.id === newTopic.id);
-
-                                if (existingTopicIndex === -1) {
-                                    mergedTopics.push(newTopic);
-                                } else {
-                                    const existingTopic = mergedTopics[existingTopicIndex];
-                                    const mergedQuestions = [...existingTopic.questions];
-
-                                    for (const newQuestion of newTopic.questions) {
-                                        const existingQuestionIndex = mergedQuestions.findIndex(q => q.id === newQuestion.id);
-
-                                        if (existingQuestionIndex === -1) {
-                                            mergedQuestions.push(newQuestion);
-                                        } else {
-                                            mergedQuestions[existingQuestionIndex] = newQuestion;
-                                        }
-                                    }
-
-                                    mergedTopics[existingTopicIndex] = {
-                                        ...existingTopic,
-                                        ...newTopic,
-                                        questions: mergedQuestions
-                                    };
-                                }
-                            }
-
-                            mergedSubjects[existingIndex] = {
-                                ...existingSubject,
-                                ...newSubject,
-                                topics: mergedTopics
-                            };
-                        }
-                    }
+                    const mergedSubjects = mergeSubjectsIntoList(existingProfile.subjects, profile.subjects);
 
                     // Merge progress: keep existing, overwrite with imported
                     const mergedProgress = {...existingProfile.progress};
@@ -1497,18 +1434,6 @@ export const useQuizStore = create<QuizState>()(
                         ...DEFAULT_SETTINGS,
                         ...persistedState.settings
                     };
-                    if (typeof persistedState.settings.quizRequeueOnIncorrect !== 'boolean') {
-                        persistedState.settings.quizRequeueOnIncorrect = DEFAULT_SETTINGS.quizRequeueOnIncorrect;
-                    }
-                    if (typeof persistedState.settings.quizRequeueOnSkip !== 'boolean') {
-                        persistedState.settings.quizRequeueOnSkip = DEFAULT_SETTINGS.quizRequeueOnSkip;
-                    }
-                    if (typeof persistedState.settings.confirmResetSubjectProgress !== 'boolean') {
-                        persistedState.settings.confirmResetSubjectProgress = DEFAULT_SETTINGS.confirmResetSubjectProgress;
-                    }
-                    if (typeof persistedState.settings.confirmResetTopicProgress !== 'boolean') {
-                        persistedState.settings.confirmResetTopicProgress = DEFAULT_SETTINGS.confirmResetTopicProgress;
-                    }
                     const {min, max} = normalizeRequeueGapRange(
                         persistedState.settings.quizRequeueGapMin ?? DEFAULT_SETTINGS.quizRequeueGapMin,
                         persistedState.settings.quizRequeueGapMax ?? DEFAULT_SETTINGS.quizRequeueGapMax
@@ -1524,6 +1449,3 @@ export const useQuizStore = create<QuizState>()(
         }
     )
 );
-
-// Initialize: ensure migration from localStorage happens on app load
-migrateFromLocalStorage('quiz-storage');

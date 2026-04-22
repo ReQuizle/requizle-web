@@ -1190,12 +1190,12 @@ export const RightSidebar: React.FC = () => {
                     )}
 
                     {settingsSection === 'data' && (
-                    <div
-                        id="settings-panel-data"
-                        role="tabpanel"
-                        aria-labelledby="settings-tab-data"
-                        className="space-y-3"
-                    >
+                        <div
+                            id="settings-panel-data"
+                            role="tabpanel"
+                            aria-labelledby="settings-tab-data"
+                            className="space-y-3"
+                        >
                         <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Data Management</h3>
 
                         {currentSubject && (
@@ -1285,16 +1285,16 @@ export const RightSidebar: React.FC = () => {
                             <AlertCircle size={16} />
                             Wipe All Data (Factory Reset)
                         </button>
-                    </div>
+                        </div>
                     )}
 
                     {settingsSection === 'links' && (
-                    <div
-                        id="settings-panel-links"
-                        role="tabpanel"
-                        aria-labelledby="settings-tab-links"
-                        className="space-y-3"
-                    >
+                        <div
+                            id="settings-panel-links"
+                            role="tabpanel"
+                            aria-labelledby="settings-tab-links"
+                            className="space-y-3"
+                        >
                         <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Links &amp; help</h3>
                         <div className="grid grid-cols-1 gap-2">
                             <a
@@ -1351,7 +1351,7 @@ export const RightSidebar: React.FC = () => {
                                 <ExternalLink size={14} className="text-slate-400 group-hover:text-amber-500 transition-colors" />
                             </a>
                         </div>
-                    </div>
+                        </div>
                     )}
                 </div>
             )}

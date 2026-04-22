@@ -898,7 +898,7 @@ function QuestionTypeFields({
                 <div className="space-y-2">
                     <span className="text-xs font-medium text-slate-600 dark:text-slate-300">Pairs</span>
                     {draft.pairs.map((p, i) => (
-                        <div key={i} className="flex gap-2">
+                        <div key={i} className="flex flex-wrap gap-2">
                             <input
                                 type="text"
                                 placeholder="Left"
@@ -908,7 +908,7 @@ function QuestionTypeFields({
                                     pairs[i] = {...pairs[i], left: e.target.value};
                                     setDraft({...draft, pairs});
                                 }}
-                                className="flex-1 px-2 py-1.5 rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm"
+                                className="flex-1 min-w-[calc(50%-2rem)] px-2 py-1.5 rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm"
                             />
                             <input
                                 type="text"
@@ -919,7 +919,7 @@ function QuestionTypeFields({
                                     pairs[i] = {...pairs[i], right: e.target.value};
                                     setDraft({...draft, pairs});
                                 }}
-                                className="flex-1 px-2 py-1.5 rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm"
+                                className="flex-1 min-w-[calc(50%-2rem)] px-2 py-1.5 rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm"
                             />
                             <button
                                 type="button"

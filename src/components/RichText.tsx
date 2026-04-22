@@ -358,7 +358,7 @@ function parseBold(text: string, startKey: number): React.ReactNode[] {
             key += 10;
         }
 
-        parts.push(<strong key={key++} className="font-bold">{match[1]}</strong>);
+        parts.push(<strong key={key++} className="font-bold">{parseUnderline(match[1], key)}</strong>);
 
         lastIndex = match.index + match[0].length;
     }
@@ -384,7 +384,7 @@ function parseUnderline(text: string, startKey: number): React.ReactNode[] {
             key += 5;
         }
 
-        parts.push(<u key={key++} className="underline underline-offset-2">{match[1]}</u>);
+        parts.push(<u key={key++} className="underline underline-offset-2">{parseStrikethrough(match[1], key)}</u>);
 
         lastIndex = match.index + match[0].length;
     }
@@ -410,7 +410,7 @@ function parseStrikethrough(text: string, startKey: number): React.ReactNode[] {
             key += 5;
         }
 
-        parts.push(<del key={key++} className="line-through">{match[1]}</del>);
+        parts.push(<del key={key++} className="line-through">{parseItalic(match[1], key)}</del>);
 
         lastIndex = match.index + match[0].length;
     }

@@ -296,10 +296,10 @@ describe('RichText', () => {
         });
         it('should render bold, italic, underline, strikethrough', () => {
             render(<RichText>{'**bold** *italic* __underline__ ~~strike~~'}</RichText>);
-            expect(screen.getByText('bold')).toHaveClass('font-bold');
-            expect(screen.getByText('italic')).toHaveClass('italic');
-            expect(screen.getByText('underline')).toHaveClass('underline');
-            expect(screen.getByText('strike')).toHaveClass('line-through');
+            expect(screen.getByText('bold').closest('strong')).toHaveClass('font-bold');
+            expect(screen.getByText('italic').closest('em')).toHaveClass('italic');
+            expect(screen.getByText('underline').closest('u')).toHaveClass('underline');
+            expect(screen.getByText('strike').closest('del')).toHaveClass('line-through');
         });
         it('should render spoilers', () => {
             render(<RichText>{'||spoiler||'}</RichText>);
