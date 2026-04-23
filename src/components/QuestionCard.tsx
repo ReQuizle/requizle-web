@@ -43,15 +43,25 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
         const mediaId = extractMediaId(question.media);
         const maxRetries = 3;
         const retryDelay = 500; // ms
+        const retryTimers = new Set<ReturnType<typeof setTimeout>>();
+        let cancelled = false;
+
+        const scheduleRetry = (retryCount: number) => {
+            const timer = setTimeout(() => {
+                retryTimers.delete(timer);
+                attemptLoad(retryCount);
+            }, retryDelay);
+            retryTimers.add(timer);
+        };
 
         const attemptLoad = (retryCount: number) => {
             getMedia(mediaId).then(entry => {
+                if (cancelled) return;
                 if (entry) {
                     setResolvedMediaUrl(entry.data);
                     setMediaLoading(false);
                 } else if (retryCount < maxRetries) {
-                    // Retry after delay
-                    setTimeout(() => attemptLoad(retryCount + 1), retryDelay);
+                    scheduleRetry(retryCount + 1);
                 } else {
                     // Give up after max retries
                     setResolvedMediaUrl(null);
@@ -59,9 +69,9 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                     setMediaLoading(false);
                 }
             }).catch(() => {
+                if (cancelled) return;
                 if (retryCount < maxRetries) {
-                    // Retry after delay
-                    setTimeout(() => attemptLoad(retryCount + 1), retryDelay);
+                    scheduleRetry(retryCount + 1);
                 } else {
                     // Give up after max retries
                     setResolvedMediaUrl(null);
@@ -72,6 +82,12 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
         };
 
         attemptLoad(0);
+
+        return () => {
+            cancelled = true;
+            retryTimers.forEach(timer => clearTimeout(timer));
+            retryTimers.clear();
+        };
     }, [question.media]);
 
     const handleAnswer = (answer: AnswerType) => {

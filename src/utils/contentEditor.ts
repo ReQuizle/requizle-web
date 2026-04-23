@@ -12,23 +12,33 @@ export const QUESTION_TYPES: {value: QuestionType; label: string}[] = [
 
 export function createEmptyQuestion(topicId: string, type: QuestionType): Question {
     const id = uuidv4();
-    const base = {id, topicId, prompt: '', explanation: '' as string | undefined};
+    const base = {id, topicId, prompt: 'New question', explanation: undefined as string | undefined};
     switch (type) {
         case 'true_false':
             return {...base, type: 'true_false', answer: true};
         case 'multiple_choice':
-            return {...base, type: 'multiple_choice', choices: ['', '', '', ''], answerIndex: 0};
+            return {
+                ...base,
+                type: 'multiple_choice',
+                choices: ['Option 1', 'Option 2', 'Option 3', 'Option 4'],
+                answerIndex: 0
+            };
         case 'multiple_answer':
-            return {...base, type: 'multiple_answer', choices: ['', '', ''], answerIndices: [0]};
+            return {
+                ...base,
+                type: 'multiple_answer',
+                choices: ['Option 1', 'Option 2', 'Option 3'],
+                answerIndices: [0]
+            };
         case 'keywords':
-            return {...base, type: 'keywords', answer: '', caseSensitive: false};
+            return {...base, type: 'keywords', answer: 'answer', caseSensitive: false};
         case 'matching':
             return {
                 ...base,
                 type: 'matching',
                 pairs: [
-                    {left: '', right: ''},
-                    {left: '', right: ''}
+                    {left: 'Item 1', right: 'Match 1'},
+                    {left: 'Item 2', right: 'Match 2'}
                 ]
             };
         case 'word_bank':

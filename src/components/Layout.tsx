@@ -3,6 +3,7 @@ import {ChevronLeft, ChevronRight, PanelLeft, PanelRight, Menu, X} from 'lucide-
 import {motion, AnimatePresence} from 'framer-motion';
 import {clsx} from 'clsx';
 import {Logo} from './Logo';
+import {useQuizStore} from '../store/useQuizStore';
 
 interface LayoutProps {
     leftSidebar: React.ReactNode;
@@ -13,6 +14,7 @@ interface LayoutProps {
 export const Layout: React.FC<LayoutProps> = ({leftSidebar, center, rightSidebar}) => {
     // Initialize based on current viewport
     const getInitialMobile = () => typeof window !== 'undefined' && window.innerWidth < 1024;
+    const animatedBackground = useQuizStore(s => s.settings.animatedBackground);
 
     const [leftSidebarVisible, setLeftSidebarVisible] = useState(() => !getInitialMobile());
     const [rightSidebarVisible, setRightSidebarVisible] = useState(() => !getInitialMobile());
@@ -47,12 +49,13 @@ export const Layout: React.FC<LayoutProps> = ({leftSidebar, center, rightSidebar
 
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col overflow-hidden relative">
-            {/* Background Effects */}
-            <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
-                <div className="absolute top-0 -left-4 w-72 h-72 bg-purple-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob dark:opacity-30"></div>
-                <div className="absolute top-0 -right-4 w-72 h-72 bg-yellow-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-2000 dark:opacity-30"></div>
-                <div className="absolute -bottom-8 left-20 w-72 h-72 bg-pink-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-4000 dark:opacity-30"></div>
-            </div>
+            {animatedBackground && (
+                <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden" aria-hidden>
+                    <div className="absolute top-0 -left-4 w-72 h-72 bg-purple-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob dark:opacity-30"></div>
+                    <div className="absolute top-0 -right-4 w-72 h-72 bg-yellow-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-2000 dark:opacity-30"></div>
+                    <div className="absolute -bottom-8 left-20 w-72 h-72 bg-pink-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-4000 dark:opacity-30"></div>
+                </div>
+            )}
 
             {/* Mobile Header Bar */}
             <header className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-700">

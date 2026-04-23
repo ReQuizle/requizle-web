@@ -12,6 +12,22 @@ vi.mock('react-katex', () => ({
     BlockMath: ({math}: {math: string}) => <div data-testid="block-math">{`[BLOCK:${math}]`}</div>
 }));
 
+vi.mock('react-syntax-highlighter', () => ({
+    PrismAsyncLight: ({
+        children,
+        className,
+        'data-testid': testId
+    }: {
+        children: string;
+        className?: string;
+        'data-testid'?: string;
+    }) => (
+        <pre className={className} data-testid={testId}>
+            <code>{children}</code>
+        </pre>
+    )
+}));
+
 describe('RichText', () => {
 
     describe('plain text', () => {
@@ -202,6 +218,22 @@ describe('RichText', () => {
             expect(block.querySelector('code')).toHaveTextContent('print("hello")');
         });
 
+        it('should render code blocks with Windows CRLF line endings', () => {
+            render(<RichText>{'```ts\r\nconst x = 1;\r\n```'}</RichText>);
+
+            const block = screen.getByTestId('code-block');
+            expect(block).toBeInTheDocument();
+            expect(screen.getByText('ts')).toBeInTheDocument();
+            expect(block.querySelector('code')).toHaveTextContent('const x = 1;');
+        });
+
+        it('should render language tags with non-word characters', () => {
+            render(<RichText>{'```c++\nint main() {}\n```'}</RichText>);
+
+            expect(screen.getByText('c++')).toBeInTheDocument();
+            expect(screen.getByTestId('code-block').querySelector('code')).toHaveTextContent('int main() {}');
+        });
+
         it('should render multi-line code blocks', () => {
             const code = '```js\nconst a = 1;\nconst b = 2;\nconsole.log(a + b);\n```';
             render(<RichText>{code}</RichText>);
@@ -294,12 +326,27 @@ describe('RichText', () => {
             expect(link).toHaveAttribute('href', 'https://link.com');
             expect(link).toHaveTextContent('link text');
         });
+        it('should render unsafe javascript links as plain text', () => {
+            render(<RichText>{'[bad link](javascript:alert)'}</RichText>);
+            expect(screen.queryByRole('link')).toBeNull();
+            expect(screen.getByText('[bad link](javascript:alert)')).toBeInTheDocument();
+        });
+        it('should allow mailto links', () => {
+            render(<RichText>{'[email](mailto:test@example.com)'}</RichText>);
+            expect(screen.getByRole('link')).toHaveAttribute('href', 'mailto:test@example.com');
+        });
         it('should render bold, italic, underline, strikethrough', () => {
             render(<RichText>{'**bold** *italic* __underline__ ~~strike~~'}</RichText>);
             expect(screen.getByText('bold').closest('strong')).toHaveClass('font-bold');
             expect(screen.getByText('italic').closest('em')).toHaveClass('italic');
             expect(screen.getByText('underline').closest('u')).toHaveClass('underline');
             expect(screen.getByText('strike').closest('del')).toHaveClass('line-through');
+        });
+        it('should render italic inside bold text', () => {
+            render(<RichText>{'**bold *italic***'}</RichText>);
+            const italic = screen.getByText('italic');
+            expect(italic.closest('em')).toHaveClass('italic');
+            expect(italic.closest('strong')).toHaveClass('font-bold');
         });
         it('should render spoilers', () => {
             render(<RichText>{'||spoiler||'}</RichText>);

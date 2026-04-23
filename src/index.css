@@ -81,6 +81,31 @@
     @apply flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm;
   }
 
+  .toggle-switch-input {
+    @apply sr-only;
+  }
+
+  .toggle-switch-track {
+    @apply relative block w-11 h-6 rounded-full bg-slate-200 transition-colors dark:bg-slate-700;
+  }
+
+  .toggle-switch-track::after {
+    content: '';
+    @apply absolute top-[2px] left-[2px] h-5 w-5 rounded-full border border-gray-300 bg-white transition-all;
+  }
+
+  .toggle-switch-input:focus-visible + .toggle-switch-track {
+    @apply outline-none ring-4 ring-indigo-100 dark:ring-indigo-900;
+  }
+
+  .toggle-switch-input:checked + .toggle-switch-track {
+    @apply bg-indigo-600;
+  }
+
+  .toggle-switch-input:checked + .toggle-switch-track::after {
+    @apply translate-x-full border-white;
+  }
+
   /* Code blocks (fenced: ```lang ... ```) */
   .code-block {
     @apply relative my-4 p-4 pt-8 rounded-xl text-sm leading-relaxed overflow-x-auto font-mono;
@@ -104,9 +129,54 @@
     @apply bg-indigo-100/70 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300;
     @apply border border-indigo-200/60 dark:border-indigo-700/40;
   }
+
+  .quiz-progress {
+    @apply block w-full h-1.5 mt-2 overflow-hidden rounded-full appearance-none border-0;
+    @apply bg-slate-100 dark:bg-slate-700;
+  }
+
+  .quiz-progress-sm {
+    @apply h-1 mt-1.5;
+  }
+
+  .quiz-progress::-webkit-progress-bar {
+    @apply bg-slate-100 dark:bg-slate-700 rounded-full;
+  }
+
+  .quiz-progress::-webkit-progress-value {
+    @apply rounded-full transition-all duration-500;
+  }
+
+  .quiz-progress::-moz-progress-bar {
+    @apply rounded-full transition-all duration-500;
+  }
+
+  .quiz-progress-green::-webkit-progress-value {
+    @apply bg-green-500;
+  }
+
+  .quiz-progress-green::-moz-progress-bar {
+    @apply bg-green-500;
+  }
+
+  .quiz-progress-indigo::-webkit-progress-value {
+    @apply bg-indigo-500;
+  }
+
+  .quiz-progress-indigo::-moz-progress-bar {
+    @apply bg-indigo-500;
+  }
+
+  .quiz-progress-emerald::-webkit-progress-value {
+    @apply bg-emerald-500;
+  }
+
+  .quiz-progress-emerald::-moz-progress-bar {
+    @apply bg-emerald-500;
+  }
 }
 
-/* Custom Animations */
+/* Ambient background animation */
 @keyframes blob {
   0% {
     transform: translate(0px, 0px) scale(1);

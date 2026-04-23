@@ -13,11 +13,11 @@ type StudyShellProps = {
 };
 
 function StudyShell({sampleSubjects}: StudyShellProps) {
-    const {profiles, activeProfileId, setSubjects} = useQuizStore();
+    const {profiles, activeProfileId, settings, setSubjects, markSampleDataSeeded} = useQuizStore();
     const subjects = profiles[activeProfileId]?.subjects || [];
 
     useEffect(() => {
-        if (subjects.length === 0) {
+        if (!settings.sampleDataSeeded && subjects.length === 0) {
             const baseUrl = window.location.origin + import.meta.env.BASE_URL;
             const subjectsWithAbsoluteMedia = sampleSubjects.map(subject => ({
                 ...subject,
@@ -30,8 +30,9 @@ function StudyShell({sampleSubjects}: StudyShellProps) {
                 }))
             }));
             setSubjects(subjectsWithAbsoluteMedia);
+            markSampleDataSeeded();
         }
-    }, [subjects.length, setSubjects, sampleSubjects]);
+    }, [markSampleDataSeeded, sampleSubjects, setSubjects, settings.sampleDataSeeded, subjects.length]);
 
     return (
         <Layout leftSidebar={<LeftSidebar />} center={<CenterArea />} rightSidebar={<RightSidebar />} />

@@ -63,13 +63,16 @@ const LONG_PRESS_MS = 480;
 const LONG_PRESS_MOVE_PX = 14;
 
 function triggerJsonDownload(data: unknown, filename: string) {
-    const dataStr = 'data:application/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(data));
+    const json = JSON.stringify(data);
+    const blob = new Blob([json], {type: 'application/json;charset=utf-8'});
+    const objectUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.setAttribute('href', dataStr);
+    a.setAttribute('href', objectUrl);
     a.setAttribute('download', filename);
     document.body.appendChild(a);
     a.click();
     a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
 }
 
 export const LeftSidebar: React.FC = () => {
@@ -401,12 +404,12 @@ export const LeftSidebar: React.FC = () => {
                                             <div className={clsx("font-medium truncate", isSelected ? "text-slate-700 dark:text-slate-200" : "text-slate-500 dark:text-slate-400")}>
                                                 {topic.name}
                                             </div>
-                                            <div className="w-full bg-slate-100 dark:bg-slate-700 h-1 mt-1.5 rounded-full overflow-hidden">
-                                                <div
-                                                    className="bg-green-500 h-full rounded-full transition-all duration-500"
-                                                    style={{width: `${masteryPct}%`}}
-                                                />
-                                            </div>
+                                            <progress
+                                                className="quiz-progress quiz-progress-sm quiz-progress-green"
+                                                value={masteryPct}
+                                                max={100}
+                                                aria-label={`${topic.name} mastery`}
+                                            />
                                         </div>
                                     </button>
                                 </div>
@@ -420,11 +423,11 @@ export const LeftSidebar: React.FC = () => {
                             <div className="relative flex items-center">
                                 <input
                                     type="checkbox"
-                                    className="peer sr-only"
+                                    className="toggle-switch-input"
                                     checked={session.includeMastered}
                                     onChange={(e) => setIncludeMastered(e.target.checked)}
                                 />
-                                <div className="w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-100 dark:peer-focus:ring-indigo-900 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                                <div className="toggle-switch-track"></div>
                             </div>
                             <span className="text-sm font-medium text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-slate-200">
                                 Include Mastered

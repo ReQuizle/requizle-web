@@ -1,7 +1,7 @@
 import {create} from 'zustand';
 import {persist, createJSONStorage} from 'zustand/middleware';
 import type {Subject, SessionState, StudyMode, QuestionProgress, Profile, SubjectExportV1, Question, Topic} from '../types';
-import {validateSubjects} from '../utils/importValidation';
+import {sanitizeSubjectProgress, validateProfileImport, validateSubjects} from '../utils/importValidation';
 import {
     generateQueue,
     getActiveQuestions,
@@ -10,8 +10,8 @@ import {
     normalizeRequeueGapRange
 } from '../utils/quizLogic';
 import {getCanonicalAppLocationHref} from '../utils/appBaseUrl';
-import {indexedDBStorage, clearStoreData, migrateFromLocalStorage} from '../utils/indexedDBStorage';
-import {deleteMedia, isIndexedDBMedia, extractMediaId} from '../utils/mediaStorage';
+import {indexedDBStorage, clearStoreData} from '../utils/indexedDBStorage';
+import {clearAllMedia, deleteMedia, isIndexedDBMedia, extractMediaId} from '../utils/mediaStorage';
 import {v4 as uuidv4} from 'uuid';
 
 interface Settings {
@@ -29,6 +29,10 @@ interface Settings {
     quizRequeueGapMin: number;
     /** Maximum positions ahead to reinsert (inclusive). */
     quizRequeueGapMax: number;
+    /** When false, hide the ambient animated background. */
+    animatedBackground: boolean;
+    /** Whether the starter sample deck has already been added for this install. */
+    sampleDataSeeded: boolean;
 }
 
 interface QuizState {
@@ -72,7 +76,7 @@ interface QuizState {
     switchProfile: (id: string) => void;
     deleteProfile: (id: string) => void;
     importProfile: (profile: Profile) => void;
-    resetAllData: () => void;
+    resetAllData: () => Promise<void>;
 
     // Settings Actions
     setConfirmSubjectDelete: (confirm: boolean) => void;
@@ -82,7 +86,11 @@ interface QuizState {
     setQuizRequeueOnIncorrect: (value: boolean) => void;
     setQuizRequeueOnSkip: (value: boolean) => void;
     setQuizRequeueGaps: (minGap: number, maxGap: number) => void;
+    setAnimatedBackground: (value: boolean) => void;
+    markSampleDataSeeded: () => void;
 }
+
+type PersistedQuizSlice = Pick<QuizState, 'profiles' | 'activeProfileId' | 'settings'>;
 
 // Helper to get current profile
 const getCurrentProfile = (state: QuizState) => state.profiles[state.activeProfileId];
@@ -220,6 +228,17 @@ function extractAllMediaIds(profiles: Record<string, Profile>): Set<string> {
 
 const DEFAULT_PROFILE_ID = 'default';
 
+function createDefaultProfile(): Profile {
+    return {
+        id: DEFAULT_PROFILE_ID,
+        name: 'Default',
+        subjects: [],
+        progress: {},
+        session: {...DEFAULT_SESSION_STATE},
+        createdAt: Date.now()
+    };
+}
+
 /** Fresh study session before a subject is chosen. Exported for UI fallbacks. */
 export const DEFAULT_SESSION_STATE: SessionState = {
     subjectId: null,
@@ -239,22 +258,97 @@ export const DEFAULT_SETTINGS: Settings = {
     quizRequeueOnIncorrect: true,
     quizRequeueOnSkip: true,
     quizRequeueGapMin: 4,
-    quizRequeueGapMax: 6
+    quizRequeueGapMax: 6,
+    animatedBackground: true,
+    sampleDataSeeded: false
 };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function sanitizeBoolean(value: unknown, fallback: boolean): boolean {
+    return typeof value === 'boolean' ? value : fallback;
+}
+
+function sanitizeNumber(value: unknown, fallback: number): number {
+    return typeof value === 'number' ? value : fallback;
+}
+
+function removeLocalStorageItem(key: string): void {
+    try {
+        localStorage.removeItem(key);
+    } catch {
+        // Some privacy modes deny storage access; reset should still complete in memory.
+    }
+}
+
+function sanitizeSettings(input: unknown, sampleDataSeededFallback: boolean): Settings {
+    const raw = isRecord(input) ? input : {};
+    const {min, max} = normalizeRequeueGapRange(
+        sanitizeNumber(raw.quizRequeueGapMin, DEFAULT_SETTINGS.quizRequeueGapMin),
+        sanitizeNumber(raw.quizRequeueGapMax, DEFAULT_SETTINGS.quizRequeueGapMax)
+    );
+
+    return {
+        confirmSubjectDelete: sanitizeBoolean(raw.confirmSubjectDelete, DEFAULT_SETTINGS.confirmSubjectDelete),
+        confirmProfileDelete: sanitizeBoolean(raw.confirmProfileDelete, DEFAULT_SETTINGS.confirmProfileDelete),
+        confirmResetSubjectProgress: sanitizeBoolean(
+            raw.confirmResetSubjectProgress,
+            DEFAULT_SETTINGS.confirmResetSubjectProgress
+        ),
+        confirmResetTopicProgress: sanitizeBoolean(
+            raw.confirmResetTopicProgress,
+            DEFAULT_SETTINGS.confirmResetTopicProgress
+        ),
+        quizRequeueOnIncorrect: sanitizeBoolean(raw.quizRequeueOnIncorrect, DEFAULT_SETTINGS.quizRequeueOnIncorrect),
+        quizRequeueOnSkip: sanitizeBoolean(raw.quizRequeueOnSkip, DEFAULT_SETTINGS.quizRequeueOnSkip),
+        quizRequeueGapMin: min,
+        quizRequeueGapMax: max,
+        animatedBackground: sanitizeBoolean(raw.animatedBackground, DEFAULT_SETTINGS.animatedBackground),
+        sampleDataSeeded: sanitizeBoolean(raw.sampleDataSeeded, sampleDataSeededFallback)
+    };
+}
+
+export function sanitizePersistedQuizState(persistedState: unknown): PersistedQuizSlice {
+    const hasPersistedState = isRecord(persistedState);
+    const input = hasPersistedState ? persistedState : {};
+    const profiles: Record<string, Profile> = {};
+
+    if (isRecord(input.profiles)) {
+        for (const [profileId, profile] of Object.entries(input.profiles)) {
+            try {
+                const profileInput = isRecord(profile) && typeof profile.id === 'string'
+                    ? profile
+                    : {...(isRecord(profile) ? profile : {}), id: profileId};
+                const validated = validateProfileImport(profileInput);
+                profiles[validated.id] = validated;
+            } catch {
+                // Drop corrupt persisted profiles instead of letting one bad record break startup.
+            }
+        }
+    }
+
+    if (Object.keys(profiles).length === 0) {
+        profiles[DEFAULT_PROFILE_ID] = createDefaultProfile();
+    }
+
+    const activeProfileId = typeof input.activeProfileId === 'string' && profiles[input.activeProfileId]
+        ? input.activeProfileId
+        : Object.values(profiles).sort((a, b) => b.createdAt - a.createdAt)[0].id;
+
+    return {
+        profiles,
+        activeProfileId,
+        settings: sanitizeSettings(input.settings, hasPersistedState)
+    };
+}
 
 export const useQuizStore = create<QuizState>()(
     persist(
         (set, get) => ({
             profiles: {
-                [DEFAULT_PROFILE_ID]: {
-                    id: DEFAULT_PROFILE_ID,
-                    name: 'Default',
-                    subjects: [],
-                    progress: {},
-                    session: {...DEFAULT_SESSION_STATE},
-                    createdAt: Date.now()
-
-                }
+                [DEFAULT_PROFILE_ID]: createDefaultProfile()
             },
             activeProfileId: DEFAULT_PROFILE_ID,
             settings: {...DEFAULT_SETTINGS},
@@ -295,11 +389,15 @@ export const useQuizStore = create<QuizState>()(
                     const sid = validated[0].id;
                     const prevSlice = profile.progress[sid] || {};
                     const mergedSlice: Record<string, Record<string, QuestionProgress>> = {...prevSlice};
-                    for (const [topicId, qMap] of Object.entries(bundle.progress || {})) {
+                    const validProgress = sanitizeSubjectProgress(bundle.progress, validated[0]);
+                    for (const [topicId, qMap] of Object.entries(validProgress)) {
                         mergedSlice[topicId] = {...(mergedSlice[topicId] || {}), ...qMap};
                     }
-                    const newProgress: Profile['progress'] = {...profile.progress, [sid]: mergedSlice};
-                    const newSession = rebuildSessionForSubjectIfActive(profile, sid, mergedSubjects, mergedSlice);
+                    const newProgress: Profile['progress'] = {...profile.progress};
+                    if (Object.keys(mergedSlice).length > 0) {
+                        newProgress[sid] = mergedSlice;
+                    }
+                    const newSession = rebuildSessionForSubjectIfActive(profile, sid, mergedSubjects, newProgress[sid]);
 
                     return {
                         profiles: {
@@ -1169,7 +1267,8 @@ export const useQuizStore = create<QuizState>()(
                                 session: {
                                     ...currentProfile.session,
                                     queue: newQueue,
-                                    currentQuestionId: nextQuestionId
+                                    currentQuestionId: nextQuestionId,
+                                    turnCounter: currentProfile.session.turnCounter + 1
                                 }
                             }
                         }
@@ -1258,19 +1357,13 @@ export const useQuizStore = create<QuizState>()(
 
                     // If this is the last profile, reset it to Default
                     if (profileIds.length === 1 && profileIds[0] === id) {
-                        const resetDefault: Profile = {
-                            id: DEFAULT_PROFILE_ID,
-                            name: 'Default',
-                            subjects: [],
-                            progress: {},
-                            session: {...DEFAULT_SESSION_STATE},
-                            createdAt: Date.now()
-                        };
+                        const resetDefault = createDefaultProfile();
                         return {
                             profiles: {
                                 [DEFAULT_PROFILE_ID]: resetDefault
                             },
-                            activeProfileId: DEFAULT_PROFILE_ID
+                            activeProfileId: DEFAULT_PROFILE_ID,
+                            settings: {...state.settings, sampleDataSeeded: false}
                         };
                     }
 
@@ -1293,58 +1386,78 @@ export const useQuizStore = create<QuizState>()(
             },
 
             importProfile: (profile) => {
+                const validatedProfile = validateProfileImport(profile);
                 set(state => {
-                    const existingProfile = state.profiles[profile.id];
+                    const existingProfile = state.profiles[validatedProfile.id];
 
                     if (!existingProfile) {
                         // Profile doesn't exist, add it directly
                         return {
                             profiles: {
                                 ...state.profiles,
-                                [profile.id]: profile
+                                [validatedProfile.id]: validatedProfile
                             },
-                            activeProfileId: profile.id
+                            activeProfileId: validatedProfile.id
                         };
                     }
 
                     // Profile exists, merge it
-                    const mergedSubjects = mergeSubjectsIntoList(existingProfile.subjects, profile.subjects);
+                    const mergedSubjects = mergeSubjectsIntoList(existingProfile.subjects, validatedProfile.subjects);
 
-                    // Merge progress: keep existing, overwrite with imported
+                    // Merge progress: keep existing, overwrite with imported at the question level.
                     const mergedProgress = {...existingProfile.progress};
-                    for (const [subjectId, subjectProgress] of Object.entries(profile.progress)) {
+                    for (const [subjectId, subjectProgress] of Object.entries(validatedProfile.progress)) {
                         if (!mergedProgress[subjectId]) {
                             mergedProgress[subjectId] = subjectProgress;
                         } else {
-                            mergedProgress[subjectId] = {
-                                ...mergedProgress[subjectId],
-                                ...subjectProgress
-                            };
+                            const mergedSubjectProgress = {...mergedProgress[subjectId]};
+                            for (const [topicId, topicProgress] of Object.entries(subjectProgress)) {
+                                mergedSubjectProgress[topicId] = {
+                                    ...(mergedSubjectProgress[topicId] || {}),
+                                    ...topicProgress
+                                };
+                            }
+                            mergedProgress[subjectId] = mergedSubjectProgress;
                         }
                     }
 
                     return {
                         profiles: {
                             ...state.profiles,
-                            [profile.id]: {
+                            [validatedProfile.id]: {
                                 ...existingProfile,
-                                ...profile,
+                                ...validatedProfile,
                                 subjects: mergedSubjects,
                                 progress: mergedProgress
                             }
                         },
-                        activeProfileId: profile.id
+                        activeProfileId: validatedProfile.id
                     };
                 });
             },
 
-            resetAllData: () => {
-                // Clear IndexedDB store data
-                clearStoreData();
-                // Also clear localStorage (for legacy data and theme)
-                localStorage.removeItem('quiz-storage');
-                localStorage.removeItem('theme');
-                window.location.href = getCanonicalAppLocationHref();
+            resetAllData: async () => {
+                const results = await Promise.allSettled([clearAllMedia(), clearStoreData()]);
+                for (const result of results) {
+                    if (result.status === 'rejected') {
+                        console.error('Failed to clear stored data during factory reset:', result.reason);
+                    }
+                }
+                // Also clear localStorage (for legacy data and theme).
+                removeLocalStorageItem('quiz-storage');
+                removeLocalStorageItem('theme');
+                set({
+                    profiles: {[DEFAULT_PROFILE_ID]: createDefaultProfile()},
+                    activeProfileId: DEFAULT_PROFILE_ID,
+                    settings: {...DEFAULT_SETTINGS}
+                });
+
+                const canonicalHref = getCanonicalAppLocationHref();
+                if (window.location.href === canonicalHref) {
+                    window.location.reload();
+                } else {
+                    window.location.href = canonicalHref;
+                }
             },
 
             setConfirmSubjectDelete: (confirm) => set((state) => ({
@@ -1380,31 +1493,33 @@ export const useQuizStore = create<QuizState>()(
                         quizRequeueGapMax: max
                     }
                 };
-            })
+            }),
+
+            setAnimatedBackground: (value) => set((state) => ({
+                settings: {...state.settings, animatedBackground: value}
+            })),
+
+            markSampleDataSeeded: () => set((state) => ({
+                settings: {...state.settings, sampleDataSeeded: true}
+            }))
         }),
         {
             name: 'quiz-storage',
             version: 1,
             // Use IndexedDB for storage instead of localStorage to avoid quota limits
             storage: createJSONStorage(() => indexedDBStorage),
-            // Migrate localStorage data to IndexedDB on first load
-            onRehydrateStorage: () => {
-                // Trigger migration from localStorage to IndexedDB
-                migrateFromLocalStorage('quiz-storage');
-                return undefined;
-            },
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            migrate: (persistedState: any, version: number) => {
+            migrate: (persistedState: unknown, version: number) => {
                 if (version === 0 || version === undefined) {
+                    const oldState = isRecord(persistedState) ? persistedState : {};
                     // Migrate from version 0 (flat state) to version 1 (profiles)
                     const defaultProfile: Profile = {
                         id: DEFAULT_PROFILE_ID,
                         name: 'Default',
-                        subjects: persistedState.subjects || [],
-                        progress: persistedState.progress || {},
+                        subjects: Array.isArray(oldState.subjects) ? oldState.subjects as Subject[] : [],
+                        progress: isRecord(oldState.progress) ? oldState.progress as Profile['progress'] : {},
                         session: {
                             ...DEFAULT_SESSION_STATE,
-                            ...(persistedState.session || {}),
+                            ...(isRecord(oldState.session) ? oldState.session : {}),
                         },
                         createdAt: Date.now()
                     };
@@ -1412,38 +1527,21 @@ export const useQuizStore = create<QuizState>()(
                     return {
                         profiles: {[DEFAULT_PROFILE_ID]: defaultProfile},
                         activeProfileId: DEFAULT_PROFILE_ID,
-                        settings: {...DEFAULT_SETTINGS}
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    } as any;
-                }
-
-                // Ensure all profiles have turnCounter in their session
-                if (persistedState.profiles) {
-                    for (const profileId of Object.keys(persistedState.profiles)) {
-                        const profile = persistedState.profiles[profileId];
-                        if (profile.session && typeof profile.session.turnCounter !== 'number') {
-                            profile.session.turnCounter = 0;
+                        settings: {
+                            ...DEFAULT_SETTINGS,
+                            sampleDataSeeded: true
                         }
-                    }
-                }
-
-                if (!persistedState.settings || typeof persistedState.settings !== 'object') {
-                    persistedState.settings = {...DEFAULT_SETTINGS};
-                } else {
-                    persistedState.settings = {
-                        ...DEFAULT_SETTINGS,
-                        ...persistedState.settings
                     };
-                    const {min, max} = normalizeRequeueGapRange(
-                        persistedState.settings.quizRequeueGapMin ?? DEFAULT_SETTINGS.quizRequeueGapMin,
-                        persistedState.settings.quizRequeueGapMax ?? DEFAULT_SETTINGS.quizRequeueGapMax
-                    );
-                    persistedState.settings.quizRequeueGapMin = min;
-                    persistedState.settings.quizRequeueGapMax = max;
                 }
 
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                return persistedState as any as QuizState;
+                return persistedState;
+            },
+            merge: (persistedState, currentState) => {
+                const sanitized = sanitizePersistedQuizState(persistedState);
+                return {
+                    ...currentState,
+                    ...sanitized
+                };
             }
 
         }

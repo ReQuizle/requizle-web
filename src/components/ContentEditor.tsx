@@ -29,6 +29,101 @@ function isVideoMediaUrl(url: string): boolean {
     return videoExtensions.some(ext => lower.includes(ext));
 }
 
+function hasDuplicateValues(values: string[]): boolean {
+    const seen = new Set<string>();
+    for (const value of values) {
+        const key = value.trim();
+        if (seen.has(key)) return true;
+        seen.add(key);
+    }
+    return false;
+}
+
+function hasEnoughWordBankEntries(wordBank: string[], answers: string[]): boolean {
+    const remaining = new Map<string, number>();
+    for (const word of wordBank) {
+        const key = word.trim();
+        remaining.set(key, (remaining.get(key) ?? 0) + 1);
+    }
+
+    for (const answer of answers) {
+        const key = answer.trim();
+        const count = remaining.get(key) ?? 0;
+        if (count <= 0) return false;
+        remaining.set(key, count - 1);
+    }
+
+    return true;
+}
+
+function getQuestionDraftError(question: Question): string | null {
+    if (!question.prompt.trim()) return 'Prompt is required.';
+
+    switch (question.type) {
+        case 'multiple_choice':
+            if (question.choices.length < 2 || question.choices.some(choice => !choice.trim())) {
+                return 'Multiple choice questions need at least two filled choices.';
+            }
+            if (question.answerIndex < 0 || question.answerIndex >= question.choices.length) {
+                return 'Choose a valid correct answer.';
+            }
+            return null;
+
+        case 'multiple_answer': {
+            if (question.choices.length < 2 || question.choices.some(choice => !choice.trim())) {
+                return 'Multiple answer questions need at least two filled choices.';
+            }
+            const uniqueAnswers = new Set(question.answerIndices);
+            const answerInRange = question.answerIndices.every(
+                index => Number.isInteger(index) && index >= 0 && index < question.choices.length
+            );
+            if (question.answerIndices.length === 0 || uniqueAnswers.size !== question.answerIndices.length || !answerInRange) {
+                return 'Choose at least one valid correct answer.';
+            }
+            return null;
+        }
+
+        case 'keywords': {
+            const answers = Array.isArray(question.answer) ? question.answer : [question.answer];
+            return answers.length > 0 && answers.every(answer => answer.trim())
+                ? null
+                : 'Add at least one accepted answer.';
+        }
+
+        case 'true_false':
+            return null;
+
+        case 'matching': {
+            const leftValues = question.pairs.map(pair => pair.left);
+            const rightValues = question.pairs.map(pair => pair.right);
+            if (question.pairs.length === 0 || [...leftValues, ...rightValues].some(value => !value.trim())) {
+                return 'Matching questions need filled left and right values.';
+            }
+            if (hasDuplicateValues(leftValues) || hasDuplicateValues(rightValues)) {
+                return 'Matching left and right values must be unique.';
+            }
+            return null;
+        }
+
+        case 'word_bank': {
+            const blankCount = question.sentence.split('_').length - 1;
+            if (!question.sentence.trim() || blankCount === 0) {
+                return 'Add a sentence with at least one blank.';
+            }
+            if (question.wordBank.length === 0 || question.wordBank.some(word => !word.trim())) {
+                return 'Add at least one filled word bank entry.';
+            }
+            if (question.answers.length !== blankCount || question.answers.some(answer => !answer.trim())) {
+                return 'Add one filled answer for each blank.';
+            }
+            if (!hasEnoughWordBankEntries(question.wordBank, question.answers)) {
+                return 'Each answer must appear in the word bank enough times.';
+            }
+            return null;
+        }
+    }
+}
+
 function QuestionMediaEditor({
     media,
     onMediaChange
@@ -268,6 +363,7 @@ export const ContentEditor: React.FC = () => {
     const [topicId, setTopicId] = useState<string | null>(null);
     const [questionId, setQuestionId] = useState<string | null>(null);
     const [questionDraft, setQuestionDraft] = useState<Question | null>(null);
+    const [questionSaveError, setQuestionSaveError] = useState<string | null>(null);
 
     const [subjectDeletePending, setSubjectDeletePending] = useState<{id: string; name: string} | null>(null);
     const [topicDeletePending, setTopicDeletePending] = useState<{
@@ -312,9 +408,14 @@ export const ContentEditor: React.FC = () => {
     const saveQuestion = useCallback(() => {
         if (!effectiveSubjectId || !effectiveTopicId || !questionDraft) return;
         const q = {...questionDraft, topicId: effectiveTopicId};
-        if (!q.prompt.trim()) return;
+        const validationError = getQuestionDraftError(q);
+        if (validationError) {
+            setQuestionSaveError(validationError);
+            return;
+        }
         updateQuestion(effectiveSubjectId, effectiveTopicId, q);
         setQuestionDraft({...q});
+        setQuestionSaveError(null);
     }, [effectiveSubjectId, effectiveTopicId, questionDraft, updateQuestion]);
 
     const handleNewSubject = () => {
@@ -323,12 +424,14 @@ export const ContentEditor: React.FC = () => {
         setTopicId(null);
         setQuestionId(null);
         setQuestionDraft(null);
+        setQuestionSaveError(null);
     };
 
     const clearEditorSelection = () => {
         setTopicId(null);
         setQuestionId(null);
         setQuestionDraft(null);
+        setQuestionSaveError(null);
     };
 
     const handleDeleteSubject = () => {
@@ -366,6 +469,7 @@ export const ContentEditor: React.FC = () => {
         addQuestion(effectiveSubjectId, effectiveTopicId, q);
         setQuestionId(q.id);
         setQuestionDraft({...q});
+        setQuestionSaveError(null);
     };
 
     const handleDeleteQuestion = () => {
@@ -380,6 +484,7 @@ export const ContentEditor: React.FC = () => {
     const selectQuestion = (q: Question) => {
         setQuestionId(q.id);
         setQuestionDraft({...q});
+        setQuestionSaveError(null);
     };
 
     if (subjects.length === 0) {
@@ -415,6 +520,7 @@ export const ContentEditor: React.FC = () => {
                             setTopicId(null);
                             setQuestionId(null);
                             setQuestionDraft(null);
+                            setQuestionSaveError(null);
                         }}
                         className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
                     >
@@ -480,6 +586,7 @@ export const ContentEditor: React.FC = () => {
                                         setTopicId(t.id);
                                         setQuestionId(null);
                                         setQuestionDraft(null);
+                                        setQuestionSaveError(null);
                                     }}
                                     className={clsx(
                                         'px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors',
@@ -562,6 +669,7 @@ export const ContentEditor: React.FC = () => {
                                                 const nt = e.target.value as QuestionType;
                                                 if (!effectiveTopicId) return;
                                                 setQuestionDraft(migrateQuestionShape(questionDraft, nt, effectiveTopicId));
+                                                setQuestionSaveError(null);
                                             }}
                                             className="text-xs px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900"
                                         >
@@ -579,9 +687,10 @@ export const ContentEditor: React.FC = () => {
                                         </label>
                                         <textarea
                                             value={questionDraft.prompt}
-                                            onChange={e =>
-                                                setQuestionDraft({...questionDraft, prompt: e.target.value})
-                                            }
+                                            onChange={e => {
+                                                setQuestionDraft({...questionDraft, prompt: e.target.value});
+                                                setQuestionSaveError(null);
+                                            }}
                                             rows={3}
                                             className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm"
                                         />
@@ -606,12 +715,25 @@ export const ContentEditor: React.FC = () => {
 
                                     <QuestionMediaEditor
                                         media={questionDraft.media}
-                                        onMediaChange={next =>
-                                            setQuestionDraft({...questionDraft, media: next})
-                                        }
+                                        onMediaChange={next => {
+                                            setQuestionDraft({...questionDraft, media: next});
+                                            setQuestionSaveError(null);
+                                        }}
                                     />
 
-                                    <QuestionTypeFields draft={questionDraft} setDraft={setQuestionDraft} />
+                                    <QuestionTypeFields
+                                        draft={questionDraft}
+                                        setDraft={next => {
+                                            setQuestionDraft(next);
+                                            setQuestionSaveError(null);
+                                        }}
+                                    />
+
+                                    {questionSaveError && (
+                                        <p className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 px-3 py-2 text-xs text-red-600 dark:text-red-400">
+                                            {questionSaveError}
+                                        </p>
+                                    )}
 
                                     <div className="flex gap-2 pt-1">
                                         <button
@@ -680,6 +802,7 @@ export const ContentEditor: React.FC = () => {
                     setTopicId(null);
                     setQuestionId(null);
                     setQuestionDraft(null);
+                    setQuestionSaveError(null);
                 }}
             >
                 <p>
@@ -704,6 +827,7 @@ export const ContentEditor: React.FC = () => {
                     setQuestionDeletePending(null);
                     setQuestionId(null);
                     setQuestionDraft(null);
+                    setQuestionSaveError(null);
                 }}
             >
                 <p>Delete this question? Progress for it will be removed.</p>

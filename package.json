@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "homepage": "https://requizle.github.io/requizle-web",
+  "homepage": "https://requizle.github.io/",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -25,7 +25,7 @@
     "react-katex": "^3.1.0",
     "react-router-dom": "^7.14.1",
     "react-syntax-highlighter": "^16.1.1",
-    "uuid": "^13.0.0",
+    "uuid": "^14.0.0",
     "zustand": "^5.0.8"
   },
   "devDependencies": {
@@ -58,5 +58,8 @@
     "vite": "^6.0.0",
     "vite-plugin-pwa": "^1.2.0",
     "vitest": "^4.0.13"
+  },
+  "overrides": {
+    "serialize-javascript": "^7.0.5"
   }
 }

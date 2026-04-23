@@ -75,7 +75,7 @@ export const CenterArea: React.FC = () => {
                     onConfirm={() => {
                         setIncludeMastered(true);
                         setReviewMasteredOpen(false);
-                        setTimeout(() => restartQueue(), 0);
+                        restartQueue();
                     }}
                 >
                     <p>

@@ -9,6 +9,21 @@ const STORE_NAME = 'media';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
+function waitForTransaction(transaction: IDBTransaction, message: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+        transaction.oncomplete = () => resolve();
+        transaction.onabort = () => reject(transaction.error ?? new Error(message));
+        transaction.onerror = () => reject(transaction.error ?? new Error(message));
+    });
+}
+
+function waitForRequest<T>(request: IDBRequest<T>, message: string): Promise<T> {
+    return new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error ?? new Error(message));
+    });
+}
+
 function openDB(): Promise<IDBDatabase> {
     if (dbPromise) return dbPromise;
 
@@ -16,10 +31,15 @@ function openDB(): Promise<IDBDatabase> {
         const request = indexedDB.open(DB_NAME, DB_VERSION);
 
         request.onerror = () => {
+            dbPromise = null;
             reject(new Error('Failed to open IndexedDB'));
         };
 
         request.onsuccess = () => {
+            request.result.onversionchange = () => {
+                request.result.close();
+                dbPromise = null;
+            };
             resolve(request.result);
         };
 
@@ -67,10 +87,11 @@ export async function storeMedia(dataUri: string, filename: string): Promise<str
     return new Promise((resolve, reject) => {
         const transaction = db.transaction(STORE_NAME, 'readwrite');
         const store = transaction.objectStore(STORE_NAME);
-        const request = store.put(entry);
+        store.put(entry);
 
-        request.onsuccess = () => resolve(id);
-        request.onerror = () => reject(new Error('Failed to store media'));
+        waitForTransaction(transaction, 'Failed to store media')
+            .then(() => resolve(id))
+            .catch(reject);
     });
 }
 
@@ -96,10 +117,9 @@ export async function restoreMediaEntry(entry: {id: string; data: string; filena
     return new Promise((resolve, reject) => {
         const transaction = db.transaction(STORE_NAME, 'readwrite');
         const store = transaction.objectStore(STORE_NAME);
-        const request = store.put(fullEntry);
+        store.put(fullEntry);
 
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(new Error('Failed to restore media'));
+        waitForTransaction(transaction, 'Failed to restore media').then(resolve).catch(reject);
     });
 }
 
@@ -113,9 +133,14 @@ export async function getMedia(id: string): Promise<MediaEntry | null> {
         const transaction = db.transaction(STORE_NAME, 'readonly');
         const store = transaction.objectStore(STORE_NAME);
         const request = store.get(id);
+        const transactionDone = waitForTransaction(transaction, 'Failed to retrieve media');
 
-        request.onsuccess = () => resolve(request.result || null);
-        request.onerror = () => reject(new Error('Failed to retrieve media'));
+        Promise.all([
+            waitForRequest<MediaEntry | undefined>(request, 'Failed to retrieve media'),
+            transactionDone
+        ])
+            .then(([result]) => resolve(result || null))
+            .catch(reject);
     });
 }
 
@@ -128,10 +153,9 @@ export async function deleteMedia(id: string): Promise<void> {
     return new Promise((resolve, reject) => {
         const transaction = db.transaction(STORE_NAME, 'readwrite');
         const store = transaction.objectStore(STORE_NAME);
-        const request = store.delete(id);
+        store.delete(id);
 
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(new Error('Failed to delete media'));
+        waitForTransaction(transaction, 'Failed to delete media').then(resolve).catch(reject);
     });
 }
 
@@ -145,9 +169,14 @@ export async function getAllMediaIds(): Promise<string[]> {
         const transaction = db.transaction(STORE_NAME, 'readonly');
         const store = transaction.objectStore(STORE_NAME);
         const request = store.getAllKeys();
+        const transactionDone = waitForTransaction(transaction, 'Failed to get media keys');
 
-        request.onsuccess = () => resolve(request.result as string[]);
-        request.onerror = () => reject(new Error('Failed to get media keys'));
+        Promise.all([
+            waitForRequest<IDBValidKey[]>(request, 'Failed to get media keys'),
+            transactionDone
+        ])
+            .then(([result]) => resolve(result as string[]))
+            .catch(reject);
     });
 }
 
@@ -160,10 +189,9 @@ export async function clearAllMedia(): Promise<void> {
     return new Promise((resolve, reject) => {
         const transaction = db.transaction(STORE_NAME, 'readwrite');
         const store = transaction.objectStore(STORE_NAME);
-        const request = store.clear();
+        store.clear();
 
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(new Error('Failed to clear media'));
+        waitForTransaction(transaction, 'Failed to clear media').then(resolve).catch(reject);
     });
 }
 

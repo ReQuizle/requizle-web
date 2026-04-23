@@ -10,7 +10,7 @@ ReQuizle is a modern web application designed to help users study efficiently th
 
 - **Focused Study Experience**: Clean, distraction-free UI with smooth animations.
 - **Mastery Tracking**: Track progress and mastery percentage for each subject and topic.
-- **Spaced Repetition**: Option to include or exclude mastered questions from the study queue.
+- **Spaced Repetition**: Smart queueing for missed/skipped cards, plus an option to include or exclude mastered questions.
 - **Multiple Question Types**: Support for various question formats:
   - Multiple Choice
   - Multiple Answer
@@ -58,11 +58,13 @@ npm install
 npm run dev
 ```
 
-The project uses a **`/requizle-web/`** [Vite `base`](https://vitejs.dev/config/shared-options.html#base) so production matches GitHub Pages. In development, open:
+The project uses a root **`/`** [Vite `base`](https://vitejs.dev/config/shared-options.html#base) by default. In development, open:
 
-**http://localhost:5173/requizle-web/**
+**http://localhost:5173/**
 
-(use the trailing slash, or accept the dev-server redirect from `/requizle-web`). The study UI is at that URL; the **content editor** is at **http://localhost:5173/requizle-web/edit** (or use **Edit content** in the left sidebar).
+The study UI is at that URL; the **content editor** is at **http://localhost:5173/edit** (or use **Edit content** in the left sidebar).
+
+For a subdirectory deployment, set `VITE_APP_BASE` before building, for example `/requizle-web/`.
 
 1. **Select a Subject**:
    - Choose a subject from the left sidebar
@@ -81,7 +83,7 @@ The project uses a **`/requizle-web/`** [Vite `base`](https://vitejs.dev/config/
    - Use the Import tab in the right sidebar
    - Upload JSON files with subjects, questions, or full profiles
    - Import type is automatically detected
-   - Imported data merges with existing content (updates existing, adds new)
+   - Imported data merges by matching explicit IDs; imports without IDs create new copies
 
 ## Development
 

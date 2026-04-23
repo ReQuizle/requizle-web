@@ -5,6 +5,9 @@ import {calculateMastery, getActiveQuestions} from '../utils/quizLogic';
 import {
     validateSubjects,
     isSubjectExportV1,
+    sanitizeSubjectProgress,
+    validateProfileImport,
+    isImportableQuizPayload,
     extractMediaReferencesWithContext,
     getLocalMediaRefs,
     groupMediaByFilename,
@@ -14,7 +17,6 @@ import {
 import {
     storeMedia,
     createMediaRef,
-    clearAllMedia,
     getAllMediaIds,
     deleteMedia,
     isIndexedDBMedia,
@@ -58,6 +60,59 @@ const SETTINGS_SECTIONS: {id: SettingsSectionId; label: string; icon: typeof Use
     {id: 'links', label: 'Links & help', icon: Link2}
 ];
 
+type EmbeddedMediaEntry = {id: string; data: string; filename: string};
+
+type SettingsSwitchRowProps = {
+    title: string;
+    description?: string;
+    checked: boolean;
+    onChange: (checked: boolean) => void;
+};
+
+const SettingsSwitchRow: React.FC<SettingsSwitchRowProps> = ({title, description, checked, onChange}) => (
+    <label className="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer gap-3">
+        <div className="min-w-0">
+            <span className="text-sm font-medium text-slate-700 dark:text-slate-200 block">{title}</span>
+            {description && (
+                <span className="text-xs text-slate-500 dark:text-slate-400">{description}</span>
+            )}
+        </div>
+        <div className="relative flex items-center flex-shrink-0">
+            <input
+                type="checkbox"
+                className="toggle-switch-input"
+                checked={checked}
+                onChange={(e) => onChange(e.target.checked)}
+            />
+            <div className="toggle-switch-track"></div>
+        </div>
+    </label>
+);
+
+function isEmbeddedMediaEntry(value: unknown): value is EmbeddedMediaEntry {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+    const entry = value as Record<string, unknown>;
+    return (
+        typeof entry.id === 'string' &&
+        typeof entry.data === 'string' &&
+        entry.data.startsWith('data:') &&
+        typeof entry.filename === 'string'
+    );
+}
+
+function triggerJsonDownload(data: unknown, filename: string) {
+    const json = JSON.stringify(data);
+    const blob = new Blob([json], {type: 'application/json;charset=utf-8'});
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.setAttribute('href', objectUrl);
+    a.setAttribute('download', filename);
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+}
+
 export const RightSidebar: React.FC = () => {
     const {
         profiles,
@@ -79,7 +134,8 @@ export const RightSidebar: React.FC = () => {
         setMode,
         setQuizRequeueOnIncorrect,
         setQuizRequeueOnSkip,
-        setQuizRequeueGaps
+        setQuizRequeueGaps,
+        setAnimatedBackground
     } = useQuizStore();
     const [activeTab, setActiveTab] = useState<'mastery' | 'import' | 'settings'>('mastery');
     const [settingsSection, setSettingsSection] = useState<SettingsSectionId>('profiles');
@@ -145,25 +201,22 @@ export const RightSidebar: React.FC = () => {
             importSubjectExport(parsed);
             const subj = parsed.subject;
             const label = typeof subj.name === 'string' ? subj.name : subj.id;
-            return {type: 'subjects', message: `Imported "${label}" with progress.`};
+            const validProgress = sanitizeSubjectProgress(parsed.progress, parsed.subject);
+            const hasProgress = Object.values(validProgress).some(qMap => Object.keys(qMap).length > 0);
+            return {
+                type: 'subjects',
+                message: hasProgress ? `Imported "${label}" with progress.` : `Imported "${label}".`
+            };
         }
 
-        if (
-            typeof parsed === 'object' &&
-            parsed !== null &&
-            'id' in parsed &&
-            'name' in parsed &&
-            'subjects' in parsed &&
-            'progress' in parsed &&
-            'session' in parsed
-        ) {
-            const profile = parsed as {id: string; name: string; subjects: unknown[]; progress: unknown; session: unknown};
-            if (typeof profile.id === 'string' && typeof profile.name === 'string' && Array.isArray(profile.subjects)) {
-                const existingProfile = profiles[profile.id];
-                importProfile(profile as Parameters<typeof importProfile>[0]);
-                const action = existingProfile ? 'merged with existing' : 'imported';
-                return {type: 'profile', message: `Profile "${profile.name}" ${action} successfully!`};
-            }
+        try {
+            const profile = validateProfileImport(parsed);
+            const existingProfile = profiles[profile.id];
+            importProfile(profile);
+            const action = existingProfile ? 'merged with existing' : 'imported';
+            return {type: 'profile', message: `Profile "${profile.name}" ${action} successfully!`};
+        } catch {
+            // Not a valid profile import. Fall through and try subject import.
         }
 
         // Otherwise, try to import as subjects
@@ -188,6 +241,10 @@ export const RightSidebar: React.FC = () => {
 
     // Check for local media and either import directly or prompt for upload
     const detectAndImport = async (parsed: unknown): Promise<{type: 'profile' | 'subjects' | 'pending'; message: string}> => {
+        if (!isImportableQuizPayload(parsed)) {
+            throw new Error('Invalid import format: expected a profile, subject export, subject, or subject array');
+        }
+
         // Check for embedded media in profile export
         if (
             typeof parsed === 'object' &&
@@ -195,7 +252,7 @@ export const RightSidebar: React.FC = () => {
             '_media' in parsed &&
             Array.isArray((parsed as Record<string, unknown>)._media)
         ) {
-            const mediaList = (parsed as Record<string, unknown>)._media as {id: string; data: string; filename: string}[];
+            const mediaList = ((parsed as Record<string, unknown>)._media as unknown[]).filter(isEmbeddedMediaEntry);
 
             // Restore media to IndexedDB
             for (const item of mediaList) {
@@ -321,8 +378,7 @@ export const RightSidebar: React.FC = () => {
                     if (idx !== groupIndex) return group;
 
                     // Get or create the per-ref upload map
-                    const existingRefMap = (group as unknown as {uploadedPerRef?: Map<string, string>}).uploadedPerRef;
-                    const refMap = new Map(existingRefMap || []);
+                    const refMap = new Map(group.uploadedPerRef || []);
                     refMap.set(group.references[refIndex].path, dataUri);
 
                     // Check if all refs in this conflict group are uploaded
@@ -332,7 +388,7 @@ export const RightSidebar: React.FC = () => {
                         ...group,
                         uploaded: allUploaded,
                         uploadedPerRef: refMap
-                    } as typeof group & {uploadedPerRef: Map<string, string>};
+                    };
                 });
 
                 return {
@@ -406,7 +462,8 @@ export const RightSidebar: React.FC = () => {
             for (const group of mediaGroups) {
                 if (group.isConflict) {
                     // For conflicts, each reference has its own upload
-                    const refMap = (group as unknown as {uploadedPerRef: Map<string, string>}).uploadedPerRef;
+                    const refMap = group.uploadedPerRef;
+                    if (!refMap) continue;
                     for (const ref of group.references) {
                         const dataUri = refMap.get(ref.path);
                         if (dataUri) {
@@ -599,16 +656,22 @@ export const RightSidebar: React.FC = () => {
                                 <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
                                     <div className="text-xs text-slate-400 dark:text-slate-500 uppercase font-bold mb-1">Subject</div>
                                     <div className="text-2xl font-bold text-slate-800 dark:text-slate-100">{subjectMastery}%</div>
-                                    <div className="w-full bg-slate-100 dark:bg-slate-700 h-1.5 mt-2 rounded-full overflow-hidden">
-                                        <div className="bg-indigo-500 h-full rounded-full" style={{width: `${subjectMastery}%`}} />
-                                    </div>
+                                    <progress
+                                        className="quiz-progress quiz-progress-indigo"
+                                        value={subjectMastery}
+                                        max={100}
+                                        aria-label="Subject mastery"
+                                    />
                                 </div>
                                 <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
                                     <div className="text-xs text-slate-400 dark:text-slate-500 uppercase font-bold mb-1">Selection</div>
                                     <div className="text-2xl font-bold text-slate-800 dark:text-slate-100">{activeMastery}%</div>
-                                    <div className="w-full bg-slate-100 dark:bg-slate-700 h-1.5 mt-2 rounded-full overflow-hidden">
-                                        <div className="bg-emerald-500 h-full rounded-full" style={{width: `${activeMastery}%`}} />
-                                    </div>
+                                    <progress
+                                        className="quiz-progress quiz-progress-emerald"
+                                        value={activeMastery}
+                                        max={100}
+                                        aria-label="Selection mastery"
+                                    />
                                 </div>
                             </div>
 
@@ -902,13 +965,8 @@ export const RightSidebar: React.FC = () => {
                                                             _media: mediaExports
                                                         };
 
-                                                        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData));
-                                                        const downloadAnchorNode = document.createElement('a');
-                                                        downloadAnchorNode.setAttribute("href", dataStr);
-                                                        downloadAnchorNode.setAttribute("download", `quiz-profile-${profile.name.toLowerCase().replace(/\s+/g, '-')}.rqzl`);
-                                                        document.body.appendChild(downloadAnchorNode);
-                                                        downloadAnchorNode.click();
-                                                        downloadAnchorNode.remove();
+                                                        const safeName = profile.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/gi, '') || 'profile';
+                                                        triggerJsonDownload(exportData, `quiz-profile-${safeName}.rqzl`);
                                                     }}
                                                     className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
                                                     title="Export Profile"
@@ -988,6 +1046,11 @@ export const RightSidebar: React.FC = () => {
                             <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Theme</span>
                             <ThemeToggle />
                         </div>
+                        <SettingsSwitchRow
+                            title="Animated background"
+                            checked={settings.animatedBackground}
+                            onChange={setAnimatedBackground}
+                        />
                         </div>
                     )}
 
@@ -1040,36 +1103,18 @@ export const RightSidebar: React.FC = () => {
 
                         <div className="space-y-2 pt-1">
                             <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Missed &amp; skipped questions</p>
-                            <label className="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer gap-3">
-                                <div className="min-w-0">
-                                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200 block">Requeue after wrong answer</span>
-                                    <span className="text-xs text-slate-500 dark:text-slate-400">Put the card back in the queue so it returns later</span>
-                                </div>
-                                <div className="relative flex items-center flex-shrink-0">
-                                    <input
-                                        type="checkbox"
-                                        className="peer sr-only"
-                                        checked={settings.quizRequeueOnIncorrect}
-                                        onChange={(e) => setQuizRequeueOnIncorrect(e.target.checked)}
-                                    />
-                                    <div className="w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-100 dark:peer-focus:ring-indigo-900 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                                </div>
-                            </label>
-                            <label className="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer gap-3">
-                                <div className="min-w-0">
-                                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200 block">Requeue after skip</span>
-                                    <span className="text-xs text-slate-500 dark:text-slate-400">Same spacing as wrong answers when enabled</span>
-                                </div>
-                                <div className="relative flex items-center flex-shrink-0">
-                                    <input
-                                        type="checkbox"
-                                        className="peer sr-only"
-                                        checked={settings.quizRequeueOnSkip}
-                                        onChange={(e) => setQuizRequeueOnSkip(e.target.checked)}
-                                    />
-                                    <div className="w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-100 dark:peer-focus:ring-indigo-900 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                                </div>
-                            </label>
+                            <SettingsSwitchRow
+                                title="Requeue after wrong answer"
+                                description="Put the card back in the queue so it returns later"
+                                checked={settings.quizRequeueOnIncorrect}
+                                onChange={setQuizRequeueOnIncorrect}
+                            />
+                            <SettingsSwitchRow
+                                title="Requeue after skip"
+                                description="Same spacing as wrong answers when enabled"
+                                checked={settings.quizRequeueOnSkip}
+                                onChange={setQuizRequeueOnSkip}
+                            />
                             <div
                                 className={clsx(
                                     'space-y-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3',
@@ -1124,68 +1169,32 @@ export const RightSidebar: React.FC = () => {
                         </div>
 
                         <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider pt-1">Progress resets</p>
-                        <label className="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer gap-3">
-                            <div className="min-w-0">
-                                <span className="text-sm font-medium text-slate-700 dark:text-slate-200 block">Confirm reset subject progress</span>
-                                <span className="text-xs text-slate-500 dark:text-slate-400">Dialog before clearing all mastery for a subject</span>
-                            </div>
-                            <div className="relative flex items-center flex-shrink-0">
-                                <input
-                                    type="checkbox"
-                                    className="peer sr-only"
-                                    checked={settings.confirmResetSubjectProgress}
-                                    onChange={(e) => setConfirmResetSubjectProgress(e.target.checked)}
-                                />
-                                <div className="w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-100 dark:peer-focus:ring-indigo-900 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                            </div>
-                        </label>
-                        <label className="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer gap-3">
-                            <div className="min-w-0">
-                                <span className="text-sm font-medium text-slate-700 dark:text-slate-200 block">Confirm reset topic progress</span>
-                                <span className="text-xs text-slate-500 dark:text-slate-400">Dialog before clearing mastery for one topic</span>
-                            </div>
-                            <div className="relative flex items-center flex-shrink-0">
-                                <input
-                                    type="checkbox"
-                                    className="peer sr-only"
-                                    checked={settings.confirmResetTopicProgress}
-                                    onChange={(e) => setConfirmResetTopicProgress(e.target.checked)}
-                                />
-                                <div className="w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-100 dark:peer-focus:ring-indigo-900 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                            </div>
-                        </label>
+                        <SettingsSwitchRow
+                            title="Confirm reset subject progress"
+                            description="Dialog before clearing all mastery for a subject"
+                            checked={settings.confirmResetSubjectProgress}
+                            onChange={setConfirmResetSubjectProgress}
+                        />
+                        <SettingsSwitchRow
+                            title="Confirm reset topic progress"
+                            description="Dialog before clearing mastery for one topic"
+                            checked={settings.confirmResetTopicProgress}
+                            onChange={setConfirmResetTopicProgress}
+                        />
 
                         <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider pt-1">Deletion safety</p>
-                        <label className="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer">
-                            <div>
-                                <span className="text-sm font-medium text-slate-700 dark:text-slate-200 block">Confirm Subject Deletion</span>
-                                <span className="text-xs text-slate-500 dark:text-slate-400">Require typing name to delete; when off, delete immediately</span>
-                            </div>
-                            <div className="relative flex items-center">
-                                <input
-                                    type="checkbox"
-                                    className="peer sr-only"
-                                    checked={settings.confirmSubjectDelete}
-                                    onChange={(e) => setConfirmSubjectDelete(e.target.checked)}
-                                />
-                                <div className="w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-100 dark:peer-focus:ring-indigo-900 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                            </div>
-                        </label>
-                        <label className="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer">
-                            <div>
-                                <span className="text-sm font-medium text-slate-700 dark:text-slate-200 block">Confirm Profile Deletion</span>
-                                <span className="text-xs text-slate-500 dark:text-slate-400">Require typing name to delete</span>
-                            </div>
-                            <div className="relative flex items-center">
-                                <input
-                                    type="checkbox"
-                                    className="peer sr-only"
-                                    checked={settings.confirmProfileDelete}
-                                    onChange={(e) => setConfirmProfileDelete(e.target.checked)}
-                                />
-                                <div className="w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-100 dark:peer-focus:ring-indigo-900 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                            </div>
-                        </label>
+                        <SettingsSwitchRow
+                            title="Confirm subject deletion"
+                            description="Require typing name to delete; when off, delete immediately"
+                            checked={settings.confirmSubjectDelete}
+                            onChange={setConfirmSubjectDelete}
+                        />
+                        <SettingsSwitchRow
+                            title="Confirm profile deletion"
+                            description="Require typing name to delete"
+                            checked={settings.confirmProfileDelete}
+                            onChange={setConfirmProfileDelete}
+                        />
                         </div>
                     )}
 
@@ -1427,10 +1436,7 @@ export const RightSidebar: React.FC = () => {
                 onClose={() => setFactoryResetConfirm(false)}
                 onConfirm={() => {
                     setFactoryResetConfirm(false);
-                    void (async () => {
-                        await clearAllMedia();
-                        resetAllData();
-                    })();
+                    void resetAllData();
                 }}
             />
 
@@ -1484,7 +1490,7 @@ export const RightSidebar: React.FC = () => {
                         <div className="space-y-3 max-h-64 overflow-y-auto">
                             {pendingImport.mediaGroups.map((group, groupIndex) => {
                                 const hasConflict = group.isConflict;
-                                const refMap = (group as unknown as {uploadedPerRef?: Map<string, string>}).uploadedPerRef;
+                                const refMap = group.uploadedPerRef;
 
                                 return (
                                     <div key={group.filename} className="space-y-1">
@@ -1500,8 +1506,9 @@ export const RightSidebar: React.FC = () => {
                                             <div className="flex items-center gap-2">
                                                 <span className="font-medium truncate">{group.filename}</span>
                                                 {hasConflict && (
-                                                    <span className="text-xs px-1.5 py-0.5 rounded bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200">
-                                                        ⚠️ Conflict
+                                                    <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200">
+                                                        <AlertCircle size={12} />
+                                                        Conflict
                                                     </span>
                                                 )}
                                             </div>

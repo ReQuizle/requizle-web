@@ -1,8 +1,37 @@
 import React from 'react';
 import 'katex/dist/katex.min.css';
 import {InlineMath, BlockMath} from 'react-katex';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import {PrismAsyncLight as SyntaxHighlighter} from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+
+const SAFE_LINK_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
+
+const LANGUAGE_ALIASES: Record<string, string> = {
+    'c++': 'cpp',
+    'c#': 'csharp',
+    cs: 'csharp',
+    html: 'markup',
+    js: 'javascript',
+    md: 'markdown',
+    py: 'python',
+    sh: 'bash',
+    shell: 'bash',
+    ts: 'typescript',
+    xml: 'markup',
+    yml: 'yaml'
+};
+
+function normalizeCodeLanguage(language: string): string {
+    const key = language.trim().toLowerCase();
+    return LANGUAGE_ALIASES[key] ?? key;
+}
+
+const codeBlockCustomStyle: React.CSSProperties = {
+    margin: 0,
+    background: 'transparent',
+    padding: '1rem',
+    paddingTop: '2rem'
+};
 
 interface RichTextProps {
     children: string;
@@ -40,8 +69,8 @@ function parseContent(text: string): React.ReactNode[] {
     const parts: React.ReactNode[] = [];
     let key = 0;
 
-    // Match fenced code blocks: ```lang?\n...\n```
-    const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/g;
+    // Match fenced code blocks with LF or CRLF line endings and an optional language tag.
+    const codeBlockRegex = /```([^\s`]*)[^\S\r\n]*\r?\n([\s\S]*?)```/g;
     let lastIndex = 0;
     let match;
 
@@ -54,6 +83,7 @@ function parseContent(text: string): React.ReactNode[] {
         }
 
         const language = match[1] || '';
+        const normalizedLanguage = normalizeCodeLanguage(language || 'text');
         const code = match[2];
 
         parts.push(
@@ -62,10 +92,10 @@ function parseContent(text: string): React.ReactNode[] {
                     <span className="code-block-lang z-10 pointer-events-none">{language}</span>
                 )}
                 <SyntaxHighlighter
-                    language={language || 'text'}
+                    language={normalizedLanguage}
                     style={vscDarkPlus}
                     className="code-block !my-0"
-                    customStyle={{ margin: 0, background: 'transparent', padding: '1rem', paddingTop: '2rem' }} 
+                    customStyle={codeBlockCustomStyle}
                     data-testid="code-block"
                 >
                     {code}
@@ -298,11 +328,16 @@ function parseLinks(text: string, startKey: number): React.ReactNode[] {
             key += 100;
         }
 
-        parts.push(
-            <a key={key++} href={match[2]} target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline font-medium">
-                {parseSpoilers(match[1], key)}
-            </a>
-        );
+        const safeHref = getSafeLinkHref(match[2]);
+        if (safeHref) {
+            parts.push(
+                <a key={key++} href={safeHref} target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline font-medium">
+                    {parseSpoilers(match[1], key)}
+                </a>
+            );
+        } else {
+            parts.push(<span key={key++}>{match[0]}</span>);
+        }
 
         lastIndex = match.index + match[0].length;
     }
@@ -312,6 +347,19 @@ function parseLinks(text: string, startKey: number): React.ReactNode[] {
     }
 
     return parts;
+}
+
+function getSafeLinkHref(rawHref: string): string | null {
+    const href = rawHref.trim();
+    if (!href) return null;
+
+    try {
+        const baseUrl = typeof window === 'undefined' ? 'https://requizle.local' : window.location.origin;
+        const parsed = new URL(href, baseUrl);
+        return SAFE_LINK_PROTOCOLS.has(parsed.protocol) ? href : null;
+    } catch {
+        return null;
+    }
 }
 
 /** Parse spoilers ||...||, delegating remaining to parseBold */
@@ -347,7 +395,7 @@ function parseSpoilers(text: string, startKey: number): React.ReactNode[] {
 /** Parse bold text **...**, delegating remaining text to parseUnderline */
 function parseBold(text: string, startKey: number): React.ReactNode[] {
     const parts: React.ReactNode[] = [];
-    const boldRegex = /\*\*([^*]+)\*\*/g;
+    const boldRegex = /\*\*([\s\S]+?)\*\*(?!\*)/g;
     let lastIndex = 0;
     let match;
     let key = startKey;

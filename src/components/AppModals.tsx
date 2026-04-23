@@ -1,8 +1,7 @@
 import React, {useState} from 'react';
 import {createPortal} from 'react-dom';
 
-/** Above sidebars (context menu uses z-[100]). */
-const MODAL_Z = 110;
+const modalOverlayClass = 'fixed inset-0 z-[110] bg-black/50 flex items-center justify-center p-4';
 
 type TypeToConfirmModalProps = {
     open: boolean;
@@ -38,8 +37,7 @@ function TypeToConfirmModalMounted({
 
     return createPortal(
         <div
-            className="fixed inset-0 bg-black/50 flex items-center justify-center p-4"
-            style={{zIndex: MODAL_Z}}
+            className={modalOverlayClass}
             role="dialog"
             aria-modal="true"
             aria-labelledby="type-confirm-title"
@@ -113,8 +111,7 @@ export function SimpleConfirmModal({
 
     return createPortal(
         <div
-            className="fixed inset-0 bg-black/50 flex items-center justify-center p-4"
-            style={{zIndex: MODAL_Z}}
+            className={modalOverlayClass}
             role="dialog"
             aria-modal="true"
             aria-labelledby="simple-confirm-title"
@@ -155,8 +152,7 @@ export function MessageModal({open, title, message, buttonLabel = 'OK', onClose}
 
     return createPortal(
         <div
-            className="fixed inset-0 bg-black/50 flex items-center justify-center p-4"
-            style={{zIndex: MODAL_Z}}
+            className={modalOverlayClass}
             role="dialog"
             aria-modal="true"
         >
@@ -210,8 +206,7 @@ function TextPromptModalMounted({
 
     return createPortal(
         <div
-            className="fixed inset-0 bg-black/50 flex items-center justify-center p-4"
-            style={{zIndex: MODAL_Z}}
+            className={modalOverlayClass}
             role="dialog"
             aria-modal="true"
             aria-labelledby="text-prompt-title"
