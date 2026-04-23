@@ -3,6 +3,7 @@ import type {MatchingQuestion} from '../../types';
 import {clsx} from 'clsx';
 import {motion} from 'framer-motion';
 import {RichText} from '../RichText';
+import {shuffleArray} from '../../utils/array';
 
 interface Props {
     question: MatchingQuestion;
@@ -10,16 +11,6 @@ interface Props {
     disabled: boolean;
     submittedAnswer: Record<string, string> | null;
 }
-
-// Fisher-Yates shuffle function
-const shuffleArray = <T,>(array: T[]): T[] => {
-    const shuffled = [...array];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    return shuffled;
-};
 
 export const MatchingInput: React.FC<Props> = ({question, onAnswer, disabled, submittedAnswer}) => {
     // Initialize from submittedAnswer if already submitted (e.g., re-render)
@@ -84,7 +75,7 @@ export const MatchingInput: React.FC<Props> = ({question, onAnswer, disabled, su
                                             "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500 text-slate-700 dark:text-slate-300"
                                 )}
                             >
-                                <RichText>{pair.left}</RichText>
+                                <RichText inline>{pair.left}</RichText>
                             </motion.button>
                         );
                     })}
@@ -110,7 +101,7 @@ export const MatchingInput: React.FC<Props> = ({question, onAnswer, disabled, su
                                             "bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-700/50 text-slate-400 dark:text-slate-600 cursor-default"
                                 )}
                             >
-                                <RichText>{rightItem}</RichText>
+                                <RichText inline>{rightItem}</RichText>
                                 {matchedLeft && (
                                     <div className="absolute -left-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 rounded-full flex items-center justify-center text-xs font-bold border-2 border-white dark:border-slate-800 shadow-sm">
                                         {question.pairs.findIndex(p => p.left === matchedLeft) + 1}

@@ -24,6 +24,8 @@ import {
     getMedia,
     restoreMediaEntry
 } from '../utils/mediaStorage';
+import {triggerJsonDownload} from '../utils/download';
+import {readFileAsText} from '../utils/fileReaders';
 import {
     Upload,
     Trash2,
@@ -98,19 +100,6 @@ function isEmbeddedMediaEntry(value: unknown): value is EmbeddedMediaEntry {
         entry.data.startsWith('data:') &&
         typeof entry.filename === 'string'
     );
-}
-
-function triggerJsonDownload(data: unknown, filename: string) {
-    const json = JSON.stringify(data);
-    const blob = new Blob([json], {type: 'application/json;charset=utf-8'});
-    const objectUrl = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.setAttribute('href', objectUrl);
-    a.setAttribute('download', filename);
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
 }
 
 export const RightSidebar: React.FC = () => {
@@ -316,8 +305,43 @@ export const RightSidebar: React.FC = () => {
 
         // Track processing with a map of filename -> dataUri
         const uploadResults = new Map<string, string>();
+        const failedFiles: string[] = [];
         let processedCount = 0;
         const totalToProcess = validFiles.length;
+
+        const finalizeUploads = () => {
+            // Use functional update with all results at once
+            setPendingImport(prev => {
+                if (!prev) return prev;
+
+                const newMediaGroups = prev.mediaGroups.map(group => {
+                    if (group.isConflict) return group;
+                    const dataUri = uploadResults.get(group.filename);
+                    if (dataUri) {
+                        return {
+                            ...group,
+                            uploaded: true,
+                            uploadedDataUri: dataUri
+                        };
+                    }
+                    return group;
+                });
+
+                const notices: string[] = [];
+                if (skipped.length > 0) {
+                    notices.push(`Skipped ${skipped.length} file(s) not in required list`);
+                }
+                if (failedFiles.length > 0) {
+                    notices.push(`Failed to read: ${failedFiles.join(', ')}`);
+                }
+
+                return {
+                    ...prev,
+                    mediaGroups: newMediaGroups,
+                    uploadError: notices.length > 0 ? notices.join('. ') : null
+                };
+            });
+        };
 
         validFiles.forEach(file => {
             const reader = new FileReader();
@@ -327,31 +351,21 @@ export const RightSidebar: React.FC = () => {
                 processedCount++;
 
                 if (processedCount === totalToProcess) {
-                    // Use functional update with all results at once
-                    setPendingImport(prev => {
-                        if (!prev) return prev;
-
-                        const newMediaGroups = prev.mediaGroups.map(group => {
-                            if (group.isConflict) return group;
-                            const dataUri = uploadResults.get(group.filename);
-                            if (dataUri) {
-                                return {
-                                    ...group,
-                                    uploaded: true,
-                                    uploadedDataUri: dataUri
-                                };
-                            }
-                            return group;
-                        });
-
-                        return {
-                            ...prev,
-                            mediaGroups: newMediaGroups,
-                            uploadError: skipped.length > 0
-                                ? `Skipped ${skipped.length} file(s) not in required list`
-                                : null
-                        };
-                    });
+                    finalizeUploads();
+                }
+            };
+            reader.onerror = () => {
+                failedFiles.push(file.name);
+                processedCount++;
+                if (processedCount === totalToProcess) {
+                    finalizeUploads();
+                }
+            };
+            reader.onabort = () => {
+                failedFiles.push(file.name);
+                processedCount++;
+                if (processedCount === totalToProcess) {
+                    finalizeUploads();
                 }
             };
             reader.readAsDataURL(file);
@@ -531,32 +545,34 @@ export const RightSidebar: React.FC = () => {
     };
 
     const readAndImportFile = (file: File) => {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            try {
-                const content = event.target?.result as string;
+        const lowerName = file.name.toLowerCase();
+        if (!(lowerName.endsWith('.json') || lowerName.endsWith('.rqzl'))) {
+            setImportError('Unsupported file type. Use .rqzl or .json files.');
+            return;
+        }
+        readFileAsText(file)
+            .then(content => {
                 const parsed: unknown = JSON.parse(content);
-                detectAndImport(parsed).then(result => {
-                    if (result.type === 'pending') {
-                        setImportError(null);
-                        return;
-                    }
-
-                    setJsonInput('');
+                return detectAndImport(parsed);
+            })
+            .then(result => {
+                if (result.type === 'pending') {
                     setImportError(null);
-                    setImportSuccessMessage(result.message);
-                }).catch(e => {
-                    setImportError(`Import failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
-                });
-            } catch (e) {
+                    return;
+                }
+
+                setJsonInput('');
+                setImportError(null);
+                setImportSuccessMessage(result.message);
+            })
+            .catch(e => {
                 const errorMessage = e instanceof Error ? e.message : 'Unknown error';
-                setImportError(`File import failed: ${errorMessage}`);
-            }
-        };
-        reader.onerror = () => {
-            setImportError('Could not read that file. Try another file or paste JSON below.');
-        };
-        reader.readAsText(file);
+                if (errorMessage.includes('read file')) {
+                    setImportError('Could not read that file. Try another file or paste JSON below.');
+                } else {
+                    setImportError(`File import failed: ${errorMessage}`);
+                }
+            });
     };
 
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, resetInput = true) => {

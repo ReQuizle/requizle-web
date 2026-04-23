@@ -9,6 +9,7 @@ import {Logo} from './Logo';
 import {SimpleConfirmModal, TypeToConfirmModal} from './AppModals';
 import type {Subject, Topic, SubjectExportV1, QuestionProgress} from '../types';
 import {getMedia, isIndexedDBMedia, extractMediaId} from '../utils/mediaStorage';
+import {triggerJsonDownload} from '../utils/download';
 
 type ContextMenuState =
     | null
@@ -61,19 +62,6 @@ async function buildSubjectExportPayload(
 
 const LONG_PRESS_MS = 480;
 const LONG_PRESS_MOVE_PX = 14;
-
-function triggerJsonDownload(data: unknown, filename: string) {
-    const json = JSON.stringify(data);
-    const blob = new Blob([json], {type: 'application/json;charset=utf-8'});
-    const objectUrl = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.setAttribute('href', objectUrl);
-    a.setAttribute('download', filename);
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
-}
 
 export const LeftSidebar: React.FC = () => {
     const {

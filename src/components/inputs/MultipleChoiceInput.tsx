@@ -59,7 +59,7 @@ export const MultipleChoiceInput: React.FC<Props> = ({question, onAnswer, disabl
                             )}>
                                 {String.fromCharCode(65 + index)}
                             </div>
-                            <span><RichText>{choice}</RichText></span>
+                            <span><RichText inline>{choice}</RichText></span>
                         </div>
                     </motion.button>
                 );

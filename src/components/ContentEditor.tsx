@@ -9,52 +9,12 @@ import {
     isIndexedDBMedia,
     storeMedia
 } from '../utils/mediaStorage';
+import {isVideoMediaUrl} from '../utils/mediaFormat';
+import {readFileAsDataUrl} from '../utils/fileReaders';
+import {hasDuplicateStrings, hasEnoughWordBankEntries} from '../utils/validationHelpers';
 import {clsx} from 'clsx';
 import {BookOpen, Layers, Plus, Save, Trash2, Upload} from 'lucide-react';
 import {SimpleConfirmModal, TypeToConfirmModal} from './AppModals';
-
-function readFileAsDataUrl(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = () => reject(reader.error ?? new Error('read failed'));
-        reader.readAsDataURL(file);
-    });
-}
-
-function isVideoMediaUrl(url: string): boolean {
-    const videoExtensions = ['.mp4', '.webm', '.ogg', '.mov', '.avi', '.mkv'];
-    const lower = url.toLowerCase();
-    if (lower.startsWith('data:video/')) return true;
-    return videoExtensions.some(ext => lower.includes(ext));
-}
-
-function hasDuplicateValues(values: string[]): boolean {
-    const seen = new Set<string>();
-    for (const value of values) {
-        const key = value.trim();
-        if (seen.has(key)) return true;
-        seen.add(key);
-    }
-    return false;
-}
-
-function hasEnoughWordBankEntries(wordBank: string[], answers: string[]): boolean {
-    const remaining = new Map<string, number>();
-    for (const word of wordBank) {
-        const key = word.trim();
-        remaining.set(key, (remaining.get(key) ?? 0) + 1);
-    }
-
-    for (const answer of answers) {
-        const key = answer.trim();
-        const count = remaining.get(key) ?? 0;
-        if (count <= 0) return false;
-        remaining.set(key, count - 1);
-    }
-
-    return true;
-}
 
 function getQuestionDraftError(question: Question): string | null {
     if (!question.prompt.trim()) return 'Prompt is required.';
@@ -99,7 +59,10 @@ function getQuestionDraftError(question: Question): string | null {
             if (question.pairs.length === 0 || [...leftValues, ...rightValues].some(value => !value.trim())) {
                 return 'Matching questions need filled left and right values.';
             }
-            if (hasDuplicateValues(leftValues) || hasDuplicateValues(rightValues)) {
+            if (
+                hasDuplicateStrings(leftValues, {trim: true}) ||
+                hasDuplicateStrings(rightValues, {trim: true})
+            ) {
                 return 'Matching left and right values must be unique.';
             }
             return null;
@@ -116,7 +79,7 @@ function getQuestionDraftError(question: Question): string | null {
             if (question.answers.length !== blankCount || question.answers.some(answer => !answer.trim())) {
                 return 'Add one filled answer for each blank.';
             }
-            if (!hasEnoughWordBankEntries(question.wordBank, question.answers)) {
+            if (!hasEnoughWordBankEntries(question.wordBank, question.answers, {trim: true})) {
                 return 'Each answer must appear in the word bank enough times.';
             }
             return null;

@@ -1,4 +1,5 @@
 import type {Question, QuestionProgress, Subject, StudyMode} from '../types';
+import {shuffleArray} from './array';
 
 export const calculateMastery = (
     questions: Question[],
@@ -43,11 +44,7 @@ export const generateQueue = (
     const queue = [...candidates];
 
     if (mode === 'random') {
-        // Fisher-Yates shuffle
-        for (let i = queue.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [queue[i], queue[j]] = [queue[j], queue[i]];
-        }
+        return shuffleArray(queue).map(q => q.id);
     } else {
         // Topic order is preserved by default if we just flatMap topics in order
         // But we need to ensure 'questions' passed in is already in topic order

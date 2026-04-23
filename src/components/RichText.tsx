@@ -36,6 +36,7 @@ const codeBlockCustomStyle: React.CSSProperties = {
 interface RichTextProps {
     children: string;
     className?: string;
+    inline?: boolean;
 }
 
 /**
@@ -55,12 +56,15 @@ interface RichTextProps {
  *
  * Parsing order: code blocks → tables → blockquotes → block math → inline code → inline math → links → spoilers → bold → underline → strikethrough → italic → plain text
  */
-export const RichText: React.FC<RichTextProps> = ({children, className}) => {
+export const RichText: React.FC<RichTextProps> = ({children, className, inline = false}) => {
     if (!children) return null;
 
-    const parts = parseContent(children);
+    const parts = inline ? parseInlineCode(children, 0, false) : parseContent(children);
 
-    return <span className={className}>{parts}</span>;
+    if (inline) {
+        return <span className={className}>{parts}</span>;
+    }
+    return <div className={className}>{parts}</div>;
 };
 
 
@@ -235,7 +239,7 @@ function parseBlockMath(text: string, startKey: number): React.ReactNode[] {
     while ((match = blockRegex.exec(text)) !== null) {
         if (match.index > lastIndex) {
             const before = text.slice(lastIndex, match.index);
-            parts.push(...parseInlineCode(before, key));
+            parts.push(...parseInlineCode(before, key, true));
             key += 100;
         }
 
@@ -249,14 +253,14 @@ function parseBlockMath(text: string, startKey: number): React.ReactNode[] {
     }
 
     if (lastIndex < text.length) {
-        parts.push(...parseInlineCode(text.slice(lastIndex), key));
+        parts.push(...parseInlineCode(text.slice(lastIndex), key, true));
     }
 
     return parts;
 }
 
 /** Parse inline code `...`, delegating remaining text to parseInlineMath */
-function parseInlineCode(text: string, startKey: number): React.ReactNode[] {
+function parseInlineCode(text: string, startKey: number, allowLinks: boolean): React.ReactNode[] {
     const parts: React.ReactNode[] = [];
     let key = startKey;
 
@@ -268,7 +272,7 @@ function parseInlineCode(text: string, startKey: number): React.ReactNode[] {
     while ((match = inlineCodeRegex.exec(text)) !== null) {
         if (match.index > lastIndex) {
             const before = text.slice(lastIndex, match.index);
-            parts.push(...parseInlineMath(before, key));
+            parts.push(...parseInlineMath(before, key, allowLinks));
             key += 50;
         }
 
@@ -282,14 +286,14 @@ function parseInlineCode(text: string, startKey: number): React.ReactNode[] {
     }
 
     if (lastIndex < text.length) {
-        parts.push(...parseInlineMath(text.slice(lastIndex), key));
+        parts.push(...parseInlineMath(text.slice(lastIndex), key, allowLinks));
     }
 
     return parts;
 }
 
 /** Parse inline math \(...\), delegating remaining text to parseLinks */
-function parseInlineMath(text: string, startKey: number): React.ReactNode[] {
+function parseInlineMath(text: string, startKey: number, allowLinks: boolean): React.ReactNode[] {
     const parts: React.ReactNode[] = [];
     const inlineRegex = /\\\(([\s\S]*?)\\\)/g;
     let lastIndex = 0;
@@ -298,7 +302,9 @@ function parseInlineMath(text: string, startKey: number): React.ReactNode[] {
 
     while ((match = inlineRegex.exec(text)) !== null) {
         if (match.index > lastIndex) {
-            parts.push(...parseLinks(text.slice(lastIndex, match.index), key));
+            parts.push(
+                ...(allowLinks ? parseLinks(text.slice(lastIndex, match.index), key) : parseSpoilers(text.slice(lastIndex, match.index), key))
+            );
             key += 20;
         }
 
@@ -308,7 +314,7 @@ function parseInlineMath(text: string, startKey: number): React.ReactNode[] {
     }
 
     if (lastIndex < text.length) {
-        parts.push(...parseLinks(text.slice(lastIndex), key));
+        parts.push(...(allowLinks ? parseLinks(text.slice(lastIndex), key) : parseSpoilers(text.slice(lastIndex), key)));
     }
 
     return parts;

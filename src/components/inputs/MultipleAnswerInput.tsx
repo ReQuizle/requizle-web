@@ -93,7 +93,7 @@ export const MultipleAnswerInput: React.FC<Props> = ({question, onAnswer, disabl
                             )}>
                                 {isSelected ? <CheckSquare size={24} /> : <Square size={24} />}
                             </div>
-                            <span className="text-lg font-medium"><RichText>{choice}</RichText></span>
+                            <span className="text-lg font-medium"><RichText inline>{choice}</RichText></span>
                         </motion.button>
                     );
                 })}

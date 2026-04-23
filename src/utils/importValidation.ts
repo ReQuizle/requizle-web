@@ -14,6 +14,7 @@ import type {
     SessionState,
     StudyMode
 } from '../types';
+import {hasDuplicateStrings, hasEnoughWordBankEntries} from './validationHelpers';
 
 /** Media reference with context about where it's used */
 export interface MediaReference {
@@ -57,30 +58,6 @@ function cloneJsonValue(value: unknown): unknown {
 
 function isStringArray(value: unknown): value is string[] {
     return Array.isArray(value) && value.length > 0 && value.every(item => typeof item === 'string');
-}
-
-function hasDuplicateStrings(values: string[]): boolean {
-    const seen = new Set<string>();
-    for (const value of values) {
-        if (seen.has(value)) return true;
-        seen.add(value);
-    }
-    return false;
-}
-
-function hasEnoughWordBankEntries(wordBank: string[], answers: string[]): boolean {
-    const remaining = new Map<string, number>();
-    for (const word of wordBank) {
-        remaining.set(word, (remaining.get(word) ?? 0) + 1);
-    }
-
-    for (const answer of answers) {
-        const count = remaining.get(answer) ?? 0;
-        if (count <= 0) return false;
-        remaining.set(answer, count - 1);
-    }
-
-    return true;
 }
 
 export const isQuestionProgress = (data: unknown): data is QuestionProgress => {
@@ -369,7 +346,10 @@ export const validateSubjects = (data: unknown): Subject[] => {
                 const pairs = question.pairs as Array<{left: string; right: string}>;
                 const leftValues = pairs.map(pair => pair.left);
                 const rightValues = pairs.map(pair => pair.right);
-                if (hasDuplicateStrings(leftValues) || hasDuplicateStrings(rightValues)) {
+                if (
+                    hasDuplicateStrings(leftValues, {trim: true}) ||
+                    hasDuplicateStrings(rightValues, {trim: true})
+                ) {
                     throw new Error(`Invalid matching question "${question.id}": "pairs" must have unique left and right values`);
                 }
                 break;
@@ -392,7 +372,9 @@ export const validateSubjects = (data: unknown): Subject[] => {
                 if (question.answers.length !== blankCount) {
                     throw new Error(`Invalid word_bank question "${question.id}": "answers" array length(${question.answers.length}) doesn't match number of blanks in sentence (${blankCount})`);
                 }
-                if (!hasEnoughWordBankEntries(question.wordBank as string[], question.answers as string[])) {
+                if (
+                    !hasEnoughWordBankEntries(question.wordBank as string[], question.answers as string[], {trim: true})
+                ) {
                     throw new Error(`Invalid word_bank question "${question.id}": each answer must exist in "wordBank"`);
                 }
                 break;
