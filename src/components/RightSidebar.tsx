@@ -1,5 +1,4 @@
 import React, {useState, useRef, useEffect} from 'react';
-import {createPortal} from 'react-dom';
 import {useQuizStore, DEFAULT_SESSION_STATE} from '../store/useQuizStore';
 import {calculateMastery, getActiveQuestions} from '../utils/quizLogic';
 import {
@@ -22,37 +21,30 @@ import {
     isIndexedDBMedia,
     extractMediaId,
     getMedia,
-    restoreMediaEntry,
-    serializeMediaEntry,
-    type SerializedMediaEntry
+    restoreRawMediaEntry
 } from '../utils/mediaStorage';
-import {triggerJsonDownload} from '../utils/download';
+import {triggerBlobDownload} from '../utils/download';
 import {readFileAsText} from '../utils/fileReaders';
+import {createRqzlArchiveBlob, parseRqzlArchiveFile} from '../utils/rqzlArchive';
 import {
     Upload,
-    Trash2,
     AlertCircle,
-    Download,
-    Plus,
     ExternalLink,
-    Pencil,
-    Check,
-    X,
-    ImageIcon,
-    BookOpen,
-    MessageSquare,
-    Github,
     Users,
     Palette,
     SlidersHorizontal,
     Database,
-    Link2,
-    Shuffle,
-    ListOrdered
+    Link2
 } from 'lucide-react';
-import {ThemeToggle} from './ThemeToggle';
 import {MessageModal, SimpleConfirmModal, TextPromptModal, TypeToConfirmModal} from './AppModals';
 import {clsx} from 'clsx';
+import {SidebarTabs, type RightSidebarTab} from './rightSidebar/SidebarTabs';
+import {PendingMediaImportModal} from './rightSidebar/PendingMediaImportModal';
+import {AppearanceSettingsSection} from './rightSidebar/settings/AppearanceSettingsSection';
+import {BehaviorSettingsSection} from './rightSidebar/settings/BehaviorSettingsSection';
+import {DataSettingsSection} from './rightSidebar/settings/DataSettingsSection';
+import {LinksSettingsSection} from './rightSidebar/settings/LinksSettingsSection';
+import {ProfilesSettingsSection} from './rightSidebar/settings/ProfilesSettingsSection';
 
 type SettingsSectionId = 'profiles' | 'appearance' | 'behavior' | 'data' | 'links';
 
@@ -63,46 +55,6 @@ const SETTINGS_SECTIONS: {id: SettingsSectionId; label: string; icon: typeof Use
     {id: 'data', label: 'Data', icon: Database},
     {id: 'links', label: 'Links & help', icon: Link2}
 ];
-
-type EmbeddedMediaEntry = SerializedMediaEntry;
-
-type SettingsSwitchRowProps = {
-    title: string;
-    description?: string;
-    checked: boolean;
-    onChange: (checked: boolean) => void;
-};
-
-const SettingsSwitchRow: React.FC<SettingsSwitchRowProps> = ({title, description, checked, onChange}) => (
-    <label className="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer gap-3">
-        <div className="min-w-0">
-            <span className="text-sm font-medium text-slate-700 dark:text-slate-200 block">{title}</span>
-            {description && (
-                <span className="text-xs text-slate-500 dark:text-slate-400">{description}</span>
-            )}
-        </div>
-        <div className="relative flex items-center flex-shrink-0">
-            <input
-                type="checkbox"
-                className="toggle-switch-input"
-                checked={checked}
-                onChange={(e) => onChange(e.target.checked)}
-            />
-            <div className="toggle-switch-track"></div>
-        </div>
-    </label>
-);
-
-function isEmbeddedMediaEntry(value: unknown): value is EmbeddedMediaEntry {
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
-    const entry = value as Record<string, unknown>;
-    return (
-        typeof entry.id === 'string' &&
-        typeof entry.filename === 'string' &&
-        typeof entry.mimeType === 'string' &&
-        typeof entry.dataBase64 === 'string'
-    );
-}
 
 export const RightSidebar: React.FC = () => {
     const {
@@ -128,7 +80,7 @@ export const RightSidebar: React.FC = () => {
         setQuizRequeueGaps,
         setAnimatedBackground
     } = useQuizStore();
-    const [activeTab, setActiveTab] = useState<'mastery' | 'import' | 'settings'>('mastery');
+    const [activeTab, setActiveTab] = useState<RightSidebarTab>('mastery');
     const [settingsSection, setSettingsSection] = useState<SettingsSectionId>('profiles');
     const [jsonInput, setJsonInput] = useState('');
     const [importError, setImportError] = useState<string | null>(null);
@@ -202,7 +154,9 @@ export const RightSidebar: React.FC = () => {
             importProfile(profile);
             const action = existingProfile ? 'merged with existing' : 'imported';
             return {type: 'profile', message: `Profile "${profile.name}" ${action} successfully!`};
-        } catch {}
+        } catch {
+            // Not a profile import. Fall through to subjects import validation.
+        }
 
         const validatedSubjects = validateSubjects(parsed);
         const existingSubjectIds = subjects.map(s => s.id);
@@ -226,26 +180,6 @@ export const RightSidebar: React.FC = () => {
     const detectAndImport = async (parsed: unknown): Promise<{type: 'profile' | 'subjects' | 'pending'; message: string}> => {
         if (!isImportableQuizPayload(parsed)) {
             throw new Error('Invalid import format: expected a profile, subject export, subject, or subject array');
-        }
-
-        if (
-            typeof parsed === 'object' &&
-            parsed !== null &&
-            '_media' in parsed &&
-            Array.isArray((parsed as Record<string, unknown>)._media)
-        ) {
-            const mediaList = ((parsed as Record<string, unknown>)._media as unknown[]).filter(isEmbeddedMediaEntry);
-
-            for (const item of mediaList) {
-                const existing = await getMedia(item.id);
-                if (!existing) {
-                    try {
-                        await restoreMediaEntry(item);
-                    } catch (e) {
-                        console.error(`Failed to restore media ${item.id}`, e);
-                    }
-                }
-            }
         }
 
         const allRefs = extractMediaReferencesWithContext(parsed);
@@ -464,41 +398,56 @@ export const RightSidebar: React.FC = () => {
         }
     };
 
-    const readAndImportFile = (file: File) => {
+    const readAndImportFile = async (file: File) => {
         const lowerName = file.name.toLowerCase();
         if (!(lowerName.endsWith('.json') || lowerName.endsWith('.rqzl'))) {
             setImportError('Unsupported file type. Use .rqzl or .json files.');
             return;
         }
-        readFileAsText(file)
-            .then(content => {
-                const parsed: unknown = JSON.parse(content);
-                return detectAndImport(parsed);
-            })
-            .then(result => {
-                if (result.type === 'pending') {
-                    setImportError(null);
-                    return;
-                }
 
-                setJsonInput('');
+        try {
+            let parsed: unknown;
+            if (lowerName.endsWith('.rqzl')) {
+                const archive = await parseRqzlArchiveFile(file);
+                parsed = archive.payload;
+                await Promise.all(
+                    archive.mediaEntries.map(entry =>
+                        restoreRawMediaEntry({
+                            id: entry.id,
+                            filename: entry.filename,
+                            mimeType: entry.mimeType,
+                            blob: entry.blob
+                        })
+                    )
+                );
+            } else {
+                const content = await readFileAsText(file);
+                parsed = JSON.parse(content);
+            }
+
+            const result = await detectAndImport(parsed);
+            if (result.type === 'pending') {
                 setImportError(null);
-                setImportSuccessMessage(result.message);
-            })
-            .catch(e => {
-                const errorMessage = e instanceof Error ? e.message : 'Unknown error';
-                if (errorMessage.includes('read file')) {
-                    setImportError('Could not read that file. Try another file or paste JSON below.');
-                } else {
-                    setImportError(`File import failed: ${errorMessage}`);
-                }
-            });
+                return;
+            }
+
+            setJsonInput('');
+            setImportError(null);
+            setImportSuccessMessage(result.message);
+        } catch (e) {
+            const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+            if (errorMessage.includes('read file')) {
+                setImportError('Could not read that file. Try another file or paste JSON below.');
+            } else {
+                setImportError(`File import failed: ${errorMessage}`);
+            }
+        }
     };
 
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, resetInput = true) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        readAndImportFile(file);
+        void readAndImportFile(file);
         if (resetInput) {
             e.target.value = '';
         }
@@ -534,50 +483,95 @@ export const RightSidebar: React.FC = () => {
         setImportDndActive(false);
         const file = e.dataTransfer.files?.[0];
         if (!file) return;
-        readAndImportFile(file);
+        void readAndImportFile(file);
+    };
+
+    const handleExportProfile = async (profile: typeof currentProfile) => {
+        const mediaIds = new Set<string>();
+        profile.subjects.forEach(subject => {
+            subject.topics.forEach(topic => {
+                topic.questions.forEach(q => {
+                    if (q.media && isIndexedDBMedia(q.media)) {
+                        mediaIds.add(extractMediaId(q.media));
+                    }
+                });
+            });
+        });
+        const mediaEntries = await Promise.all([...mediaIds].map(id => getMedia(id)));
+        const archiveMediaEntries = mediaEntries
+            .filter((media): media is NonNullable<typeof media> => Boolean(media))
+            .map(media => ({
+                id: media.id,
+                filename: media.filename,
+                mimeType: media.mimeType,
+                blob: media.blob
+            }));
+        const safeName = profile.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/gi, '') || 'profile';
+        const archive = await createRqzlArchiveBlob(profile, archiveMediaEntries);
+        triggerBlobDownload(archive, `quiz-profile-${safeName}.rqzl`);
+    };
+
+    const handleDeleteProfileFromSettings = (profile: typeof currentProfile) => {
+        const isLastProfile = Object.keys(profiles).length === 1;
+        if (settings.confirmProfileDelete) {
+            setDeleteProfileConfirm({id: profile.id, name: profile.name});
+        } else if (isLastProfile) {
+            setLastProfileDeleteId(profile.id);
+        } else {
+            deleteProfile(profile.id);
+        }
+    };
+
+    const handleResetSubjectData = () => {
+        if (!currentSubject) return;
+        if (!settings.confirmResetSubjectProgress) {
+            resetSubjectProgress(currentSubject.id);
+            return;
+        }
+        setResetSubjectDataConfirm({id: currentSubject.id, name: currentSubject.name});
+    };
+
+    const handleClearCache = async () => {
+        setClearingCache(true);
+        setCacheClearResult(null);
+        try {
+            const allStoredIds = await getAllMediaIds();
+            const usedMediaIds = new Set<string>();
+            for (const profile of Object.values(profiles)) {
+                for (const subject of profile.subjects) {
+                    for (const topic of subject.topics) {
+                        for (const question of topic.questions) {
+                            if (question.media && isIndexedDBMedia(question.media)) {
+                                usedMediaIds.add(extractMediaId(question.media));
+                            }
+                        }
+                    }
+                }
+            }
+            const orphanedIds = allStoredIds.filter(id => !usedMediaIds.has(id));
+            for (const id of orphanedIds) {
+                await deleteMedia(id);
+            }
+            setCacheClearResult({
+                removed: orphanedIds.length,
+                message: orphanedIds.length > 0
+                    ? `Removed ${orphanedIds.length} unused media file(s)`
+                    : 'No unused data found'
+            });
+        } catch (err) {
+            console.error('Failed to clear cache:', err);
+            setCacheClearResult({
+                removed: 0,
+                message: 'Failed to clear cache'
+            });
+        } finally {
+            setClearingCache(false);
+        }
     };
 
     return (
         <div className="p-6 space-y-6">
-            {/* Tabs */}
-            <div className="flex p-1 bg-slate-100 dark:bg-slate-800/50 rounded-lg">
-                <button
-                    type="button"
-                    onClick={() => setActiveTab('mastery')}
-                    className={clsx(
-                        'flex-1 py-1.5 text-sm font-medium rounded-md transition-all',
-                        activeTab === 'mastery'
-                            ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm'
-                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
-                    )}
-                >
-                    Mastery
-                </button>
-                <button
-                    type="button"
-                    onClick={() => setActiveTab('import')}
-                    className={clsx(
-                        'flex-1 py-1.5 text-sm font-medium rounded-md transition-all',
-                        activeTab === 'import'
-                            ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm'
-                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
-                    )}
-                >
-                    Import
-                </button>
-                <button
-                    type="button"
-                    onClick={() => setActiveTab('settings')}
-                    className={clsx(
-                        'flex-1 py-1.5 text-sm font-medium rounded-md transition-all',
-                        activeTab === 'settings'
-                            ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm'
-                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
-                    )}
-                >
-                    Settings
-                </button>
-            </div>
+            <SidebarTabs activeTab={activeTab} onChange={setActiveTab} />
 
             {activeTab === 'mastery' && (
                 <div className="space-y-6 animate-in fade-in duration-300">
@@ -782,510 +776,71 @@ export const RightSidebar: React.FC = () => {
                     </div>
 
                     {settingsSection === 'profiles' && (
-                        <div
-                            id="settings-panel-profiles"
-                            role="tabpanel"
-                            aria-labelledby="settings-tab-profiles"
-                            className="space-y-3"
-                        >
-                        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Profiles</h3>
-
-                        <div className="space-y-2">
-                            {Object.values(profiles).sort((a, b) => b.createdAt - a.createdAt).map(profile => (
-                                <div
-                                    key={profile.id}
-                                    className={clsx(
-                                        "p-3 rounded-lg border transition-all group",
-                                        activeProfileId === profile.id
-                                            ? "bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800"
-                                            : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-indigo-200 dark:hover:border-indigo-700"
-                                    )}
-                                >
-                                    <div className="flex items-center justify-between mb-2">
-                                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                                            {editingProfileId === profile.id ? (
-                                                <div className="flex items-center gap-1 flex-1">
-                                                    <input
-                                                        type="text"
-                                                        value={editingName}
-                                                        onChange={(e) => setEditingName(e.target.value)}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === 'Enter' && editingName.trim()) {
-                                                                renameProfile(profile.id, editingName.trim());
-                                                                setEditingProfileId(null);
-                                                            } else if (e.key === 'Escape') {
-                                                                setEditingProfileId(null);
-                                                            }
-                                                        }}
-                                                        className="flex-1 px-2 py-0.5 text-sm font-medium border border-indigo-300 dark:border-indigo-600 rounded bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
-                                                        autoFocus
-                                                    />
-                                                    <button
-                                                        onClick={() => {
-                                                            if (editingName.trim()) {
-                                                                renameProfile(profile.id, editingName.trim());
-                                                                setEditingProfileId(null);
-                                                            }
-                                                        }}
-                                                        className="p-1 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded"
-                                                        title="Save"
-                                                    >
-                                                        <Check size={14} />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => setEditingProfileId(null)}
-                                                        className="p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded"
-                                                        title="Cancel"
-                                                    >
-                                                        <X size={14} />
-                                                    </button>
-                                                </div>
-                                            ) : (
-                                                <>
-                                                    <span className={clsx(
-                                                        "font-medium text-sm truncate",
-                                                        activeProfileId === profile.id ? "text-indigo-700 dark:text-indigo-300" : "text-slate-700 dark:text-slate-200"
-                                                    )}>
-                                                        {profile.name}
-                                                    </span>
-                                                    <button
-                                                        onClick={() => {
-                                                            setEditingProfileId(profile.id);
-                                                            setEditingName(profile.name);
-                                                        }}
-                                                        className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors opacity-0 group-hover:opacity-100"
-                                                        title="Rename Profile"
-                                                    >
-                                                        <Pencil size={12} />
-                                                    </button>
-                                                    {activeProfileId === profile.id && (
-                                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-400 font-bold uppercase flex-shrink-0">
-                                                            Active
-                                                        </span>
-                                                    )}
-                                                </>
-                                            )}
-                                        </div>
-                                        {editingProfileId !== profile.id && (
-                                            <div className="flex items-center gap-1 flex-shrink-0">
-                                                <button
-                                                    onClick={async () => {
-                                                        const mediaIds = new Set<string>();
-                                                        profile.subjects.forEach(subject => {
-                                                            subject.topics.forEach(topic => {
-                                                                topic.questions.forEach(q => {
-                                                                    if (q.media && isIndexedDBMedia(q.media)) {
-                                                                        mediaIds.add(extractMediaId(q.media));
-                                                                    }
-                                                                });
-                                                            });
-                                                        });
-
-                                                        const mediaEntries = await Promise.all([...mediaIds].map(id => getMedia(id)));
-                                                        const mediaExports = await Promise.all(
-                                                            mediaEntries
-                                                                .filter((media): media is NonNullable<typeof media> => Boolean(media))
-                                                                .map(media => serializeMediaEntry(media))
-                                                        );
-
-                                                        const exportData = {
-                                                            ...profile,
-                                                            _media: mediaExports
-                                                        };
-
-                                                        const safeName = profile.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/gi, '') || 'profile';
-                                                        triggerJsonDownload(exportData, `quiz-profile-${safeName}.rqzl`);
-                                                    }}
-                                                    className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
-                                                    title="Export Profile"
-                                                >
-                                                    <Download size={14} />
-                                                </button>
-                                                <button
-                                                    onClick={() => {
-                                                        const isLastProfile = Object.keys(profiles).length === 1;
-
-                                                        if (settings.confirmProfileDelete) {
-                                                            setDeleteProfileConfirm({id: profile.id, name: profile.name});
-                                                        } else if (isLastProfile) {
-                                                            setLastProfileDeleteId(profile.id);
-                                                        } else {
-                                                            deleteProfile(profile.id);
-                                                        }
-                                                    }}
-                                                    className="p-1.5 text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                                                    title="Delete Profile"
-                                                >
-                                                    <Trash2 size={14} />
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                                        <span>{profile.subjects.length} Subjects</span>
-                                        {activeProfileId !== profile.id && (
-                                            <button
-                                                onClick={() => switchProfile(profile.id)}
-                                                className="text-indigo-600 dark:text-indigo-400 hover:underline font-medium"
-                                            >
-                                                Switch to this profile
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2 mt-2">
-                            <button
-                                type="button"
-                                onClick={() => setNewProfileModalOpen(true)}
-                                className="flex items-center justify-center gap-2 p-2 border border-dashed border-slate-300 dark:border-slate-600 rounded-lg text-slate-500 dark:text-slate-400 hover:border-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/10 transition-all text-xs font-medium"
-                            >
-                                <Plus size={14} />
-                                New Profile
-                            </button>
-                            <label className="flex items-center justify-center gap-2 p-2 border border-dashed border-slate-300 dark:border-slate-600 rounded-lg text-slate-500 dark:text-slate-400 hover:border-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/10 transition-all text-xs font-medium cursor-pointer">
-                                <Upload size={14} />
-                                Import Data
-                                <input
-                                    type="file"
-                                    accept=".rqzl,.json"
-                                    className="hidden"
-                                    onChange={(e) => {
-                                        handleFileUpload(e, true);
-                                    }}
-                                />
-                            </label>
-                        </div>
-                        </div>
+                        <ProfilesSettingsSection
+                            profiles={profiles}
+                            activeProfileId={activeProfileId}
+                            editingProfileId={editingProfileId}
+                            editingName={editingName}
+                            confirmProfileDelete={settings.confirmProfileDelete}
+                            onSetEditingProfileId={setEditingProfileId}
+                            onSetEditingName={setEditingName}
+                            onRenameProfile={renameProfile}
+                            onSwitchProfile={switchProfile}
+                            onExportProfile={profile => {
+                                void handleExportProfile(profile);
+                            }}
+                            onDeleteProfile={handleDeleteProfileFromSettings}
+                            onOpenNewProfileModal={() => setNewProfileModalOpen(true)}
+                            onImportFileUpload={(e) => {
+                                handleFileUpload(e, true);
+                            }}
+                        />
                     )}
 
                     {settingsSection === 'appearance' && (
-                        <div
-                            id="settings-panel-appearance"
-                            role="tabpanel"
-                            aria-labelledby="settings-tab-appearance"
-                            className="space-y-3"
-                        >
-                        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Appearance</h3>
-                        <div className="flex items-center justify-between p-3 min-h-[52px] bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
-                            <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Theme</span>
-                            <ThemeToggle />
-                        </div>
-                        <SettingsSwitchRow
-                            title="Animated background"
-                            checked={settings.animatedBackground}
-                            onChange={setAnimatedBackground}
+                        <AppearanceSettingsSection
+                            animatedBackground={settings.animatedBackground}
+                            onSetAnimatedBackground={setAnimatedBackground}
                         />
-                        </div>
                     )}
 
                     {settingsSection === 'behavior' && (
-                        <div
-                            id="settings-panel-behavior"
-                            role="tabpanel"
-                            aria-labelledby="settings-tab-behavior"
-                            className="space-y-3"
-                        >
-                        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Behavior</h3>
-
-                        <div className="space-y-2">
-                            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                                Controls how study queues are built and how missed or skipped questions come back. The shuffle button in the quiz header uses the same order setting.
-                            </p>
-                            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Quiz order</p>
-                            <div className="grid grid-cols-2 gap-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setMode('random')}
-                                    className={clsx(
-                                        'flex items-center justify-center gap-2 min-h-[44px] px-2 rounded-lg text-xs font-semibold border transition-colors',
-                                        session?.mode === 'random'
-                                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:border-indigo-300 dark:hover:border-indigo-600'
-                                    )}
-                                >
-                                    <Shuffle size={16} aria-hidden />
-                                    Random
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setMode('topic_order')}
-                                    className={clsx(
-                                        'flex items-center justify-center gap-2 min-h-[44px] px-2 rounded-lg text-xs font-semibold border transition-colors',
-                                        session?.mode === 'topic_order'
-                                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:border-indigo-300 dark:hover:border-indigo-600'
-                                    )}
-                                >
-                                    <ListOrdered size={16} aria-hidden />
-                                    Topic order
-                                </button>
-                            </div>
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                                Random shuffles the active pool; topic order follows sidebar topic order.
-                            </p>
-                        </div>
-
-                        <div className="space-y-2 pt-1">
-                            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Missed &amp; skipped questions</p>
-                            <SettingsSwitchRow
-                                title="Requeue after wrong answer"
-                                description="Put the card back in the queue so it returns later"
-                                checked={settings.quizRequeueOnIncorrect}
-                                onChange={setQuizRequeueOnIncorrect}
-                            />
-                            <SettingsSwitchRow
-                                title="Requeue after skip"
-                                description="Same spacing as wrong answers when enabled"
-                                checked={settings.quizRequeueOnSkip}
-                                onChange={setQuizRequeueOnSkip}
-                            />
-                            <div
-                                className={clsx(
-                                    'space-y-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3',
-                                    !settings.quizRequeueOnIncorrect && !settings.quizRequeueOnSkip && 'opacity-50 pointer-events-none'
-                                )}
-                            >
-                                <p className="text-xs font-medium text-slate-700 dark:text-slate-200">Reinsert spacing</p>
-                                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                                    Random number of positions ahead (0 = front of remaining queue). App default was 4-6.
-                                </p>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <div>
-                                        <label htmlFor="quiz-gap-min" className="text-[11px] text-slate-500 dark:text-slate-400 block mb-1">
-                                            Min
-                                        </label>
-                                        <input
-                                            id="quiz-gap-min"
-                                            type="number"
-                                            min={0}
-                                            max={100}
-                                            inputMode="numeric"
-                                            value={settings.quizRequeueGapMin}
-                                            onChange={(e) => {
-                                                const v = parseInt(e.target.value, 10);
-                                                if (Number.isNaN(v)) return;
-                                                setQuizRequeueGaps(v, settings.quizRequeueGapMax);
-                                            }}
-                                            className="w-full px-2 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label htmlFor="quiz-gap-max" className="text-[11px] text-slate-500 dark:text-slate-400 block mb-1">
-                                            Max
-                                        </label>
-                                        <input
-                                            id="quiz-gap-max"
-                                            type="number"
-                                            min={0}
-                                            max={100}
-                                            inputMode="numeric"
-                                            value={settings.quizRequeueGapMax}
-                                            onChange={(e) => {
-                                                const v = parseInt(e.target.value, 10);
-                                                if (Number.isNaN(v)) return;
-                                                setQuizRequeueGaps(settings.quizRequeueGapMin, v);
-                                            }}
-                                            className="w-full px-2 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider pt-1">Progress resets</p>
-                        <SettingsSwitchRow
-                            title="Confirm reset subject progress"
-                            description="Dialog before clearing all mastery for a subject"
-                            checked={settings.confirmResetSubjectProgress}
-                            onChange={setConfirmResetSubjectProgress}
+                        <BehaviorSettingsSection
+                            mode={session?.mode ?? 'random'}
+                            quizRequeueOnIncorrect={settings.quizRequeueOnIncorrect}
+                            quizRequeueOnSkip={settings.quizRequeueOnSkip}
+                            quizRequeueGapMin={settings.quizRequeueGapMin}
+                            quizRequeueGapMax={settings.quizRequeueGapMax}
+                            confirmResetSubjectProgress={settings.confirmResetSubjectProgress}
+                            confirmResetTopicProgress={settings.confirmResetTopicProgress}
+                            confirmSubjectDelete={settings.confirmSubjectDelete}
+                            confirmProfileDelete={settings.confirmProfileDelete}
+                            onSetMode={setMode}
+                            onSetQuizRequeueOnIncorrect={setQuizRequeueOnIncorrect}
+                            onSetQuizRequeueOnSkip={setQuizRequeueOnSkip}
+                            onSetQuizRequeueGaps={setQuizRequeueGaps}
+                            onSetConfirmResetSubjectProgress={setConfirmResetSubjectProgress}
+                            onSetConfirmResetTopicProgress={setConfirmResetTopicProgress}
+                            onSetConfirmSubjectDelete={setConfirmSubjectDelete}
+                            onSetConfirmProfileDelete={setConfirmProfileDelete}
                         />
-                        <SettingsSwitchRow
-                            title="Confirm reset topic progress"
-                            description="Dialog before clearing mastery for one topic"
-                            checked={settings.confirmResetTopicProgress}
-                            onChange={setConfirmResetTopicProgress}
-                        />
-
-                        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider pt-1">Deletion safety</p>
-                        <SettingsSwitchRow
-                            title="Confirm subject deletion"
-                            description="Require typing name to delete; when off, delete immediately"
-                            checked={settings.confirmSubjectDelete}
-                            onChange={setConfirmSubjectDelete}
-                        />
-                        <SettingsSwitchRow
-                            title="Confirm profile deletion"
-                            description="Require typing name to delete"
-                            checked={settings.confirmProfileDelete}
-                            onChange={setConfirmProfileDelete}
-                        />
-                        </div>
                     )}
 
                     {settingsSection === 'data' && (
-                        <div
-                            id="settings-panel-data"
-                            role="tabpanel"
-                            aria-labelledby="settings-tab-data"
-                            className="space-y-3"
-                        >
-                        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Data Management</h3>
-
-                        {currentSubject && (
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    if (!settings.confirmResetSubjectProgress) {
-                                        resetSubjectProgress(currentSubject.id);
-                                        return;
-                                    }
-                                    setResetSubjectDataConfirm({id: currentSubject.id, name: currentSubject.name});
-                                }}
-                                className="w-full flex items-center justify-center gap-2 p-3 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors text-sm font-medium"
-                            >
-                                <Trash2 size={16} />
-                                Reset Subject Progress
-                            </button>
-                        )}
-
-                        <button
-                            onClick={async () => {
-                                setClearingCache(true);
-                                setCacheClearResult(null);
-                                try {
-                                    const allStoredIds = await getAllMediaIds();
-
-                                    const usedMediaIds = new Set<string>();
-                                    for (const profile of Object.values(profiles)) {
-                                        for (const subject of profile.subjects) {
-                                            for (const topic of subject.topics) {
-                                                for (const question of topic.questions) {
-                                                    if (question.media && isIndexedDBMedia(question.media)) {
-                                                        usedMediaIds.add(extractMediaId(question.media));
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    const orphanedIds = allStoredIds.filter(id => !usedMediaIds.has(id));
-
-                                    for (const id of orphanedIds) {
-                                        await deleteMedia(id);
-                                    }
-
-                                    setCacheClearResult({
-                                        removed: orphanedIds.length,
-                                        message: orphanedIds.length > 0
-                                            ? `Removed ${orphanedIds.length} unused media file(s)`
-                                            : 'No unused data found'
-                                    });
-                                } catch (err) {
-                                    console.error('Failed to clear cache:', err);
-                                    setCacheClearResult({
-                                        removed: 0,
-                                        message: 'Failed to clear cache'
-                                    });
-                                } finally {
-                                    setClearingCache(false);
-                                }
+                        <DataSettingsSection
+                            currentSubjectName={currentSubject?.name ?? null}
+                            confirmResetSubjectProgress={settings.confirmResetSubjectProgress}
+                            clearingCache={clearingCache}
+                            cacheClearResult={cacheClearResult}
+                            onResetSubjectProgress={handleResetSubjectData}
+                            onClearCache={() => {
+                                void handleClearCache();
                             }}
-                            disabled={clearingCache}
-                            className="w-full flex items-center justify-center gap-2 p-3 text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors text-sm font-medium disabled:opacity-50"
-                        >
-                            <Trash2 size={16} />
-                            {clearingCache ? 'Clearing...' : 'Clear Cache'}
-                        </button>
-
-                        {cacheClearResult && (
-                            <div className={`p-2 rounded-lg text-xs text-center ${cacheClearResult.removed > 0
-                                ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400'
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
-                                }`}>
-                                {cacheClearResult.message}
-                            </div>
-                        )}
-
-                        <button
-                            type="button"
-                            onClick={() => setFactoryResetConfirm(true)}
-                            className="w-full flex items-center justify-center gap-2 p-3 text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors text-sm font-medium"
-                        >
-                            <AlertCircle size={16} />
-                            Wipe All Data (Factory Reset)
-                        </button>
-                        </div>
+                            onFactoryReset={() => setFactoryResetConfirm(true)}
+                        />
                     )}
 
-                    {settingsSection === 'links' && (
-                        <div
-                            id="settings-panel-links"
-                            role="tabpanel"
-                            aria-labelledby="settings-tab-links"
-                            className="space-y-3"
-                        >
-                        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Links &amp; help</h3>
-                        <div className="grid grid-cols-1 gap-2">
-                            <a
-                                href="https://requizle.github.io/requizle-wiki/"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600 transition-colors group"
-                            >
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-lg group-hover:bg-indigo-100 dark:group-hover:bg-indigo-900/40 transition-colors">
-                                        <BookOpen size={16} />
-                                    </div>
-                                    <div className="text-left">
-                                        <span className="text-sm font-medium text-slate-700 dark:text-slate-200 block">Documentation</span>
-                                        <span className="text-xs text-slate-500 dark:text-slate-400">Guides and Tutorials</span>
-                                    </div>
-                                </div>
-                                <ExternalLink size={14} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
-                            </a>
-
-                            <a
-                                href="https://github.com/ReQuizle/requizle-web"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-500 transition-colors group"
-                            >
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg group-hover:bg-slate-200 dark:group-hover:bg-slate-600 transition-colors">
-                                        <Github size={16} />
-                                    </div>
-                                    <div className="text-left">
-                                        <span className="text-sm font-medium text-slate-700 dark:text-slate-200 block">Source Code</span>
-                                        <span className="text-xs text-slate-500 dark:text-slate-400">View on GitHub</span>
-                                    </div>
-                                </div>
-                                <ExternalLink size={14} className="text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-200 transition-colors" />
-                            </a>
-
-                            <a
-                                href="https://github.com/ReQuizle/requizle-web/issues"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-amber-300 dark:hover:border-amber-600 transition-colors group"
-                            >
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 rounded-lg group-hover:bg-amber-100 dark:group-hover:bg-amber-900/40 transition-colors">
-                                        <MessageSquare size={16} />
-                                    </div>
-                                    <div className="text-left">
-                                        <span className="text-sm font-medium text-slate-700 dark:text-slate-200 block">Report Issue</span>
-                                        <span className="text-xs text-slate-500 dark:text-slate-400">Bug reports & feedback</span>
-                                    </div>
-                                </div>
-                                <ExternalLink size={14} className="text-slate-400 group-hover:text-amber-500 transition-colors" />
-                            </a>
-                        </div>
-                        </div>
-                    )}
+                    {settingsSection === 'links' && <LinksSettingsSection />}
                 </div>
             )}
 
@@ -1396,174 +951,17 @@ export const RightSidebar: React.FC = () => {
                 onConfirm={name => createProfile(name)}
             />
 
-            {/* Image Upload Modal for Pending Import */}
-            {pendingImport && createPortal(
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-lg w-full p-6 space-y-4">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg">
-                                <ImageIcon className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
-                            </div>
-                            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Upload Media</h3>
-                        </div>
-
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
-                            Your import contains local media references. Please upload the required files:
-                        </p>
-
-                        <div className="space-y-3 max-h-64 overflow-y-auto">
-                            {pendingImport.mediaGroups.map((group, groupIndex) => {
-                                const hasConflict = group.isConflict;
-                                const refMap = group.uploadedPerRef;
-
-                                return (
-                                    <div key={group.filename} className="space-y-1">
-                                        {/* Filename header */}
-                                        <div className={clsx(
-                                            "flex items-center justify-between p-2 rounded-lg text-sm",
-                                            group.uploaded
-                                                ? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400"
-                                                : hasConflict
-                                                    ? "bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400"
-                                                    : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400"
-                                        )}>
-                                            <div className="flex items-center gap-2">
-                                                <span className="font-medium truncate">{group.filename}</span>
-                                                {hasConflict && (
-                                                    <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200">
-                                                        <AlertCircle size={12} />
-                                                        Conflict
-                                                    </span>
-                                                )}
-                                            </div>
-                                            {group.uploaded ? (
-                                                <Check className="w-4 h-4 flex-shrink-0" />
-                                            ) : (
-                                                <X className="w-4 h-4 flex-shrink-0 opacity-50" />
-                                            )}
-                                        </div>
-
-                                        {/* Context: which subjects/topics use this file */}
-                                        {hasConflict ? (
-                                            <div className="ml-4 space-y-1">
-                                                {group.references.map((ref, refIndex) => {
-                                                    const isRefUploaded = refMap?.has(ref.path);
-                                                    return (
-                                                        <div key={ref.path} className="flex items-center justify-between text-xs p-1.5 rounded bg-slate-50 dark:bg-slate-700/50">
-                                                            <span className="text-slate-600 dark:text-slate-400 truncate">
-                                                                {ref.subjectName} → {ref.topicName}
-                                                            </span>
-                                                            <div className="flex items-center gap-2 flex-shrink-0">
-                                                                {isRefUploaded ? (
-                                                                    <Check className="w-3 h-3 text-green-500" />
-                                                                ) : (
-                                                                    <>
-                                                                        <input
-                                                                            type="file"
-                                                                            accept="image/*,video/*"
-                                                                            onChange={(e) => handleConflictUpload(groupIndex, refIndex, e)}
-                                                                            className="hidden"
-                                                                            id={`conflict-${groupIndex}-${refIndex}`}
-                                                                        />
-                                                                        <label
-                                                                            htmlFor={`conflict-${groupIndex}-${refIndex}`}
-                                                                            className="px-2 py-0.5 text-xs bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 rounded cursor-pointer hover:bg-indigo-200 dark:hover:bg-indigo-900"
-                                                                        >
-                                                                            Upload
-                                                                        </label>
-                                                                    </>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        ) : (
-                                            <div className="ml-4 flex items-center justify-between text-xs p-1.5 rounded bg-slate-50 dark:bg-slate-700/50">
-                                                <span className="text-slate-500 dark:text-slate-400 truncate">
-                                                    {group.references.map(r => `${r.subjectName} → ${r.topicName}`).join(', ')}
-                                                </span>
-                                                <div className="flex items-center gap-2 flex-shrink-0">
-                                                    {group.uploaded ? (
-                                                        <Check className="w-3 h-3 text-green-500" />
-                                                    ) : (
-                                                        <>
-                                                            <input
-                                                                type="file"
-                                                                accept="image/*,video/*"
-                                                                onChange={(e) => handleSingleUpload(groupIndex, e)}
-                                                                className="hidden"
-                                                                id={`single-${groupIndex}`}
-                                                            />
-                                                            <label
-                                                                htmlFor={`single-${groupIndex}`}
-                                                                className="px-2 py-0.5 text-xs bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 rounded cursor-pointer hover:bg-indigo-200 dark:hover:bg-indigo-900"
-                                                            >
-                                                                Upload
-                                                            </label>
-                                                        </>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
-
-                        {/* Upload stats */}
-                        <div className="text-xs text-slate-500 dark:text-slate-400">
-                            {pendingImport.mediaGroups.filter(g => g.uploaded).length} of {pendingImport.mediaGroups.length} files ready
-                        </div>
-
-                        {/* Error/Warning display */}
-                        {pendingImport.uploadError && (
-                            <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-amber-700 dark:text-amber-400 text-sm">
-                                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                                <span>{pendingImport.uploadError}</span>
-                            </div>
-                        )}
-
-                        <input
-                            ref={imageInputRef}
-                            type="file"
-                            accept="image/*,video/*"
-                            multiple
-                            onChange={handleImageUpload}
-                            className="hidden"
-                        />
-
-                        <div className="flex gap-3 pt-2">
-                            <button
-                                onClick={cancelPendingImport}
-                                className="flex-1 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors"
-                            >
-                                Cancel
-                            </button>
-                            {pendingImport.mediaGroups.some(g => !g.isConflict && !g.uploaded) && (
-                                <button
-                                    onClick={() => imageInputRef.current?.click()}
-                                    className="flex-1 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors flex items-center justify-center gap-2"
-                                >
-                                    <Upload className="w-4 h-4" />
-                                    Upload Files
-                                </button>
-                            )}
-                        </div>
-
-                        {pendingImport.mediaGroups.every(g => g.uploaded) && (
-                            <button
-                                onClick={completePendingImport}
-                                className="w-full px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors flex items-center justify-center gap-2"
-                            >
-                                <Check className="w-4 h-4" />
-                                Complete Import
-                            </button>
-                        )}
-                    </div>
-                </div>,
-                document.body
-            )}
+            <PendingMediaImportModal
+                pendingImport={pendingImport}
+                imageInputRef={imageInputRef}
+                onCancel={cancelPendingImport}
+                onConflictUpload={handleConflictUpload}
+                onSingleUpload={handleSingleUpload}
+                onBulkUpload={handleImageUpload}
+                onCompleteImport={() => {
+                    void completePendingImport();
+                }}
+            />
         </div>
     );
 };

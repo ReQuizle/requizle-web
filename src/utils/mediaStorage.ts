@@ -70,6 +70,13 @@ export interface SerializedMediaEntry {
     dataBase64: string;
 }
 
+export interface RawMediaEntry {
+    id: string;
+    filename: string;
+    mimeType: string;
+    blob: Blob;
+}
+
 /**
  * Store media in IndexedDB
  * @returns The media ID (use as `idb:${id}` in question.media)
@@ -103,15 +110,24 @@ export async function storeMedia(blob: Blob, filename: string): Promise<string> 
  * Restore a full media entry from serialized payload (used for import/export)
  */
 export async function restoreMediaEntry(entry: SerializedMediaEntry): Promise<void> {
-    const db = await openDB();
     const blob = base64ToBlob(entry.dataBase64, entry.mimeType);
+    await restoreRawMediaEntry({
+        id: entry.id,
+        filename: entry.filename,
+        mimeType: entry.mimeType,
+        blob
+    });
+}
+
+export async function restoreRawMediaEntry(entry: RawMediaEntry): Promise<void> {
+    const db = await openDB();
 
     const fullEntry: MediaEntry = {
         id: entry.id,
-        blob,
+        blob: entry.blob,
         filename: entry.filename,
         mimeType: entry.mimeType,
-        size: blob.size,
+        size: entry.blob.size,
         createdAt: Date.now()
     };
 

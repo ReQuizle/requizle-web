@@ -1,20 +1,23 @@
 import React, {useState, useEffect, useCallback, useRef} from 'react';
 import {Link} from 'react-router-dom';
-import {createPortal} from 'react-dom';
 import {useQuizStore, DEFAULT_SESSION_STATE} from '../store/useQuizStore';
 import {calculateMastery} from '../utils/quizLogic';
-import {CheckCircle2, Circle, Trash2, Download, RotateCcw, CheckCheck, X, SquarePen} from 'lucide-react';
+import {CheckCircle2, Circle, Trash2, X, SquarePen} from 'lucide-react';
 import {clsx} from 'clsx';
 import {Logo} from './Logo';
 import {SimpleConfirmModal, TypeToConfirmModal} from './AppModals';
 import type {Subject, Topic, SubjectExportV1, QuestionProgress} from '../types';
-import {extractMediaId, getMedia, isIndexedDBMedia, serializeMediaEntry} from '../utils/mediaStorage';
-import {triggerJsonDownload} from '../utils/download';
-
-type ContextMenuState =
-    | null
-    | {kind: 'subject'; subject: Subject; x: number; y: number}
-    | {kind: 'topic'; subject: Subject; topic: Topic; x: number; y: number};
+import {extractMediaId, getMedia, isIndexedDBMedia} from '../utils/mediaStorage';
+import {triggerBlobDownload, triggerJsonDownload} from '../utils/download';
+import {createRqzlArchiveBlob, type ArchiveMediaEntry} from '../utils/rqzlArchive';
+import {
+    SidebarContextMenu,
+    type ContextMenuState
+} from './leftSidebar/SidebarContextMenu';
+import {
+    SubjectExportModal,
+    type SubjectExportOptions
+} from './leftSidebar/SubjectExportModal';
 
 type SimpleConfirmState =
     | null
@@ -26,32 +29,44 @@ type SimpleConfirmState =
         topicName?: string;
     };
 
+const DEFAULT_SUBJECT_EXPORT_OPTIONS: SubjectExportOptions = {
+    includeProgress: true,
+    includeMedia: true,
+    format: 'rqzl'
+};
+
 async function buildSubjectExportPayload(
     subject: Subject,
     progressSlice: Record<string, Record<string, QuestionProgress>>,
-    options?: {includeProgress?: boolean}
-): Promise<SubjectExportV1> {
+    options?: {includeProgress?: boolean; includeMedia?: boolean}
+): Promise<{payload: SubjectExportV1; mediaEntries: ArchiveMediaEntry[]}> {
     const includeProgress = options?.includeProgress !== false;
+    const includeMedia = options?.includeMedia !== false;
     const mediaIds = new Set<string>();
-    subject.topics.forEach(topic => {
-        topic.questions.forEach(q => {
-            if (q.media && isIndexedDBMedia(q.media)) {
-                mediaIds.add(extractMediaId(q.media));
-            }
+    if (includeMedia) {
+        subject.topics.forEach(topic => {
+            topic.questions.forEach(q => {
+                if (q.media && isIndexedDBMedia(q.media)) {
+                    mediaIds.add(extractMediaId(q.media));
+                }
+            });
         });
-    });
-    const mediaEntries = await Promise.all([...mediaIds].map((id) => getMedia(id)));
-    const mediaExports: NonNullable<SubjectExportV1['_media']> = await Promise.all(
-        mediaEntries
-            .filter((media): media is NonNullable<typeof media> => Boolean(media))
-            .map(media => serializeMediaEntry(media))
-    );
-    return {
+    }
+    const storedMediaEntries = await Promise.all([...mediaIds].map((id) => getMedia(id)));
+    const payload: SubjectExportV1 = {
         requizleSubjectExport: 1,
         subject,
-        ...(includeProgress ? {progress: progressSlice} : {}),
-        ...(mediaExports.length > 0 ? {_media: mediaExports} : {})
+        ...(includeProgress ? {progress: progressSlice} : {})
     };
+    const mediaEntries: ArchiveMediaEntry[] = storedMediaEntries
+        .filter((media): media is NonNullable<typeof media> => Boolean(media))
+        .map(media => ({
+            id: media.id,
+            filename: media.filename,
+            mimeType: media.mimeType,
+            blob: media.blob
+        }));
+    return {payload, mediaEntries};
 }
 
 const LONG_PRESS_MS = 480;
@@ -75,6 +90,10 @@ export const LeftSidebar: React.FC = () => {
     const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
     const [simpleConfirm, setSimpleConfirm] = useState<SimpleConfirmState>(null);
     const [exportError, setExportError] = useState<string | null>(null);
+    const [subjectExportModal, setSubjectExportModal] = useState<{
+        subject: Subject;
+        options: SubjectExportOptions;
+    } | null>(null);
 
     const closeContextMenu = useCallback(() => setContextMenu(null), []);
 
@@ -207,19 +226,88 @@ export const LeftSidebar: React.FC = () => {
         setContextMenu({kind: 'topic', subject, topic, x: e.clientX, y: e.clientY});
     };
 
-    const handleExportSubject = async (subject: Subject, includeProgress: boolean) => {
-        closeContextMenu();
+    const performSubjectExport = async (subject: Subject, options: SubjectExportOptions) => {
         const slice = progress[subject.id] || {};
         try {
-            const payload = await buildSubjectExportPayload(subject, slice, {includeProgress});
+            const {payload, mediaEntries} = await buildSubjectExportPayload(subject, slice, {
+                includeProgress: options.includeProgress,
+                includeMedia: options.includeMedia
+            });
             const safeName = subject.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/gi, '') || 'subject';
-            const suffix = includeProgress ? '' : '-questions';
-            triggerJsonDownload(payload, `requizle-subject-${safeName}${suffix}.json`);
+            const suffix = options.includeProgress ? '' : '-questions';
+            const baseFilename = `requizle-subject-${safeName}${suffix}`;
+
+            if (options.format === 'json') {
+                triggerJsonDownload(payload, `${baseFilename}.json`);
+            } else {
+                const archive = await createRqzlArchiveBlob(payload, mediaEntries);
+                const ext = options.format === 'zip' ? 'zip' : 'rqzl';
+                triggerBlobDownload(archive, `${baseFilename}.${ext}`);
+            }
             setExportError(null);
         } catch (err) {
             console.error(err);
             setExportError('Export failed. Try again.');
         }
+    };
+
+    const handleQuickExportSubject = (subject: Subject) => {
+        closeContextMenu();
+        void performSubjectExport(subject, DEFAULT_SUBJECT_EXPORT_OPTIONS);
+    };
+
+    const handleOpenSubjectExportAs = (subject: Subject) => {
+        closeContextMenu();
+        setSubjectExportModal({
+            subject,
+            options: {...DEFAULT_SUBJECT_EXPORT_OPTIONS}
+        });
+    };
+
+    const setSubjectExportOption = <K extends keyof SubjectExportOptions>(key: K, value: SubjectExportOptions[K]) => {
+        setSubjectExportModal(prev => (prev ? {...prev, options: {...prev.options, [key]: value}} : prev));
+    };
+
+    const handleResetSubjectProgressFromContext = (subject: Subject) => {
+        closeContextMenu();
+        if (settings.confirmResetSubjectProgress) {
+            setSimpleConfirm({
+                variant: 'resetSubject',
+                subjectId: subject.id,
+                subjectName: subject.name
+            });
+            return;
+        }
+        resetSubjectProgress(subject.id);
+    };
+
+    const handleDeleteSubjectFromContext = (subject: Subject) => {
+        closeContextMenu();
+        if (settings.confirmSubjectDelete) {
+            setDeleteConfirm({id: subject.id, name: subject.name});
+            return;
+        }
+        deleteSubject(subject.id);
+    };
+
+    const handleMarkTopicMasteredFromContext = (subject: Subject, topic: Topic) => {
+        closeContextMenu();
+        markTopicMastered(subject.id, topic.id);
+    };
+
+    const handleResetTopicProgressFromContext = (subject: Subject, topic: Topic) => {
+        closeContextMenu();
+        if (settings.confirmResetTopicProgress) {
+            setSimpleConfirm({
+                variant: 'resetTopic',
+                subjectId: subject.id,
+                subjectName: subject.name,
+                topicId: topic.id,
+                topicName: topic.name
+            });
+            return;
+        }
+        resetTopicProgress(subject.id, topic.id);
     };
 
     return (
@@ -420,122 +508,15 @@ export const LeftSidebar: React.FC = () => {
                 </div>
             )}
 
-            {contextMenu && createPortal(
-                <div
-                    data-context-menu
-                    role="menu"
-                    className="fixed z-[100] min-w-[200px] py-1 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-xl"
-                    style={(() => {
-                        const pad = 8;
-                        const mw = 220;
-                        const mh = contextMenu.kind === 'subject' ? 230 : 180;
-                        const vw = typeof window !== 'undefined' ? window.innerWidth : contextMenu.x + mw;
-                        const vh = typeof window !== 'undefined' ? window.innerHeight : contextMenu.y + mh;
-                        return {
-                            left: Math.max(pad, Math.min(contextMenu.x, vw - mw - pad)),
-                            top: Math.max(pad, Math.min(contextMenu.y, vh - mh - pad))
-                        };
-                    })()}
-                >
-                    {contextMenu.kind === 'subject' && (
-                        <>
-                            <button
-                                type="button"
-                                role="menuitem"
-                                className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
-                                onClick={() => handleExportSubject(contextMenu.subject, true)}
-                            >
-                                <Download size={16} className="text-slate-500 shrink-0" />
-                                Export with progress
-                            </button>
-                            <button
-                                type="button"
-                                role="menuitem"
-                                className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
-                                onClick={() => handleExportSubject(contextMenu.subject, false)}
-                            >
-                                <Download size={16} className="text-slate-500 shrink-0" />
-                                Export questions only
-                            </button>
-                            <button
-                                type="button"
-                                role="menuitem"
-                                className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
-                                onClick={() => {
-                                    closeContextMenu();
-                                    if (settings.confirmResetSubjectProgress) {
-                                        setSimpleConfirm({
-                                            variant: 'resetSubject',
-                                            subjectId: contextMenu.subject.id,
-                                            subjectName: contextMenu.subject.name
-                                        });
-                                    } else {
-                                        resetSubjectProgress(contextMenu.subject.id);
-                                    }
-                                }}
-                            >
-                                <RotateCcw size={16} className="text-slate-500 shrink-0" />
-                                Reset subject progress
-                            </button>
-                            <button
-                                type="button"
-                                role="menuitem"
-                                className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
-                                onClick={() => {
-                                    closeContextMenu();
-                                    if (settings.confirmSubjectDelete) {
-                                        setDeleteConfirm({id: contextMenu.subject.id, name: contextMenu.subject.name});
-                                    } else {
-                                        deleteSubject(contextMenu.subject.id);
-                                    }
-                                }}
-                            >
-                                <Trash2 size={16} className="shrink-0" />
-                                Delete subject
-                            </button>
-                        </>
-                    )}
-                    {contextMenu.kind === 'topic' && (
-                        <>
-                            <button
-                                type="button"
-                                role="menuitem"
-                                className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
-                                onClick={() => {
-                                    closeContextMenu();
-                                    markTopicMastered(contextMenu.subject.id, contextMenu.topic.id);
-                                }}
-                            >
-                                <CheckCheck size={16} className="text-slate-500 shrink-0" />
-                                Mark topic mastered
-                            </button>
-                            <button
-                                type="button"
-                                role="menuitem"
-                                className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
-                                onClick={() => {
-                                    closeContextMenu();
-                                    if (settings.confirmResetTopicProgress) {
-                                        setSimpleConfirm({
-                                            variant: 'resetTopic',
-                                            subjectId: contextMenu.subject.id,
-                                            subjectName: contextMenu.subject.name,
-                                            topicId: contextMenu.topic.id,
-                                            topicName: contextMenu.topic.name
-                                        });
-                                    } else {
-                                        resetTopicProgress(contextMenu.subject.id, contextMenu.topic.id);
-                                    }
-                                }}
-                            >
-                                <RotateCcw size={16} className="text-slate-500 shrink-0" />
-                                Reset topic progress
-                            </button>
-                        </>
-                    )}
-                </div>,
-                document.body
-            )}
+            <SidebarContextMenu
+                contextMenu={contextMenu}
+                onQuickExportSubject={handleQuickExportSubject}
+                onExportAsSubject={handleOpenSubjectExportAs}
+                onResetSubjectProgress={handleResetSubjectProgressFromContext}
+                onDeleteSubject={handleDeleteSubjectFromContext}
+                onMarkTopicMastered={handleMarkTopicMasteredFromContext}
+                onResetTopicProgress={handleResetTopicProgressFromContext}
+            />
 
             <SimpleConfirmModal
                 open={!!simpleConfirm}
@@ -591,6 +572,16 @@ export const LeftSidebar: React.FC = () => {
                 onConfirm={() => {
                     if (deleteConfirm) deleteSubject(deleteConfirm.id);
                     setDeleteConfirm(null);
+                }}
+            />
+
+            <SubjectExportModal
+                modalState={subjectExportModal}
+                setOption={setSubjectExportOption}
+                onClose={() => setSubjectExportModal(null)}
+                onExport={(subject, options) => {
+                    setSubjectExportModal(null);
+                    void performSubjectExport(subject, options);
                 }}
             />
         </div>

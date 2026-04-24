@@ -1,13 +1,24 @@
 import {BrowserRouter, Route, Routes} from 'react-router-dom';
-import {useEffect} from 'react';
+import {lazy, Suspense, useEffect} from 'react';
 import {Layout} from './components/Layout';
-import {LeftSidebar} from './components/LeftSidebar';
-import {CenterArea} from './components/CenterArea';
-import {RightSidebar} from './components/RightSidebar';
-import {EditorPage} from './pages/EditorPage';
-import {NotFoundPage} from './pages/NotFoundPage';
 import {useQuizStore} from './store/useQuizStore';
 import type {Subject} from './types';
+
+const LeftSidebar = lazy(() =>
+    import('./components/LeftSidebar').then(module => ({default: module.LeftSidebar}))
+);
+const CenterArea = lazy(() =>
+    import('./components/CenterArea').then(module => ({default: module.CenterArea}))
+);
+const RightSidebar = lazy(() =>
+    import('./components/RightSidebar').then(module => ({default: module.RightSidebar}))
+);
+const EditorPage = lazy(() =>
+    import('./pages/EditorPage').then(module => ({default: module.EditorPage}))
+);
+const NotFoundPage = lazy(() =>
+    import('./pages/NotFoundPage').then(module => ({default: module.NotFoundPage}))
+);
 
 type StudyShellProps = {
     sampleSubjects: Subject[];
@@ -36,7 +47,23 @@ function StudyShell({sampleSubjects}: StudyShellProps) {
     }, [markSampleDataSeeded, sampleSubjects, setSubjects, settings.sampleDataSeeded, subjects.length]);
 
     return (
-        <Layout leftSidebar={<LeftSidebar />} center={<CenterArea />} rightSidebar={<RightSidebar />} />
+        <Layout
+            leftSidebar={
+                <Suspense fallback={<div className="p-6 text-sm text-slate-500 dark:text-slate-400">Loading...</div>}>
+                    <LeftSidebar />
+                </Suspense>
+            }
+            center={
+                <Suspense fallback={<div className="min-h-full bg-slate-50 dark:bg-slate-900" />}>
+                    <CenterArea />
+                </Suspense>
+            }
+            rightSidebar={
+                <Suspense fallback={<div className="p-6 text-sm text-slate-500 dark:text-slate-400">Loading...</div>}>
+                    <RightSidebar />
+                </Suspense>
+            }
+        />
     );
 }
 
@@ -50,8 +77,22 @@ export function AppRoutes({sampleSubjects}: AppRoutesProps) {
         <BrowserRouter basename={basename}>
             <Routes>
                 <Route path="/" element={<StudyShell sampleSubjects={sampleSubjects} />} />
-                <Route path="/edit" element={<EditorPage />} />
-                <Route path="*" element={<NotFoundPage />} />
+                <Route
+                    path="/edit"
+                    element={
+                        <Suspense fallback={<div className="min-h-screen bg-slate-50 dark:bg-slate-900" />}>
+                            <EditorPage />
+                        </Suspense>
+                    }
+                />
+                <Route
+                    path="*"
+                    element={
+                        <Suspense fallback={<div className="min-h-screen bg-slate-50 dark:bg-slate-900" />}>
+                            <NotFoundPage />
+                        </Suspense>
+                    }
+                />
             </Routes>
         </BrowserRouter>
     );
