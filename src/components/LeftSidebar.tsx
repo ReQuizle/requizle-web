@@ -8,7 +8,7 @@ import {clsx} from 'clsx';
 import {Logo} from './Logo';
 import {SimpleConfirmModal, TypeToConfirmModal} from './AppModals';
 import type {Subject, Topic, SubjectExportV1, QuestionProgress} from '../types';
-import {getMedia, isIndexedDBMedia, extractMediaId} from '../utils/mediaStorage';
+import {extractMediaId, getMedia, isIndexedDBMedia, serializeMediaEntry} from '../utils/mediaStorage';
 import {triggerJsonDownload} from '../utils/download';
 
 type ContextMenuState =
@@ -40,18 +40,12 @@ async function buildSubjectExportPayload(
             }
         });
     });
-    const mediaExports: NonNullable<SubjectExportV1['_media']> = [];
-    for (const id of mediaIds) {
-        const media = await getMedia(id);
-        if (media) {
-            mediaExports.push({
-                id: media.id,
-                data: media.data,
-                filename: media.filename,
-                mimeType: media.mimeType
-            });
-        }
-    }
+    const mediaEntries = await Promise.all([...mediaIds].map((id) => getMedia(id)));
+    const mediaExports: NonNullable<SubjectExportV1['_media']> = await Promise.all(
+        mediaEntries
+            .filter((media): media is NonNullable<typeof media> => Boolean(media))
+            .map(media => serializeMediaEntry(media))
+    );
     return {
         requizleSubjectExport: 1,
         subject,

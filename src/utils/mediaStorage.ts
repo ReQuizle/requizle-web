@@ -56,31 +56,35 @@ function openDB(): Promise<IDBDatabase> {
 
 export interface MediaEntry {
     id: string;
-    data: string; // base64 data URI
+    blob: Blob;
     filename: string;
     mimeType: string;
     size: number;
     createdAt: number;
 }
 
+export interface SerializedMediaEntry {
+    id: string;
+    filename: string;
+    mimeType: string;
+    dataBase64: string;
+}
+
 /**
  * Store media in IndexedDB
  * @returns The media ID (use as `idb:${id}` in question.media)
  */
-export async function storeMedia(dataUri: string, filename: string): Promise<string> {
+export async function storeMedia(blob: Blob, filename: string): Promise<string> {
     const db = await openDB();
     const id = `media-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-
-    // Extract mime type from data URI
-    const mimeMatch = dataUri.match(/^data:([^;]+);/);
-    const mimeType = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+    const mimeType = blob.type || 'application/octet-stream';
 
     const entry: MediaEntry = {
         id,
-        data: dataUri,
+        blob,
         filename,
         mimeType,
-        size: dataUri.length,
+        size: blob.size,
         createdAt: Date.now()
     };
 
@@ -96,21 +100,18 @@ export async function storeMedia(dataUri: string, filename: string): Promise<str
 }
 
 /**
- * Restore a full media entry (used for import/export)
+ * Restore a full media entry from serialized payload (used for import/export)
  */
-export async function restoreMediaEntry(entry: {id: string; data: string; filename: string}): Promise<void> {
+export async function restoreMediaEntry(entry: SerializedMediaEntry): Promise<void> {
     const db = await openDB();
-
-    // Extract mime type from data URI
-    const mimeMatch = entry.data.match(/^data:([^;]+);/);
-    const mimeType = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+    const blob = base64ToBlob(entry.dataBase64, entry.mimeType);
 
     const fullEntry: MediaEntry = {
         id: entry.id,
-        data: entry.data,
+        blob,
         filename: entry.filename,
-        mimeType,
-        size: entry.data.length,
+        mimeType: entry.mimeType,
+        size: blob.size,
         createdAt: Date.now()
     };
 
@@ -214,4 +215,48 @@ export function extractMediaId(mediaRef: string): string {
  */
 export function createMediaRef(id: string): string {
     return `idb:${id}`;
+}
+
+export function createMediaObjectUrl(media: MediaEntry): string {
+    return URL.createObjectURL(media.blob);
+}
+
+export function revokeMediaObjectUrl(url: string): void {
+    URL.revokeObjectURL(url);
+}
+
+export async function serializeMediaEntry(media: MediaEntry): Promise<SerializedMediaEntry> {
+    return {
+        id: media.id,
+        filename: media.filename,
+        mimeType: media.mimeType,
+        dataBase64: await blobToBase64(media.blob)
+    };
+}
+
+async function blobToBase64(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const result = String(reader.result);
+            const marker = 'base64,';
+            const markerIndex = result.indexOf(marker);
+            if (markerIndex === -1) {
+                reject(new Error('Failed to serialize media blob'));
+                return;
+            }
+            resolve(result.slice(markerIndex + marker.length));
+        };
+        reader.onerror = () => reject(reader.error ?? new Error('Failed to serialize media blob'));
+        reader.readAsDataURL(blob);
+    });
+}
+
+function base64ToBlob(dataBase64: string, mimeType: string): Blob {
+    const binary = atob(dataBase64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return new Blob([bytes], {type: mimeType || 'application/octet-stream'});
 }

@@ -1,7 +1,13 @@
 import React, {useState, useEffect} from 'react';
 import type {Question} from '../types';
 import {useQuizStore} from '../store/useQuizStore';
-import {getMedia, isIndexedDBMedia, extractMediaId} from '../utils/mediaStorage';
+import {
+    createMediaObjectUrl,
+    extractMediaId,
+    getMedia,
+    isIndexedDBMedia,
+    revokeMediaObjectUrl
+} from '../utils/mediaStorage';
 import {isVideoMediaUrl} from '../utils/mediaFormat';
 import {MultipleAnswerInput} from './inputs/MultipleAnswerInput';
 import {MultipleChoiceInput} from './inputs/MultipleChoiceInput';
@@ -25,10 +31,6 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
     const [submittedAnswer, setSubmittedAnswer] = useState<AnswerType | null>(null);
     const [result, setResult] = useState<{correct: boolean; explanation?: string} | null>(null);
 
-    // Initialize media state based on the type of media reference
-    // - No media: no loading needed
-    // - IndexedDB reference (idb:...): needs async loading
-    // - Direct URL or data URI: immediately resolved
     const needsAsyncLoad = question.media && isIndexedDBMedia(question.media);
     const [resolvedMediaUrl, setResolvedMediaUrl] = useState<string | null>(
         question.media && !needsAsyncLoad ? question.media : null
@@ -43,7 +45,7 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
 
         const mediaId = extractMediaId(question.media);
         const maxRetries = 3;
-        const retryDelay = 500; // ms
+        const retryDelay = 500;
         const retryTimers = new Set<ReturnType<typeof setTimeout>>();
         let cancelled = false;
 
@@ -59,12 +61,11 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
             getMedia(mediaId).then(entry => {
                 if (cancelled) return;
                 if (entry) {
-                    setResolvedMediaUrl(entry.data);
+                    setResolvedMediaUrl(createMediaObjectUrl(entry));
                     setMediaLoading(false);
                 } else if (retryCount < maxRetries) {
                     scheduleRetry(retryCount + 1);
                 } else {
-                    // Give up after max retries
                     setResolvedMediaUrl(null);
                     setMediaError(true);
                     setMediaLoading(false);
@@ -74,7 +75,6 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                 if (retryCount < maxRetries) {
                     scheduleRetry(retryCount + 1);
                 } else {
-                    // Give up after max retries
                     setResolvedMediaUrl(null);
                     setMediaError(true);
                     setMediaLoading(false);
@@ -90,6 +90,14 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
             retryTimers.clear();
         };
     }, [question.media]);
+
+    useEffect(() => {
+        return () => {
+            if (resolvedMediaUrl?.startsWith('blob:')) {
+                revokeMediaObjectUrl(resolvedMediaUrl);
+            }
+        };
+    }, [resolvedMediaUrl]);
 
     const handleAnswer = (answer: AnswerType) => {
         setSubmittedAnswer(answer);
@@ -137,9 +145,8 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                             )}
                         </div>
 
-                        {/* Question Media (Image or Video) */}
+                        {/* Question media */}
                         {question.media && (() => {
-                            // Show loading state while media is being loaded from IndexedDB
                             if (mediaLoading) {
                                 return (
                                     <div className="mb-4 flex items-center justify-center h-32 bg-slate-100 dark:bg-slate-700 rounded-lg">
@@ -148,7 +155,6 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                                 );
                             }
 
-                            // Show error state if media failed to load
                             if (mediaError || !resolvedMediaUrl) {
                                 return (
                                     <div className="mb-4 flex items-center justify-center h-24 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
@@ -323,12 +329,6 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                                                         {question.type === 'word_bank' && (
                                                             question.sentence.split(/(_)/g).map((part, i) => {
                                                                 if (part === '_') {
-                                                                    // Find which answer corresponds to this blank
-                                                                    // The sentence is split by _, so every odd index is a blank
-                                                                    // e.g. "A _ B _" -> ["A ", "_", " B ", "_", ""]
-                                                                    // blanks are at indices 1, 3.
-                                                                    // The answer array corresponds to these blanks in order.
-                                                                    // blankIndex = (i - 1) / 2
                                                                     const blankIndex = (i - 1) / 2;
                                                                     return <span key={i} className="px-1.5 py-0.5 mx-0.5 bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300 rounded font-bold"><RichText inline>{question.answers[blankIndex]}</RichText></span>;
                                                                 }

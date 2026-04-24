@@ -30,3 +30,28 @@ export function normalizeAppUrlTrailingSlash(): void {
     const {search, hash} = window.location;
     window.history.replaceState(window.history.state, '', `${baseNoSlash}/${search}${hash}`);
 }
+
+/**
+ * GitHub Pages SPA fallback support:
+ * - `public/404.html` can redirect unknown client routes to `/{base}/?__rq_path=...&__rq_query=...`
+ * - this function restores the original client-side URL before React Router mounts.
+ */
+export function restoreSpaPathFromFallbackQuery(): void {
+    const searchParams = new URLSearchParams(window.location.search);
+    const rawPath = searchParams.get('__rq_path');
+    if (!rawPath) return;
+
+    const rawQuery = searchParams.get('__rq_query');
+    const fallbackHash = window.location.hash;
+
+    const normalizedPath = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
+    const basePath = getAppBasePath().replace(/\/$/, '');
+    const restoredPath = `${basePath}${normalizedPath}`;
+    const restoredQuery = rawQuery ? `?${rawQuery}` : '';
+
+    window.history.replaceState(
+        window.history.state,
+        '',
+        `${restoredPath}${restoredQuery}${fallbackHash}`
+    );
+}

@@ -12,7 +12,7 @@ export interface BaseQuestion {
     prompt: string;
     topicId: string;
     explanation?: string;
-    media?: string; // URL, data URI, or filename for images/videos
+    media?: string; // URL/path or idb: reference for images/videos
 }
 
 export interface MultipleChoiceQuestion extends BaseQuestion {
@@ -103,7 +103,7 @@ export interface SubjectExportV1 {
     subject: Subject;
     /** topicId -> questionId -> progress. Omit or leave empty to share the question set only. */
     progress?: Record<string, Record<string, QuestionProgress>>;
-    _media?: Array<{id: string; data: string; filename: string; mimeType?: string}>;
+    _media?: Array<{id: string; filename: string; mimeType: string; dataBase64: string}>;
 }
 
 export interface Profile {

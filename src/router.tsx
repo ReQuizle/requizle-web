@@ -1,10 +1,11 @@
-import {BrowserRouter, Navigate, Route, Routes} from 'react-router-dom';
+import {BrowserRouter, Route, Routes} from 'react-router-dom';
 import {useEffect} from 'react';
 import {Layout} from './components/Layout';
 import {LeftSidebar} from './components/LeftSidebar';
 import {CenterArea} from './components/CenterArea';
 import {RightSidebar} from './components/RightSidebar';
 import {EditorPage} from './pages/EditorPage';
+import {NotFoundPage} from './pages/NotFoundPage';
 import {useQuizStore} from './store/useQuizStore';
 import type {Subject} from './types';
 
@@ -50,7 +51,7 @@ export function AppRoutes({sampleSubjects}: AppRoutesProps) {
             <Routes>
                 <Route path="/" element={<StudyShell sampleSubjects={sampleSubjects} />} />
                 <Route path="/edit" element={<EditorPage />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
+                <Route path="*" element={<NotFoundPage />} />
             </Routes>
         </BrowserRouter>
     );

@@ -4,13 +4,14 @@ import type {Question, QuestionType, Topic} from '../types';
 import {QUESTION_TYPES, createEmptyQuestion, migrateQuestionShape} from '../utils/contentEditor';
 import {
     createMediaRef,
+    createMediaObjectUrl,
     extractMediaId,
     getMedia,
     isIndexedDBMedia,
+    revokeMediaObjectUrl,
     storeMedia
 } from '../utils/mediaStorage';
 import {isVideoMediaUrl} from '../utils/mediaFormat';
-import {readFileAsDataUrl} from '../utils/fileReaders';
 import {hasDuplicateStrings, hasEnoughWordBankEntries} from '../utils/validationHelpers';
 import {clsx} from 'clsx';
 import {BookOpen, Layers, Plus, Save, Trash2, Upload} from 'lucide-react';
@@ -127,7 +128,7 @@ function QuestionMediaEditor({
             .then(entry => {
                 if (cancelled) return;
                 if (entry) {
-                    setResolvedUrl(entry.data);
+                    setResolvedUrl(createMediaObjectUrl(entry));
                     setMediaError(false);
                 } else {
                     setResolvedUrl(null);
@@ -147,6 +148,14 @@ function QuestionMediaEditor({
         };
     }, [media]);
 
+    useEffect(() => {
+        return () => {
+            if (resolvedUrl?.startsWith('blob:')) {
+                revokeMediaObjectUrl(resolvedUrl);
+            }
+        };
+    }, [resolvedUrl]);
+
     const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         e.target.value = '';
@@ -158,8 +167,7 @@ function QuestionMediaEditor({
         setUploadBusy(true);
         setUploadError(null);
         try {
-            const dataUrl = await readFileAsDataUrl(file);
-            const id = await storeMedia(dataUrl, file.name);
+            const id = await storeMedia(file, file.name);
             onMediaChange(createMediaRef(id));
         } catch {
             setUploadError('Could not store this file.');

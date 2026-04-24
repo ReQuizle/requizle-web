@@ -10,7 +10,10 @@ function normalizeAppBase(value: string | undefined): string {
 }
 
 /** Must match `manifest.scope` / `start_url` and end with `/` (Vite convention). */
-const APP_BASE = normalizeAppBase(process.env.VITE_APP_BASE)
+const APP_BASE = normalizeAppBase(
+  process.env.VITE_APP_BASE ??
+    (process.env.NODE_ENV === 'production' ? '/requizle-web/' : '/')
+)
 
 /** 308 redirect so `/subpath` and `/subpath?x=1` resolve like static hosts do for directory URLs. */
 function canonicalBaseTrailingSlashRedirect(): Plugin {

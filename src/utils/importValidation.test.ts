@@ -175,7 +175,7 @@ describe('importValidation', () => {
                     currentQuestionId: 'q2',
                     turnCounter: -1
                 },
-                _media: [{id: 'm1', data: 'data:image/png;base64,abc', filename: 'image.png'}]
+                _media: [{id: 'm1', filename: 'image.png', mimeType: 'image/png', dataBase64: 'abc'}]
             });
 
             expect(profile).toMatchObject({
@@ -249,7 +249,7 @@ describe('importValidation', () => {
 
         it('rejects invalid payloads before media restoration', () => {
             expect(isImportableQuizPayload({
-                _media: [{id: 'm1', data: 'data:image/png;base64,abc', filename: 'image.png'}],
+                _media: [{id: 'm1', filename: 'image.png', mimeType: 'image/png', dataBase64: 'abc'}],
                 subjects: [{id: 's1', name: 'Broken'}]
             })).toBe(false);
         });

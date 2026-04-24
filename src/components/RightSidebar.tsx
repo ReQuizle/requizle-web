@@ -22,7 +22,9 @@ import {
     isIndexedDBMedia,
     extractMediaId,
     getMedia,
-    restoreMediaEntry
+    restoreMediaEntry,
+    serializeMediaEntry,
+    type SerializedMediaEntry
 } from '../utils/mediaStorage';
 import {triggerJsonDownload} from '../utils/download';
 import {readFileAsText} from '../utils/fileReaders';
@@ -62,7 +64,7 @@ const SETTINGS_SECTIONS: {id: SettingsSectionId; label: string; icon: typeof Use
     {id: 'links', label: 'Links & help', icon: Link2}
 ];
 
-type EmbeddedMediaEntry = {id: string; data: string; filename: string};
+type EmbeddedMediaEntry = SerializedMediaEntry;
 
 type SettingsSwitchRowProps = {
     title: string;
@@ -96,9 +98,9 @@ function isEmbeddedMediaEntry(value: unknown): value is EmbeddedMediaEntry {
     const entry = value as Record<string, unknown>;
     return (
         typeof entry.id === 'string' &&
-        typeof entry.data === 'string' &&
-        entry.data.startsWith('data:') &&
-        typeof entry.filename === 'string'
+        typeof entry.filename === 'string' &&
+        typeof entry.mimeType === 'string' &&
+        typeof entry.dataBase64 === 'string'
     );
 }
 
@@ -143,7 +145,6 @@ export const RightSidebar: React.FC = () => {
     const importDndDepth = useRef(0);
     const [resetSubjectDataConfirm, setResetSubjectDataConfirm] = useState<{id: string; name: string} | null>(null);
 
-    // Image upload state
     const [pendingImport, setPendingImport] = useState<{
         data: unknown;
         mediaGroups: MediaGroup[];
@@ -164,7 +165,6 @@ export const RightSidebar: React.FC = () => {
     const session = currentProfile?.session ?? DEFAULT_SESSION_STATE;
     const currentSubject = subjects.find(s => s.id === session.subjectId);
 
-    // Calculate stats
     let activeQuestionsCount = 0;
     let activeMastery = 0;
     let subjectMastery = 0;
@@ -183,9 +183,7 @@ export const RightSidebar: React.FC = () => {
 
 
 
-    // Perform the actual import after images are handled
     const performImport = (parsed: unknown): {type: 'profile' | 'subjects'; message: string} => {
-        // Check if it's a profile (has profile-specific fields)
         if (isSubjectExportV1(parsed)) {
             importSubjectExport(parsed);
             const subj = parsed.subject;
@@ -204,11 +202,8 @@ export const RightSidebar: React.FC = () => {
             importProfile(profile);
             const action = existingProfile ? 'merged with existing' : 'imported';
             return {type: 'profile', message: `Profile "${profile.name}" ${action} successfully!`};
-        } catch {
-            // Not a valid profile import. Fall through and try subject import.
-        }
+        } catch {}
 
-        // Otherwise, try to import as subjects
         const validatedSubjects = validateSubjects(parsed);
         const existingSubjectIds = subjects.map(s => s.id);
         const mergedCount = validatedSubjects.filter(s => existingSubjectIds.includes(s.id)).length;
@@ -228,13 +223,11 @@ export const RightSidebar: React.FC = () => {
         return {type: 'subjects', message};
     };
 
-    // Check for local media and either import directly or prompt for upload
     const detectAndImport = async (parsed: unknown): Promise<{type: 'profile' | 'subjects' | 'pending'; message: string}> => {
         if (!isImportableQuizPayload(parsed)) {
             throw new Error('Invalid import format: expected a profile, subject export, subject, or subject array');
         }
 
-        // Check for embedded media in profile export
         if (
             typeof parsed === 'object' &&
             parsed !== null &&
@@ -243,9 +236,7 @@ export const RightSidebar: React.FC = () => {
         ) {
             const mediaList = ((parsed as Record<string, unknown>)._media as unknown[]).filter(isEmbeddedMediaEntry);
 
-            // Restore media to IndexedDB
             for (const item of mediaList) {
-                // Check if already exists to avoid duplicate work
                 const existing = await getMedia(item.id);
                 if (!existing) {
                     try {
@@ -274,17 +265,14 @@ export const RightSidebar: React.FC = () => {
             };
         }
 
-        // No local media (or all are idb/remote), import directly
         return performImport(parsed);
     };
 
-    // Handle bulk image file selection for non-conflict media
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!pendingImport || !e.target.files) return;
 
         const files = Array.from(e.target.files);
 
-        // Only process non-conflict groups with bulk upload
         const nonConflictFilenames = pendingImport.mediaGroups
             .filter(g => !g.isConflict && !g.uploaded)
             .map(g => g.filename);
@@ -303,162 +291,100 @@ export const RightSidebar: React.FC = () => {
             return;
         }
 
-        // Track processing with a map of filename -> dataUri
-        const uploadResults = new Map<string, string>();
-        const failedFiles: string[] = [];
-        let processedCount = 0;
-        const totalToProcess = validFiles.length;
+        const uploadResults = new Map<string, File>();
+        validFiles.forEach(file => {
+            uploadResults.set(file.name, file);
+        });
 
-        const finalizeUploads = () => {
-            // Use functional update with all results at once
-            setPendingImport(prev => {
-                if (!prev) return prev;
+        setPendingImport(prev => {
+            if (!prev) return prev;
 
-                const newMediaGroups = prev.mediaGroups.map(group => {
-                    if (group.isConflict) return group;
-                    const dataUri = uploadResults.get(group.filename);
-                    if (dataUri) {
-                        return {
-                            ...group,
-                            uploaded: true,
-                            uploadedDataUri: dataUri
-                        };
-                    }
-                    return group;
-                });
-
-                const notices: string[] = [];
-                if (skipped.length > 0) {
-                    notices.push(`Skipped ${skipped.length} file(s) not in required list`);
-                }
-                if (failedFiles.length > 0) {
-                    notices.push(`Failed to read: ${failedFiles.join(', ')}`);
-                }
-
+            const newMediaGroups = prev.mediaGroups.map(group => {
+                if (group.isConflict) return group;
+                const uploadedFile = uploadResults.get(group.filename);
+                if (!uploadedFile) return group;
                 return {
-                    ...prev,
-                    mediaGroups: newMediaGroups,
-                    uploadError: notices.length > 0 ? notices.join('. ') : null
+                    ...group,
+                    uploaded: true,
+                    uploadedFile
                 };
             });
-        };
 
-        validFiles.forEach(file => {
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                const dataUri = event.target?.result as string;
-                uploadResults.set(file.name, dataUri);
-                processedCount++;
+            const notices: string[] = [];
+            if (skipped.length > 0) {
+                notices.push(`Skipped ${skipped.length} file(s) not in required list`);
+            }
 
-                if (processedCount === totalToProcess) {
-                    finalizeUploads();
-                }
+            return {
+                ...prev,
+                mediaGroups: newMediaGroups,
+                uploadError: notices.length > 0 ? notices.join('. ') : null
             };
-            reader.onerror = () => {
-                failedFiles.push(file.name);
-                processedCount++;
-                if (processedCount === totalToProcess) {
-                    finalizeUploads();
-                }
-            };
-            reader.onabort = () => {
-                failedFiles.push(file.name);
-                processedCount++;
-                if (processedCount === totalToProcess) {
-                    finalizeUploads();
-                }
-            };
-            reader.readAsDataURL(file);
         });
 
         e.target.value = '';
     };
 
-    // Handle individual upload for a specific conflict reference
     const handleConflictUpload = (groupIndex: number, refIndex: number, e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files || !e.target.files[0]) return;
 
         const file = e.target.files[0];
-        const reader = new FileReader();
+        setPendingImport(prev => {
+            if (!prev) return prev;
 
-        reader.onload = (event) => {
-            const dataUri = event.target?.result as string;
+            const newMediaGroups = prev.mediaGroups.map((group, idx) => {
+                if (idx !== groupIndex) return group;
 
-            // Use functional update to get latest state
-            setPendingImport(prev => {
-                if (!prev) return prev;
-
-                const newMediaGroups = prev.mediaGroups.map((group, idx) => {
-                    if (idx !== groupIndex) return group;
-
-                    // Get or create the per-ref upload map
-                    const refMap = new Map(group.uploadedPerRef || []);
-                    refMap.set(group.references[refIndex].path, dataUri);
-
-                    // Check if all refs in this conflict group are uploaded
-                    const allUploaded = group.references.every(ref => refMap.has(ref.path));
-
-                    return {
-                        ...group,
-                        uploaded: allUploaded,
-                        uploadedPerRef: refMap
-                    };
-                });
+                const refMap = new Map(group.uploadedPerRef || []);
+                refMap.set(group.references[refIndex].path, file);
+                const allUploaded = group.references.every(ref => refMap.has(ref.path));
 
                 return {
-                    ...prev,
-                    mediaGroups: newMediaGroups,
-                    uploadError: null
+                    ...group,
+                    uploaded: allUploaded,
+                    uploadedPerRef: refMap
                 };
             });
-        };
 
-        reader.readAsDataURL(file);
+            return {
+                ...prev,
+                mediaGroups: newMediaGroups,
+                uploadError: null
+            };
+        });
         e.target.value = '';
     };
 
-    // Handle individual upload for non-conflict groups (single file applies to all usages)
     const handleSingleUpload = (groupIndex: number, e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files || !e.target.files[0]) return;
 
         const file = e.target.files[0];
-        const reader = new FileReader();
+        setPendingImport(prev => {
+            if (!prev) return prev;
 
-        reader.onload = (event) => {
-            const dataUri = event.target?.result as string;
-
-            // Use functional update to get latest state
-            setPendingImport(prev => {
-                if (!prev) return prev;
-
-                const newMediaGroups = prev.mediaGroups.map((group, idx) => {
-                    if (idx !== groupIndex) return group;
-                    return {
-                        ...group,
-                        uploaded: true,
-                        uploadedDataUri: dataUri
-                    };
-                });
-
+            const newMediaGroups = prev.mediaGroups.map((group, idx) => {
+                if (idx !== groupIndex) return group;
                 return {
-                    ...prev,
-                    mediaGroups: newMediaGroups,
-                    uploadError: null
+                    ...group,
+                    uploaded: true,
+                    uploadedFile: file
                 };
             });
-        };
 
-        reader.readAsDataURL(file);
+            return {
+                ...prev,
+                mediaGroups: newMediaGroups,
+                uploadError: null
+            };
+        });
         e.target.value = '';
     };
 
-    // Complete the import with uploaded images
     const completePendingImport = async () => {
         if (!pendingImport) return;
 
         const {data, mediaGroups} = pendingImport;
 
-        // Check all media is uploaded
         const missingGroups = mediaGroups.filter(g => !g.uploaded);
         if (missingGroups.length > 0) {
             const missingNames = missingGroups.map(g => g.filename).join(', ');
@@ -470,25 +396,22 @@ export const RightSidebar: React.FC = () => {
         }
 
         try {
-            // Store each media file in IndexedDB and create a mapping from full path to idb: reference
             const mediaRefMap = new Map<string, string>();
 
             for (const group of mediaGroups) {
                 if (group.isConflict) {
-                    // For conflicts, each reference has its own upload
                     const refMap = group.uploadedPerRef;
                     if (!refMap) continue;
                     for (const ref of group.references) {
-                        const dataUri = refMap.get(ref.path);
-                        if (dataUri) {
-                            const mediaId = await storeMedia(dataUri, ref.filename);
+                        const uploadedFile = refMap.get(ref.path);
+                        if (uploadedFile) {
+                            const mediaId = await storeMedia(uploadedFile, ref.filename);
                             mediaRefMap.set(ref.path, createMediaRef(mediaId));
                         }
                     }
                 } else {
-                    // For non-conflicts, all references use the same upload
-                    if (group.uploadedDataUri) {
-                        const mediaId = await storeMedia(group.uploadedDataUri, group.filename);
+                    if (group.uploadedFile) {
+                        const mediaId = await storeMedia(group.uploadedFile, group.filename);
                         const idbRef = createMediaRef(mediaId);
                         for (const ref of group.references) {
                             mediaRefMap.set(ref.path, idbRef);
@@ -497,7 +420,6 @@ export const RightSidebar: React.FC = () => {
                 }
             }
 
-            // Replace media paths with IndexedDB references (using full path as key)
             const processedData = replaceMediaByPath(data, mediaRefMap);
 
             const result = performImport(processedData);
@@ -516,7 +438,6 @@ export const RightSidebar: React.FC = () => {
 
 
 
-    // Cancel pending import
     const cancelPendingImport = () => {
         setPendingImport(null);
         setImportError(null);
@@ -527,7 +448,6 @@ export const RightSidebar: React.FC = () => {
             const parsed: unknown = JSON.parse(jsonInput);
             detectAndImport(parsed).then(result => {
                 if (result.type === 'pending') {
-                    // Don't clear input or show success - waiting for images
                     setImportError(null);
                     return;
                 }
@@ -950,7 +870,6 @@ export const RightSidebar: React.FC = () => {
                                             <div className="flex items-center gap-1 flex-shrink-0">
                                                 <button
                                                     onClick={async () => {
-                                                        // Extract media IDs from this profile
                                                         const mediaIds = new Set<string>();
                                                         profile.subjects.forEach(subject => {
                                                             subject.topics.forEach(topic => {
@@ -962,19 +881,12 @@ export const RightSidebar: React.FC = () => {
                                                             });
                                                         });
 
-                                                        // Fetch media data
-                                                        const mediaExports = [];
-                                                        for (const id of mediaIds) {
-                                                            const media = await getMedia(id);
-                                                            if (media) {
-                                                                mediaExports.push({
-                                                                    id: media.id,
-                                                                    data: media.data,
-                                                                    filename: media.filename,
-                                                                    mimeType: media.mimeType
-                                                                });
-                                                            }
-                                                        }
+                                                        const mediaEntries = await Promise.all([...mediaIds].map(id => getMedia(id)));
+                                                        const mediaExports = await Promise.all(
+                                                            mediaEntries
+                                                                .filter((media): media is NonNullable<typeof media> => Boolean(media))
+                                                                .map(media => serializeMediaEntry(media))
+                                                        );
 
                                                         const exportData = {
                                                             ...profile,
@@ -1245,10 +1157,8 @@ export const RightSidebar: React.FC = () => {
                                 setClearingCache(true);
                                 setCacheClearResult(null);
                                 try {
-                                    // Get all media IDs in IndexedDB
                                     const allStoredIds = await getAllMediaIds();
 
-                                    // Collect all media IDs still in use across all profiles
                                     const usedMediaIds = new Set<string>();
                                     for (const profile of Object.values(profiles)) {
                                         for (const subject of profile.subjects) {
@@ -1262,10 +1172,8 @@ export const RightSidebar: React.FC = () => {
                                         }
                                     }
 
-                                    // Find orphaned media (stored but not used)
                                     const orphanedIds = allStoredIds.filter(id => !usedMediaIds.has(id));
 
-                                    // Delete orphaned media
                                     for (const id of orphanedIds) {
                                         await deleteMedia(id);
                                     }
@@ -1537,7 +1445,6 @@ export const RightSidebar: React.FC = () => {
 
                                         {/* Context: which subjects/topics use this file */}
                                         {hasConflict ? (
-                                            // For conflicts, show each reference with its own upload
                                             <div className="ml-4 space-y-1">
                                                 {group.references.map((ref, refIndex) => {
                                                     const isRefUploaded = refMap?.has(ref.path);
@@ -1572,7 +1479,6 @@ export const RightSidebar: React.FC = () => {
                                                 })}
                                             </div>
                                         ) : (
-                                            // For non-conflicts, show context with individual upload option
                                             <div className="ml-4 flex items-center justify-between text-xs p-1.5 rounded bg-slate-50 dark:bg-slate-700/50">
                                                 <span className="text-slate-500 dark:text-slate-400 truncate">
                                                     {group.references.map(r => `${r.subjectName} → ${r.topicName}`).join(', ')}

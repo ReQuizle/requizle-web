@@ -1211,7 +1211,7 @@ describe('useQuizStore', () => {
                         turnCounter: -1
                     },
                     createdAt: 100,
-                    _media: [{id: 'm1', data: 'data:image/png;base64,abc', filename: 'image.png'}]
+                    _media: [{id: 'm1', filename: 'image.png', mimeType: 'image/png', dataBase64: 'abc'}]
                 } as unknown as Profile;
 
                 act(() => {

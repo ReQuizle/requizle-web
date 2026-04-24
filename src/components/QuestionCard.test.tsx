@@ -13,7 +13,9 @@ const mockGetMedia = vi.fn();
 vi.mock('../utils/mediaStorage', () => ({
     getMedia: (...args: unknown[]) => mockGetMedia(...args),
     isIndexedDBMedia: (ref: string) => ref.startsWith('idb:'),
-    extractMediaId: (ref: string) => ref.replace('idb:', '')
+    extractMediaId: (ref: string) => ref.replace('idb:', ''),
+    createMediaObjectUrl: () => 'blob:mock-media',
+    revokeMediaObjectUrl: vi.fn()
 }));
 
 // Mock Latex component
@@ -73,6 +75,11 @@ describe('QuestionCard', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.stubGlobal('URL', {
+            ...URL,
+            createObjectURL: vi.fn(() => 'blob:mock-media'),
+            revokeObjectURL: vi.fn()
+        });
         (useQuizStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
             submitAnswer: mockSubmitAnswer,
             skipQuestion: mockSkipQuestion
@@ -421,7 +428,7 @@ describe('QuestionCard', () => {
         it('should load media from IndexedDB when using idb: reference', async () => {
             mockGetMedia.mockResolvedValue({
                 id: 'media-123',
-                data: 'data:image/png;base64,test',
+                blob: new Blob(['test'], {type: 'image/png'}),
                 filename: 'test.png',
                 mimeType: 'image/png',
                 size: 100,

@@ -6,5 +6,11 @@ const VIDEO_FILE_EXTENSIONS = ['.mp4', '.webm', '.ogg', '.mov', '.avi', '.mkv'] 
 export function isVideoMediaUrl(url: string): boolean {
     const lowerUrl = url.toLowerCase();
     if (lowerUrl.startsWith('data:video/')) return true;
-    return VIDEO_FILE_EXTENSIONS.some(ext => lowerUrl.includes(ext));
+    try {
+        const parsed = new URL(url, window.location.origin);
+        const path = parsed.pathname.toLowerCase();
+        return VIDEO_FILE_EXTENSIONS.some(ext => path.endsWith(ext));
+    } catch {
+        return VIDEO_FILE_EXTENSIONS.some(ext => lowerUrl.endsWith(ext));
+    }
 }

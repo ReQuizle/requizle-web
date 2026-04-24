@@ -30,8 +30,8 @@ export interface MediaGroup {
     references: MediaReference[];
     isConflict: boolean;    // Same filename, different paths
     uploaded: boolean;
-    uploadedDataUri?: string;
-    uploadedPerRef?: Map<string, string>;
+    uploadedFile?: File;
+    uploadedPerRef?: Map<string, File>;
 }
 
 /** Check if a media reference is a remote URL, data URI, or IndexedDB reference */
@@ -542,7 +542,7 @@ export const groupMediaByFilename = (refs: MediaReference[]): MediaGroup[] => {
             references,
             isConflict,
             uploaded: false,
-            uploadedDataUri: undefined
+            uploadedFile: undefined
         };
     });
 };
