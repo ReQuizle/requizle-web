@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useRef, useState} from 'react';
 import type {Question} from '../types';
 import {useQuizStore} from '../store/useQuizStore';
 import {isIndexedDBMedia} from '../utils/mediaStorage';
@@ -30,6 +30,19 @@ function shouldPlayConfetti(): boolean {
     return true;
 }
 
+function findScrollableParent(element: HTMLElement): HTMLElement | null {
+    let node: HTMLElement | null = element.parentElement;
+    while (node) {
+        const style = window.getComputedStyle(node);
+        const overflowY = style.overflowY;
+        if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight) {
+            return node;
+        }
+        node = node.parentElement;
+    }
+    return null;
+}
+
 interface Props {
     question: Question;
     onFeedbackVisibilityChange?: (visible: boolean) => void;
@@ -41,6 +54,7 @@ export const QuestionCard: React.FC<Props> = ({question, onFeedbackVisibilityCha
     const {submitAnswer, skipQuestion, nextQuestion} = useQuizStore();
     const [submittedAnswerState, setSubmittedAnswerState] = useState<{questionId: string; answer: AnswerType} | null>(null);
     const [resultState, setResultState] = useState<{questionId: string; result: {correct: boolean; explanation?: string}} | null>(null);
+    const continueButtonRef = useRef<HTMLButtonElement>(null);
 
     const {resolvedUrl, loading: effectiveMediaLoading, error: effectiveMediaError} = useResolvedMediaUrl(question.media, {
         maxRetries: isIndexedDBMedia(question.media ?? '') ? 3 : 0,
@@ -214,6 +228,25 @@ export const QuestionCard: React.FC<Props> = ({question, onFeedbackVisibilityCha
                             <motion.div
                                 initial={{height: 0, opacity: 0}}
                                 animate={{height: 'auto', opacity: 1}}
+                                onAnimationComplete={() => {
+                                    const button = continueButtonRef.current;
+                                    if (!button) return;
+                                    button.focus({preventScroll: true});
+                                    const scrollParent = findScrollableParent(button);
+                                    if (!scrollParent) return;
+                                    const prefersReducedMotion =
+                                        typeof window !== 'undefined' &&
+                                        window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+                                    const target = scrollParent.scrollHeight - scrollParent.clientHeight;
+                                    if (typeof scrollParent.scrollTo === 'function') {
+                                        scrollParent.scrollTo({
+                                            top: target,
+                                            behavior: prefersReducedMotion ? 'auto' : 'smooth'
+                                        });
+                                    } else {
+                                        scrollParent.scrollTop = target;
+                                    }
+                                }}
                                 className={`border-t ${result.correct ? 'bg-green-50 border-green-100 dark:bg-green-900/20 dark:border-green-900/30' : 'bg-red-50 border-red-100 dark:bg-red-900/20 dark:border-red-900/30'}`}
                             >
                                 <div className="p-6">
@@ -301,9 +334,9 @@ export const QuestionCard: React.FC<Props> = ({question, onFeedbackVisibilityCha
 
                                     <div className="mt-6 flex justify-end">
                                         <button
+                                            ref={continueButtonRef}
                                             onClick={nextQuestion}
                                             className={`${result.correct ? 'btn-success' : 'btn-danger'} flex items-center gap-2`}
-                                            autoFocus
                                         >
                                             Continue <ArrowRight size={18} />
                                         </button>

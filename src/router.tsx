@@ -1,6 +1,7 @@
 import {BrowserRouter, Route, Routes} from 'react-router-dom';
 import {lazy, Suspense, useEffect} from 'react';
 import {Layout} from './components/Layout';
+import {ErrorBoundary} from './components/ErrorBoundary';
 import {useQuizStore} from './store/useQuizStore';
 import type {Subject} from './types';
 
@@ -57,19 +58,25 @@ function StudyShell({sampleSubjects}: StudyShellProps) {
     return (
         <Layout
             leftSidebar={
-                <Suspense fallback={sidebarLoadingFallback}>
-                    <LeftSidebar />
-                </Suspense>
+                <ErrorBoundary fallbackMessage="Failed to load the subjects panel. Please refresh to try again.">
+                    <Suspense fallback={sidebarLoadingFallback}>
+                        <LeftSidebar />
+                    </Suspense>
+                </ErrorBoundary>
             }
             center={
-                <Suspense fallback={pageLoadingFallback}>
-                    <CenterArea />
-                </Suspense>
+                <ErrorBoundary fallbackMessage="Failed to load the study view. Please refresh to try again.">
+                    <Suspense fallback={pageLoadingFallback}>
+                        <CenterArea />
+                    </Suspense>
+                </ErrorBoundary>
             }
             rightSidebar={
-                <Suspense fallback={sidebarLoadingFallback}>
-                    <RightSidebar />
-                </Suspense>
+                <ErrorBoundary fallbackMessage="Failed to load the settings panel. Please refresh to try again.">
+                    <Suspense fallback={sidebarLoadingFallback}>
+                        <RightSidebar />
+                    </Suspense>
+                </ErrorBoundary>
             }
         />
     );
@@ -88,17 +95,21 @@ export function AppRoutes({sampleSubjects}: AppRoutesProps) {
                 <Route
                     path="/edit"
                     element={
-                        <Suspense fallback={pageLoadingFallback}>
-                            <EditorPage />
-                        </Suspense>
+                        <ErrorBoundary fallbackMessage="Failed to load the content editor. Please refresh to try again.">
+                            <Suspense fallback={pageLoadingFallback}>
+                                <EditorPage />
+                            </Suspense>
+                        </ErrorBoundary>
                     }
                 />
                 <Route
                     path="*"
                     element={
-                        <Suspense fallback={pageLoadingFallback}>
-                            <NotFoundPage />
-                        </Suspense>
+                        <ErrorBoundary fallbackMessage="Failed to load this page. Please refresh to try again.">
+                            <Suspense fallback={pageLoadingFallback}>
+                                <NotFoundPage />
+                            </Suspense>
+                        </ErrorBoundary>
                     }
                 />
             </Routes>

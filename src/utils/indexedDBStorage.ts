@@ -1,6 +1,6 @@
 /**
  * IndexedDB storage adapter for Zustand persist middleware.
- * Provides larger storage than localStorage (~50MB+ vs ~5MB).
+ * Falls back to localStorage when IndexedDB is unavailable (e.g. private mode).
  */
 
 const DB_NAME = 'requizle-store';
@@ -162,20 +162,5 @@ export async function clearStoreData(): Promise<void> {
         });
     } finally {
         safeRemoveLocalStorageItem('quiz-storage');
-    }
-}
-
-/**
- * Migrate data from localStorage to IndexedDB (one-time migration).
- */
-export async function migrateFromLocalStorage(key: string): Promise<void> {
-    const localData = safeGetLocalStorageItem(key);
-    if (localData) {
-        try {
-            await indexedDBStorage.setItem(key, localData);
-            safeRemoveLocalStorageItem(key);
-        } catch {
-            // Migration failed, data remains in localStorage
-        }
     }
 }

@@ -76,6 +76,18 @@ export function createQuizCoreActions({
     | 'skipQuestion'
     | 'resetSubjectProgress'
 > {
+    const collectProfileMediaIds = (state: QuizState): Set<string> => {
+        const ids = new Set<string>();
+        const profile = getCurrentProfile(state);
+        if (!profile) return ids;
+        for (const subject of profile.subjects) {
+            for (const id of extractMediaIdsFromSubject(subject)) {
+                ids.add(id);
+            }
+        }
+        return ids;
+    };
+
     return {
         setSubjects: (subjects) => set((state) => {
             const profile = getCurrentProfile(state);
@@ -93,26 +105,31 @@ export function createQuizCoreActions({
             };
         }),
 
-        importSubjects: (newSubjects) => set((state) => {
-            const profile = getCurrentProfile(state);
-            const mergedSubjects = mergeSubjectsIntoList(profile.subjects, newSubjects);
-            const reconciled = reconcileProfileStateForSubjects(profile, mergedSubjects);
+        importSubjects: (newSubjects) => {
+            const mediaBefore = collectProfileMediaIds(get());
+            set((state) => {
+                const profile = getCurrentProfile(state);
+                const mergedSubjects = mergeSubjectsIntoList(profile.subjects, newSubjects);
+                const reconciled = reconcileProfileStateForSubjects(profile, mergedSubjects);
 
-            return {
-                profiles: {
-                    ...state.profiles,
-                    [state.activeProfileId]: {
-                        ...profile,
-                        subjects: mergedSubjects,
-                        progress: reconciled.progress,
-                        session: reconciled.session
+                return {
+                    profiles: {
+                        ...state.profiles,
+                        [state.activeProfileId]: {
+                            ...profile,
+                            subjects: mergedSubjects,
+                            progress: reconciled.progress,
+                            session: reconciled.session
+                        }
                     }
-                }
-            };
-        }),
+                };
+            });
+            cleanupOrphanedMedia(mediaBefore, get);
+        },
 
         importSubjectExport: (bundle) => {
             const validated = validateSubjects([bundle.subject]);
+            const mediaBefore = collectProfileMediaIds(get());
             set((state) => {
                 const profile = getCurrentProfile(state);
                 const mergedSubjects = mergeSubjectsIntoList(profile.subjects, validated);
@@ -141,6 +158,7 @@ export function createQuizCoreActions({
                     }
                 };
             });
+            cleanupOrphanedMedia(mediaBefore, get);
         },
 
         resetTopicProgress: (subjectId, topicId) => {

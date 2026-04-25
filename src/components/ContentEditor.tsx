@@ -1,6 +1,6 @@
-import React, {useCallback, useMemo, useState} from 'react';
+import React, {useCallback, useId, useMemo, useState} from 'react';
 import {useQuizStore} from '../store/useQuizStore';
-import type {Question, QuestionType, Topic} from '../types';
+import type {KeywordsQuestion, Question, QuestionType, Topic} from '../types';
 import {QUESTION_TYPES, createEmptyQuestion, migrateQuestionShape} from '../utils/contentEditor';
 import {
     createMediaRef,
@@ -906,34 +906,7 @@ function QuestionTypeFields({
             );
         }
         case 'keywords':
-            return (
-                <div className="space-y-2">
-                    <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                        Accepted answers (one per line)
-                    </label>
-                    <textarea
-                        value={Array.isArray(draft.answer) ? draft.answer.join('\n') : draft.answer}
-                        onChange={e => {
-                            const lines = e.target.value
-                                .split('\n')
-                                .map(l => l.trim())
-                                .filter(Boolean);
-                            const answer = lines.length <= 1 ? (lines[0] ?? '') : lines;
-                            setDraft({...draft, answer});
-                        }}
-                        rows={3}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm"
-                    />
-                    <label className="flex items-center gap-2 text-xs cursor-pointer">
-                        <input
-                            type="checkbox"
-                            checked={draft.caseSensitive ?? false}
-                            onChange={e => setDraft({...draft, caseSensitive: e.target.checked})}
-                        />
-                        Case sensitive
-                    </label>
-                </div>
-            );
+            return <KeywordsAnswerField key={draft.id} draft={draft} setDraft={setDraft} />;
         case 'matching':
             return (
                 <div className="space-y-2">
@@ -1030,4 +1003,49 @@ function QuestionTypeFields({
                 </div>
             );
     }
+}
+
+function KeywordsAnswerField({
+    draft,
+    setDraft
+}: {
+    draft: KeywordsQuestion;
+    setDraft: (q: Question) => void;
+}) {
+    const textareaId = useId();
+    const caseSensitiveId = useId();
+    // Raw local state preserves newlines while typing; the saved draft gets the normalized value.
+    const [raw, setRaw] = useState<string>(
+        Array.isArray(draft.answer) ? draft.answer.join('\n') : draft.answer
+    );
+
+    return (
+        <div className="space-y-2">
+            <label htmlFor={textareaId} className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                Accepted answers (one per line)
+            </label>
+            <textarea
+                id={textareaId}
+                value={raw}
+                onChange={e => {
+                    const next = e.target.value;
+                    setRaw(next);
+                    const lines = next.split('\n').map(l => l.trim()).filter(Boolean);
+                    const answer = lines.length <= 1 ? (lines[0] ?? '') : lines;
+                    setDraft({...draft, answer});
+                }}
+                rows={3}
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm"
+            />
+            <label htmlFor={caseSensitiveId} className="flex items-center gap-2 text-xs cursor-pointer">
+                <input
+                    id={caseSensitiveId}
+                    type="checkbox"
+                    checked={draft.caseSensitive ?? false}
+                    onChange={e => setDraft({...draft, caseSensitive: e.target.checked})}
+                />
+                Case sensitive
+            </label>
+        </div>
+    );
 }

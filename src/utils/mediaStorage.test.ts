@@ -11,9 +11,7 @@ import {
     clearAllMedia,
     isIndexedDBMedia,
     extractMediaId,
-    createMediaRef,
-    serializeMediaEntry,
-    restoreMediaEntry
+    createMediaRef
 } from './mediaStorage';
 
 // Mock IndexedDB with fake-indexeddb
@@ -132,23 +130,6 @@ describe('mediaStorage', () => {
     });
 
     describe('helper functions', () => {
-        it('serializes and restores media entries', async () => {
-            const id = await storeMedia(new Blob(['payload'], {type: 'text/plain'}), 'payload.txt');
-            const serialized = await serializeMediaEntry({
-                id,
-                blob: new Blob(['payload'], {type: 'text/plain'}),
-                filename: 'payload.txt',
-                mimeType: 'text/plain',
-                size: 7,
-                createdAt: Date.now()
-            });
-            await clearAllMedia();
-            await restoreMediaEntry(serialized);
-            const restored = await getMedia(id);
-            expect(restored?.filename).toBe('payload.txt');
-            expect(restored?.mimeType).toBe('text/plain');
-        });
-
         describe('isIndexedDBMedia', () => {
             it('should return true for idb: references', () => {
                 expect(isIndexedDBMedia('idb:media-123')).toBe(true);

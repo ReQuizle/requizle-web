@@ -1,18 +1,15 @@
 import type {Subject} from '../types';
-import {extractMediaId, getMedia, isIndexedDBMedia} from './mediaStorage';
+import {getMedia} from './mediaStorage';
+import {extractMediaIdsFromSubject} from '../store/quizStoreHelpers';
 import type {ArchiveMediaEntry} from './rqzlArchive';
 
 function collectIndexedDbMediaIds(subjects: Subject[]): string[] {
     const mediaIds = new Set<string>();
-    subjects.forEach(subject => {
-        subject.topics.forEach(topic => {
-            topic.questions.forEach(question => {
-                if (question.media && isIndexedDBMedia(question.media)) {
-                    mediaIds.add(extractMediaId(question.media));
-                }
-            });
-        });
-    });
+    for (const subject of subjects) {
+        for (const id of extractMediaIdsFromSubject(subject)) {
+            mediaIds.add(id);
+        }
+    }
     return [...mediaIds];
 }
 

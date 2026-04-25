@@ -71,7 +71,7 @@ export const CenterArea: React.FC = () => {
                     open={reviewMasteredOpen}
                     title="Review mastered questions?"
                     confirmLabel="Include mastered"
-                    confirmClassName="flex-1 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors"
+                    confirmClassName="btn-primary flex-1 text-sm"
                     onClose={() => setReviewMasteredOpen(false)}
                     onConfirm={() => {
                         setIncludeMastered(true);

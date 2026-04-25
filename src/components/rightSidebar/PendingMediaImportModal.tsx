@@ -221,7 +221,7 @@ const PendingMediaImportModalMounted: React.FC<PendingMediaImportModalMountedPro
                     <button
                         onClick={onCancel}
                         disabled={isCompleting}
-                        className="flex-1 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors"
+                        className="btn-secondary flex-1 text-sm"
                     >
                         Cancel
                     </button>
@@ -229,7 +229,7 @@ const PendingMediaImportModalMounted: React.FC<PendingMediaImportModalMountedPro
                         <button
                             onClick={() => imageInputRef.current?.click()}
                             disabled={isCompleting}
-                            className="flex-1 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors flex items-center justify-center gap-2"
+                            className="btn-primary flex-1 text-sm flex items-center justify-center gap-2"
                         >
                             <Upload className="w-4 h-4" />
                             Upload Files
@@ -241,7 +241,7 @@ const PendingMediaImportModalMounted: React.FC<PendingMediaImportModalMountedPro
                     <button
                         onClick={onCompleteImport}
                         disabled={isCompleting}
-                        className="w-full px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors flex items-center justify-center gap-2"
+                        className="btn-success w-full text-sm flex items-center justify-center gap-2"
                     >
                         <Check className="w-4 h-4" />
                         {isCompleting ? 'Importing...' : 'Complete Import'}

@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useId, useState} from 'react';
 import type {KeywordsQuestion} from '../../types';
 import {Send} from 'lucide-react';
 
@@ -11,6 +11,7 @@ interface Props {
 
 export const KeywordsInput: React.FC<Props> = ({onAnswer, disabled, submittedAnswer}) => {
     const [input, setInput] = useState('');
+    const inputId = useId();
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -22,7 +23,9 @@ export const KeywordsInput: React.FC<Props> = ({onAnswer, disabled, submittedAns
     return (
         <form onSubmit={handleSubmit} className="w-full">
             <div className="relative">
+                <label htmlFor={inputId} className="sr-only">Your answer</label>
                 <input
+                    id={inputId}
                     type="text"
                     value={submittedAnswer || input}
                     onChange={(e) => setInput(e.target.value)}
@@ -34,6 +37,7 @@ export const KeywordsInput: React.FC<Props> = ({onAnswer, disabled, submittedAns
                 <button
                     type="submit"
                     disabled={disabled || !input.trim()}
+                    aria-label="Submit answer"
                     className="absolute right-2 top-2 bottom-2 aspect-square bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white rounded-lg flex items-center justify-center transition-colors"
                 >
                     <Send size={20} />

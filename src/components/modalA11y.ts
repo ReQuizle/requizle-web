@@ -1,4 +1,4 @@
-import {useEffect} from 'react';
+import {useEffect, useRef} from 'react';
 
 const FOCUSABLE_SELECTOR = [
     'a[href]',
@@ -17,6 +17,12 @@ function getFocusableElements(container: HTMLElement): HTMLElement[] {
 }
 
 export function useModalA11y(containerRef: React.RefObject<HTMLElement | null>, onClose: () => void) {
+    // Ref keeps the effect stable so inline onClose closures don't retrigger focus restore on every parent render.
+    const onCloseRef = useRef(onClose);
+    useEffect(() => {
+        onCloseRef.current = onClose;
+    }, [onClose]);
+
     useEffect(() => {
         const previousActiveElement = document.activeElement as HTMLElement | null;
         const previousOverflow = document.body.style.overflow;
@@ -35,7 +41,7 @@ export function useModalA11y(containerRef: React.RefObject<HTMLElement | null>, 
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
                 e.preventDefault();
-                onClose();
+                onCloseRef.current();
                 return;
             }
             if (e.key !== 'Tab') return;
@@ -66,5 +72,5 @@ export function useModalA11y(containerRef: React.RefObject<HTMLElement | null>, 
             document.body.style.overflow = previousOverflow;
             previousActiveElement?.focus?.();
         };
-    }, [containerRef, onClose]);
+    }, [containerRef]);
 }

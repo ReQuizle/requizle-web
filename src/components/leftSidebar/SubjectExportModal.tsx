@@ -111,7 +111,7 @@ const SubjectExportModalMounted: React.FC<{
                     <button
                         type="button"
                         onClick={onClose}
-                        className="flex-1 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors"
+                        className="btn-secondary flex-1 text-sm"
                     >
                         Cancel
                     </button>
@@ -119,7 +119,7 @@ const SubjectExportModalMounted: React.FC<{
                         type="button"
                         disabled={jsonWithMedia}
                         onClick={() => onExport(modalState.subject, modalState.options)}
-                        className="flex-1 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+                        className="btn-primary flex-1 text-sm"
                     >
                         Export
                     </button>

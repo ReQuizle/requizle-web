@@ -39,8 +39,12 @@ function isSafeArchiveMediaPath(path: string): boolean {
 export async function createRqzlArchiveBlob(payload: unknown, mediaEntries: ArchiveMediaEntry[]): Promise<Blob> {
     const zip = new JSZip();
     const mediaDescriptors: ArchiveMediaDescriptor[] = [];
+    // Shared ids are legitimate (one media referenced by many questions); dedupe so zip files and manifest stay in sync.
+    const seenIds = new Set<string>();
 
     for (const media of mediaEntries) {
+        if (seenIds.has(media.id)) continue;
+        seenIds.add(media.id);
         const path = `media/${media.id}`;
         zip.file(path, media.blob);
         mediaDescriptors.push({

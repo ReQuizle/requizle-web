@@ -142,6 +142,13 @@ export function createProfileSettingsActions({
 
         importProfile: (profile) => {
             const validatedProfile = validateProfileImport(profile);
+            const existingBefore = get().profiles[validatedProfile.id];
+            const mediaBefore = new Set<string>();
+            if (existingBefore) {
+                for (const subject of existingBefore.subjects) {
+                    extractMediaIdsFromSubject(subject).forEach(id => mediaBefore.add(id));
+                }
+            }
             set(state => {
                 const existingProfile = state.profiles[validatedProfile.id];
 
@@ -184,15 +191,14 @@ export function createProfileSettingsActions({
                             ...validatedProfile,
                             subjects: mergedSubjects,
                             progress: reconciled.progress,
-                            // Keep the active in-app session when merging into an existing profile.
-                            // Imported session state is validated against the imported subject graph,
-                            // not the merged graph.
+                            // Keep the active in-app session when merging; validate against merged graph.
                             session: reconciled.session
                         }
                     },
                     activeProfileId: validatedProfile.id
                 };
             });
+            cleanupOrphanedMedia(mediaBefore, get);
         },
 
         resetAllData: async () => {

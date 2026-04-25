@@ -332,6 +332,7 @@ export const RightSidebar: React.FC = () => {
                             value={jsonInput}
                             onChange={(e) => setJsonInput(e.target.value)}
                             placeholder='[{"id": "math", ...}]'
+                            aria-label="Paste JSON to import"
                             className="w-full h-40 p-3 text-xs font-mono border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600"
                         />
                         <button

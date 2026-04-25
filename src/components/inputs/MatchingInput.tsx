@@ -93,7 +93,7 @@ export const MatchingInput: React.FC<Props> = ({question, onAnswer, disabled, su
                             <motion.button
                                 key={rightItem}
                                 onClick={() => handleRightClick(rightItem)}
-                                disabled={disabled || (!!matchedLeft && disabled)} // Allow clicking if not disabled (logic handled in function)
+                                disabled={disabled}
                                 className={clsx(
                                     "w-full p-4 rounded-xl border-2 text-left text-sm font-medium transition-all relative",
                                     isMatched ? "bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300" :

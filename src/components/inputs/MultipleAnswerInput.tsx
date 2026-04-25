@@ -38,9 +38,10 @@ export const MultipleAnswerInput: React.FC<Props> = ({question, onAnswer, disabl
             <div className="space-y-3">
                 {question.choices.map((choice, index) => {
                     const isSelected = selectedIndices.includes(index);
-                    const isCorrect = submittedAnswer && question.answerIndices.includes(index);
-                    const isMissed = submittedAnswer && !isSelected && question.answerIndices.includes(index);
-                    const isWrong = submittedAnswer && isSelected && !question.answerIndices.includes(index);
+                    const isAnswer = question.answerIndices.includes(index);
+                    const isCorrect = submittedAnswer && isSelected && isAnswer;
+                    const isMissed = submittedAnswer && !isSelected && isAnswer;
+                    const isWrong = submittedAnswer && isSelected && !isAnswer;
 
                     let borderColor = "border-slate-200 dark:border-slate-700";
                     let bgColor = "bg-white dark:bg-slate-800";

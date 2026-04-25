@@ -107,7 +107,7 @@ function TypeToConfirmModalMounted({
                     <button
                         type="button"
                         onClick={onClose}
-                        className="flex-1 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors"
+                        className="btn-secondary flex-1 text-sm"
                     >
                         {cancelLabel}
                     </button>
@@ -117,7 +117,7 @@ function TypeToConfirmModalMounted({
                             if (canConfirm) onConfirm();
                         }}
                         disabled={!canConfirm}
-                        className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:bg-red-300 dark:disabled:bg-red-900 disabled:cursor-not-allowed rounded-lg transition-colors"
+                        className="btn-danger flex-1 text-sm"
                     >
                         {confirmLabel}
                     </button>
@@ -151,7 +151,7 @@ function SimpleConfirmModalMounted({
     children,
     cancelLabel = 'Cancel',
     confirmLabel,
-    confirmClassName = 'flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors',
+    confirmClassName = 'btn-danger flex-1 text-sm',
     onConfirm,
     onClose
 }: Omit<SimpleConfirmModalProps, 'open'>) {
@@ -169,7 +169,7 @@ function SimpleConfirmModalMounted({
                     <button
                         type="button"
                         onClick={onClose}
-                        className="flex-1 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors"
+                        className="btn-secondary flex-1 text-sm"
                     >
                         {cancelLabel}
                     </button>
@@ -222,7 +222,7 @@ function MessageModalMounted({title, message, buttonLabel = 'OK', onClose}: Omit
                 <button
                     type="button"
                     onClick={onClose}
-                    className="w-full px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors"
+                    className="btn-primary w-full text-sm"
                 >
                     {buttonLabel}
                 </button>
@@ -293,7 +293,7 @@ function TextPromptModalMounted({
                     <button
                         type="button"
                         onClick={onClose}
-                        className="flex-1 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors"
+                        className="btn-secondary flex-1 text-sm"
                     >
                         {cancelLabel}
                     </button>
@@ -304,7 +304,7 @@ function TextPromptModalMounted({
                             onConfirm(trimmed);
                             onClose();
                         }}
-                        className="flex-1 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+                        className="btn-primary flex-1 text-sm"
                     >
                         {confirmLabel}
                     </button>

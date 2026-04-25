@@ -29,10 +29,7 @@ export function NotFoundPage() {
                             <Home size={16} />
                             Go to study
                         </Link>
-                        <Link
-                            to="/edit"
-                            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                        >
+                        <Link to="/edit" className="btn-secondary inline-flex items-center gap-2">
                             <SquarePen size={16} />
                             Open content editor
                         </Link>
