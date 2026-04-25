@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "homepage": "https://requizle.github.io/",
+  "homepage": "https://requizle.github.io/requizle-web/",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -52,7 +52,7 @@
     "gh-pages": "^6.3.0",
     "globals": "^16.5.0",
     "jsdom": "^27.2.0",
-    "postcss": "^8.4.35",
+    "postcss": "^8.5.10",
     "tailwindcss": "^3.4.17",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",

@@ -119,7 +119,17 @@ export async function restoreMediaEntry(entry: SerializedMediaEntry): Promise<vo
     });
 }
 
-export async function restoreRawMediaEntry(entry: RawMediaEntry): Promise<void> {
+export async function restoreRawMediaEntry(
+    entry: RawMediaEntry,
+    options: {overwrite?: boolean} = {}
+): Promise<void> {
+    const {overwrite = false} = options;
+    if (!overwrite) {
+        const existing = await getMedia(entry.id);
+        if (existing) {
+            throw new Error(`Media ID already exists: ${entry.id}`);
+        }
+    }
     const db = await openDB();
 
     const fullEntry: MediaEntry = {

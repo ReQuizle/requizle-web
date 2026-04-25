@@ -1,6 +1,7 @@
-import React from 'react';
-import {createPortal} from 'react-dom';
+import React, {useId, useRef} from 'react';
 import type {Subject} from '../../types';
+import {ModalShell} from '../AppModals';
+import {useModalA11y} from '../modalA11y';
 
 export type SubjectExportFormat = 'rqzl' | 'zip' | 'json';
 
@@ -29,13 +30,35 @@ export const SubjectExportModal: React.FC<SubjectExportModalProps> = ({
     onExport
 }) => {
     if (!modalState) return null;
+    return (
+        <SubjectExportModalMounted
+            modalState={modalState}
+            setOption={setOption}
+            onClose={onClose}
+            onExport={onExport}
+        />
+    );
+};
 
+const SubjectExportModalMounted: React.FC<{
+    modalState: SubjectExportModalState;
+    setOption: <K extends keyof SubjectExportOptions>(key: K, value: SubjectExportOptions[K]) => void;
+    onClose: () => void;
+    onExport: (subject: Subject, options: SubjectExportOptions) => void;
+}> = ({modalState, setOption, onClose, onExport}) => {
     const jsonWithMedia = modalState.options.includeMedia && modalState.options.format === 'json';
+    const titleId = useId();
+    const dialogRef = useRef<HTMLDivElement>(null);
+    useModalA11y(dialogRef, onClose);
 
-    return createPortal(
-        <div className="fixed inset-0 z-[110] bg-black/50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Export Subject</h3>
+    return (
+        <ModalShell
+            titleId={titleId}
+            onClose={onClose}
+            dialogRef={dialogRef}
+            panelClassName="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full p-6 space-y-4"
+        >
+                <h3 id={titleId} className="text-lg font-bold text-slate-900 dark:text-white">Export Subject</h3>
                 <p className="text-sm text-slate-600 dark:text-slate-400">
                     Choose export options for <strong className="text-slate-900 dark:text-white">{modalState.subject.name}</strong>.
                 </p>
@@ -101,8 +124,6 @@ export const SubjectExportModal: React.FC<SubjectExportModalProps> = ({
                         Export
                     </button>
                 </div>
-            </div>
-        </div>,
-        document.body
+        </ModalShell>
     );
 };

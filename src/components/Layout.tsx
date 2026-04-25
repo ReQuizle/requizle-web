@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useRef} from 'react';
+import React, {useState, useEffect, useRef, useCallback} from 'react';
 import {ChevronLeft, ChevronRight, PanelLeft, PanelRight, Menu, X} from 'lucide-react';
 import {motion, AnimatePresence} from 'framer-motion';
 import {clsx} from 'clsx';
@@ -20,6 +20,17 @@ export const Layout: React.FC<LayoutProps> = ({leftSidebar, center, rightSidebar
     const [rightSidebarVisible, setRightSidebarVisible] = useState(() => !getInitialMobile());
     const [isMobile, setIsMobile] = useState(getInitialMobile);
     const prevIsMobileRef = useRef(getInitialMobile());
+    const leftSidebarRef = useRef<HTMLElement>(null);
+    const rightSidebarRef = useRef<HTMLElement>(null);
+    const mainContentRef = useRef<HTMLElement>(null);
+    const mobileDrawerOpen = isMobile && (leftSidebarVisible || rightSidebarVisible);
+
+    const closeSidebars = useCallback(() => {
+        if (isMobile) {
+            setLeftSidebarVisible(false);
+            setRightSidebarVisible(false);
+        }
+    }, [isMobile]);
 
     // Handle viewport changes
     useEffect(() => {
@@ -40,12 +51,71 @@ export const Layout: React.FC<LayoutProps> = ({leftSidebar, center, rightSidebar
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
-    const closeSidebars = () => {
-        if (isMobile) {
-            setLeftSidebarVisible(false);
-            setRightSidebarVisible(false);
+    useEffect(() => {
+        if (!mobileDrawerOpen) return;
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                closeSidebars();
+            }
+        };
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [mobileDrawerOpen, closeSidebars]);
+
+    useEffect(() => {
+        if (!mobileDrawerOpen) return;
+        const activeSidebar = leftSidebarVisible ? leftSidebarRef.current : rightSidebarRef.current;
+        if (!activeSidebar) return;
+        const focusable = activeSidebar.querySelector<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        );
+        focusable?.focus();
+    }, [mobileDrawerOpen, leftSidebarVisible, rightSidebarVisible]);
+
+    useEffect(() => {
+        const main = mainContentRef.current;
+        if (!main) return;
+        if (mobileDrawerOpen) {
+            main.setAttribute('inert', '');
+        } else {
+            main.removeAttribute('inert');
         }
-    };
+        return () => {
+            main.removeAttribute('inert');
+        };
+    }, [mobileDrawerOpen]);
+
+    useEffect(() => {
+        if (!mobileDrawerOpen) return;
+        const activeSidebar = leftSidebarVisible ? leftSidebarRef.current : rightSidebarRef.current;
+        if (!activeSidebar) return;
+
+        const getFocusable = () =>
+            Array.from(
+                activeSidebar.querySelectorAll<HTMLElement>(
+                    'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+                )
+            );
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key !== 'Tab') return;
+            const focusable = getFocusable();
+            if (focusable.length === 0) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            const active = document.activeElement as HTMLElement | null;
+            if (e.shiftKey && active === first) {
+                e.preventDefault();
+                last.focus();
+            } else if (!e.shiftKey && active === last) {
+                e.preventDefault();
+                first.focus();
+            }
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [mobileDrawerOpen, leftSidebarVisible, rightSidebarVisible]);
 
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col overflow-hidden relative">
@@ -84,7 +154,7 @@ export const Layout: React.FC<LayoutProps> = ({leftSidebar, center, rightSidebar
                             setRightSidebarVisible(!rightSidebarVisible);
                         }}
                         className={rightSidebarVisible ? "btn-icon-active" : "btn-icon"}
-                        aria-label={rightSidebarVisible ? "Close editor" : "Open editor"}
+                        aria-label={rightSidebarVisible ? "Close tools panel" : "Open tools panel"}
                     >
                         <PanelRight size={20} />
                     </button>
@@ -111,10 +181,14 @@ export const Layout: React.FC<LayoutProps> = ({leftSidebar, center, rightSidebar
                 <AnimatePresence>
                     {leftSidebarVisible && (
                         <motion.aside
+                            ref={leftSidebarRef}
                             initial={isMobile ? {x: '-100%'} : {x: -320, opacity: 0}}
                             animate={isMobile ? {x: 0} : {x: 0, opacity: 1}}
                             exit={isMobile ? {x: '-100%'} : {x: -320, opacity: 0}}
                             transition={{duration: 0.3, ease: 'easeInOut'}}
+                            role={isMobile ? 'dialog' : undefined}
+                            aria-modal={isMobile ? 'true' : undefined}
+                            aria-label={isMobile ? 'Subjects panel' : undefined}
                             className={clsx(
                                 "bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-r border-slate-200 dark:border-slate-700 flex-shrink-0 overflow-y-auto",
                                 // Mobile: fixed overlay drawer
@@ -130,7 +204,11 @@ export const Layout: React.FC<LayoutProps> = ({leftSidebar, center, rightSidebar
                 </AnimatePresence>
 
                 {/* Center Area */}
-                <main className="flex-1 relative z-10 flex flex-col min-h-[calc(100vh-3.5rem)] lg:min-h-screen lg:h-screen overflow-hidden">
+                <main
+                    ref={mainContentRef}
+                    className="flex-1 relative z-10 flex flex-col min-h-[calc(100vh-3.5rem)] lg:min-h-screen lg:h-screen overflow-hidden"
+                    aria-hidden={mobileDrawerOpen}
+                >
                     {center}
                 </main>
 
@@ -138,10 +216,14 @@ export const Layout: React.FC<LayoutProps> = ({leftSidebar, center, rightSidebar
                 <AnimatePresence>
                     {rightSidebarVisible && (
                         <motion.aside
+                            ref={rightSidebarRef}
                             initial={isMobile ? {x: '100%'} : {x: 320, opacity: 0}}
                             animate={isMobile ? {x: 0} : {x: 0, opacity: 1}}
                             exit={isMobile ? {x: '100%'} : {x: 320, opacity: 0}}
                             transition={{duration: 0.3, ease: 'easeInOut'}}
+                            role={isMobile ? 'dialog' : undefined}
+                            aria-modal={isMobile ? 'true' : undefined}
+                            aria-label={isMobile ? 'Tools panel' : undefined}
                             className={clsx(
                                 "bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-l border-slate-200 dark:border-slate-700 flex-shrink-0 overflow-y-auto",
                                 // Mobile: fixed overlay drawer

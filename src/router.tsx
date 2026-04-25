@@ -24,6 +24,14 @@ type StudyShellProps = {
     sampleSubjects: Subject[];
 };
 
+const sidebarLoadingFallback = (
+    <div className="p-6 text-sm text-slate-500 dark:text-slate-400">Loading panel...</div>
+);
+
+const pageLoadingFallback = (
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900" />
+);
+
 function StudyShell({sampleSubjects}: StudyShellProps) {
     const {profiles, activeProfileId, settings, setSubjects, markSampleDataSeeded} = useQuizStore();
     const subjects = profiles[activeProfileId]?.subjects || [];
@@ -49,17 +57,17 @@ function StudyShell({sampleSubjects}: StudyShellProps) {
     return (
         <Layout
             leftSidebar={
-                <Suspense fallback={<div className="p-6 text-sm text-slate-500 dark:text-slate-400">Loading...</div>}>
+                <Suspense fallback={sidebarLoadingFallback}>
                     <LeftSidebar />
                 </Suspense>
             }
             center={
-                <Suspense fallback={<div className="min-h-full bg-slate-50 dark:bg-slate-900" />}>
+                <Suspense fallback={pageLoadingFallback}>
                     <CenterArea />
                 </Suspense>
             }
             rightSidebar={
-                <Suspense fallback={<div className="p-6 text-sm text-slate-500 dark:text-slate-400">Loading...</div>}>
+                <Suspense fallback={sidebarLoadingFallback}>
                     <RightSidebar />
                 </Suspense>
             }
@@ -80,7 +88,7 @@ export function AppRoutes({sampleSubjects}: AppRoutesProps) {
                 <Route
                     path="/edit"
                     element={
-                        <Suspense fallback={<div className="min-h-screen bg-slate-50 dark:bg-slate-900" />}>
+                        <Suspense fallback={pageLoadingFallback}>
                             <EditorPage />
                         </Suspense>
                     }
@@ -88,7 +96,7 @@ export function AppRoutes({sampleSubjects}: AppRoutesProps) {
                 <Route
                     path="*"
                     element={
-                        <Suspense fallback={<div className="min-h-screen bg-slate-50 dark:bg-slate-900" />}>
+                        <Suspense fallback={pageLoadingFallback}>
                             <NotFoundPage />
                         </Suspense>
                     }

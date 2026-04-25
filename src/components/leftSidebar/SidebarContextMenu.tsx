@@ -1,12 +1,12 @@
-import React from 'react';
+import React, {useEffect, useRef} from 'react';
 import {createPortal} from 'react-dom';
 import {CheckCheck, Download, RotateCcw, Trash2} from 'lucide-react';
 import type {Subject, Topic} from '../../types';
 
 export type ContextMenuState =
     | null
-    | {kind: 'subject'; subject: Subject; x: number; y: number}
-    | {kind: 'topic'; subject: Subject; topic: Topic; x: number; y: number};
+    | {kind: 'subject'; subject: Subject; x: number; y: number; triggerEl?: HTMLElement | null}
+    | {kind: 'topic'; subject: Subject; topic: Topic; x: number; y: number; triggerEl?: HTMLElement | null};
 
 type SidebarContextMenuProps = {
     contextMenu: ContextMenuState;
@@ -27,12 +27,48 @@ export const SidebarContextMenu: React.FC<SidebarContextMenuProps> = ({
     onMarkTopicMastered,
     onResetTopicProgress
 }) => {
+    const menuRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!contextMenu) return;
+        const menu = menuRef.current;
+        if (!menu) return;
+        const items = Array.from(menu.querySelectorAll<HTMLElement>('[role="menuitem"]'));
+        if (items.length > 0) {
+            items[0].focus();
+        }
+    }, [contextMenu]);
+
     if (!contextMenu) return null;
+
+    const handleMenuKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        const menu = menuRef.current;
+        if (!menu) return;
+        const items = Array.from(menu.querySelectorAll<HTMLElement>('[role="menuitem"]'));
+        if (items.length === 0) return;
+        const activeIndex = items.findIndex(item => item === document.activeElement);
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            items[(activeIndex + 1 + items.length) % items.length].focus();
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            items[(activeIndex - 1 + items.length) % items.length].focus();
+        } else if (e.key === 'Home') {
+            e.preventDefault();
+            items[0].focus();
+        } else if (e.key === 'End') {
+            e.preventDefault();
+            items[items.length - 1].focus();
+        }
+    };
 
     return createPortal(
         <div
+            ref={menuRef}
             data-context-menu
             role="menu"
+            tabIndex={-1}
+            onKeyDown={handleMenuKeyDown}
             className="fixed z-[100] min-w-[200px] py-1 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-xl"
             style={(() => {
                 const pad = 8;

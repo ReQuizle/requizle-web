@@ -1,8 +1,9 @@
-import React from 'react';
-import {createPortal} from 'react-dom';
+import React, {useId, useRef} from 'react';
 import {AlertCircle, Check, ImageIcon, Upload, X} from 'lucide-react';
 import {clsx} from 'clsx';
 import type {MediaGroup} from '../../utils/importValidation';
+import {useModalA11y} from '../modalA11y';
+import {ModalShell} from '../AppModals';
 
 type PendingImportState = {
     data: unknown;
@@ -12,6 +13,7 @@ type PendingImportState = {
 
 type PendingMediaImportModalProps = {
     pendingImport: PendingImportState | null;
+    isCompleting: boolean;
     imageInputRef: React.RefObject<HTMLInputElement | null>;
     onCancel: () => void;
     onConflictUpload: (groupIndex: number, refIndex: number, e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -20,8 +22,13 @@ type PendingMediaImportModalProps = {
     onCompleteImport: () => void;
 };
 
+type PendingMediaImportModalMountedProps = Omit<PendingMediaImportModalProps, 'pendingImport'> & {
+    pendingImport: PendingImportState;
+};
+
 export const PendingMediaImportModal: React.FC<PendingMediaImportModalProps> = ({
     pendingImport,
+    isCompleting,
     imageInputRef,
     onCancel,
     onConflictUpload,
@@ -30,15 +37,47 @@ export const PendingMediaImportModal: React.FC<PendingMediaImportModalProps> = (
     onCompleteImport
 }) => {
     if (!pendingImport) return null;
+    return (
+        <PendingMediaImportModalMounted
+            pendingImport={pendingImport}
+            isCompleting={isCompleting}
+            imageInputRef={imageInputRef}
+            onCancel={onCancel}
+            onConflictUpload={onConflictUpload}
+            onSingleUpload={onSingleUpload}
+            onBulkUpload={onBulkUpload}
+            onCompleteImport={onCompleteImport}
+        />
+    );
+};
 
-    return createPortal(
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-lg w-full p-6 space-y-4">
+const PendingMediaImportModalMounted: React.FC<PendingMediaImportModalMountedProps> = ({
+    pendingImport,
+    isCompleting,
+    imageInputRef,
+    onCancel,
+    onConflictUpload,
+    onSingleUpload,
+    onBulkUpload,
+    onCompleteImport
+}) => {
+    const titleId = useId();
+    const dialogRef = useRef<HTMLDivElement>(null);
+    useModalA11y(dialogRef, onCancel);
+
+    return (
+        <ModalShell
+            titleId={titleId}
+            onClose={onCancel}
+            dialogRef={dialogRef}
+            panelClassName="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-lg w-full p-6 space-y-4"
+            closeOnOverlayMouseDown={!isCompleting}
+        >
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg">
                         <ImageIcon className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
                     </div>
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">Upload Media</h3>
+                    <h3 id={titleId} className="text-lg font-bold text-slate-900 dark:text-white">Upload Media</h3>
                 </div>
 
                 <p className="text-sm text-slate-600 dark:text-slate-400">
@@ -98,12 +137,16 @@ export const PendingMediaImportModal: React.FC<PendingMediaImportModalProps> = (
                                                                     type="file"
                                                                     accept="image/*,video/*"
                                                                     onChange={e => onConflictUpload(groupIndex, refIndex, e)}
+                                                                    disabled={isCompleting}
                                                                     className="hidden"
                                                                     id={`conflict-${groupIndex}-${refIndex}`}
                                                                 />
                                                                 <label
                                                                     htmlFor={`conflict-${groupIndex}-${refIndex}`}
-                                                                    className="px-2 py-0.5 text-xs bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 rounded cursor-pointer hover:bg-indigo-200 dark:hover:bg-indigo-900"
+                                                                    className={clsx(
+                                                                        'px-2 py-0.5 text-xs bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 rounded cursor-pointer hover:bg-indigo-200 dark:hover:bg-indigo-900',
+                                                                        isCompleting && 'opacity-50 cursor-not-allowed pointer-events-none'
+                                                                    )}
                                                                 >
                                                                     Upload
                                                                 </label>
@@ -128,12 +171,16 @@ export const PendingMediaImportModal: React.FC<PendingMediaImportModalProps> = (
                                                         type="file"
                                                         accept="image/*,video/*"
                                                         onChange={e => onSingleUpload(groupIndex, e)}
+                                                        disabled={isCompleting}
                                                         className="hidden"
                                                         id={`single-${groupIndex}`}
                                                     />
                                                     <label
                                                         htmlFor={`single-${groupIndex}`}
-                                                        className="px-2 py-0.5 text-xs bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 rounded cursor-pointer hover:bg-indigo-200 dark:hover:bg-indigo-900"
+                                                        className={clsx(
+                                                            'px-2 py-0.5 text-xs bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 rounded cursor-pointer hover:bg-indigo-200 dark:hover:bg-indigo-900',
+                                                            isCompleting && 'opacity-50 cursor-not-allowed pointer-events-none'
+                                                        )}
                                                     >
                                                         Upload
                                                     </label>
@@ -148,7 +195,9 @@ export const PendingMediaImportModal: React.FC<PendingMediaImportModalProps> = (
                 </div>
 
                 <div className="text-xs text-slate-500 dark:text-slate-400">
-                    {pendingImport.mediaGroups.filter(g => g.uploaded).length} of {pendingImport.mediaGroups.length} files ready
+                    {isCompleting
+                        ? 'Importing...'
+                        : `${pendingImport.mediaGroups.filter(g => g.uploaded).length} of ${pendingImport.mediaGroups.length} files ready`}
                 </div>
 
                 {pendingImport.uploadError && (
@@ -163,6 +212,7 @@ export const PendingMediaImportModal: React.FC<PendingMediaImportModalProps> = (
                     type="file"
                     accept="image/*,video/*"
                     multiple
+                    disabled={isCompleting}
                     onChange={onBulkUpload}
                     className="hidden"
                 />
@@ -170,6 +220,7 @@ export const PendingMediaImportModal: React.FC<PendingMediaImportModalProps> = (
                 <div className="flex gap-3 pt-2">
                     <button
                         onClick={onCancel}
+                        disabled={isCompleting}
                         className="flex-1 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors"
                     >
                         Cancel
@@ -177,6 +228,7 @@ export const PendingMediaImportModal: React.FC<PendingMediaImportModalProps> = (
                     {pendingImport.mediaGroups.some(g => !g.isConflict && !g.uploaded) && (
                         <button
                             onClick={() => imageInputRef.current?.click()}
+                            disabled={isCompleting}
                             className="flex-1 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors flex items-center justify-center gap-2"
                         >
                             <Upload className="w-4 h-4" />
@@ -188,14 +240,13 @@ export const PendingMediaImportModal: React.FC<PendingMediaImportModalProps> = (
                 {pendingImport.mediaGroups.every(g => g.uploaded) && (
                     <button
                         onClick={onCompleteImport}
+                        disabled={isCompleting}
                         className="w-full px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors flex items-center justify-center gap-2"
                     >
                         <Check className="w-4 h-4" />
-                        Complete Import
+                        {isCompleting ? 'Importing...' : 'Complete Import'}
                     </button>
                 )}
-            </div>
-        </div>,
-        document.body
+        </ModalShell>
     );
 };

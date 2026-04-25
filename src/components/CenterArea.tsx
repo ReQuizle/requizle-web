@@ -9,6 +9,7 @@ import {Shuffle, ListOrdered, RotateCcw, CheckCircle2} from 'lucide-react';
 export const CenterArea: React.FC = () => {
     const {profiles, activeProfileId, setMode, restartQueue, setIncludeMastered} = useQuizStore();
     const [reviewMasteredOpen, setReviewMasteredOpen] = useState(false);
+    const [feedbackVisible, setFeedbackVisible] = useState(false);
     const activeProfile = profiles[activeProfileId];
     const subjects = activeProfile?.subjects ?? [];
     const session = activeProfile?.session ?? DEFAULT_SESSION_STATE;
@@ -107,8 +108,11 @@ export const CenterArea: React.FC = () => {
 
                 <div className="flex items-center gap-2">
                     <button
+                        disabled={feedbackVisible}
                         onClick={() => setMode(session.mode === 'random' ? 'topic_order' : 'random')}
-                        className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors"
+                        aria-label={session.mode === 'random' ? 'Switch to topic order mode' : 'Switch to random mode'}
+                        aria-pressed={session.mode === 'random'}
+                        className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         title={session.mode === 'random' ? "Switch to Topic Order" : "Switch to Random Shuffle"}
                     >
                         {session.mode === 'random' ? <Shuffle size={20} /> : <ListOrdered size={20} />}
@@ -125,7 +129,11 @@ export const CenterArea: React.FC = () => {
                         onSkip={() => useQuizStore.getState().skipQuestion()} // Skip safely
                     >
                         {/* Key uses turnCounter from store to force remount when advancing to same question */}
-                        <QuestionCard key={`${currentQuestion.id}-${session.turnCounter}`} question={currentQuestion} />
+                        <QuestionCard
+                            key={`${currentQuestion.id}-${session.turnCounter}`}
+                            question={currentQuestion}
+                            onFeedbackVisibilityChange={setFeedbackVisible}
+                        />
                     </ErrorBoundary>
                 </div>
             </div>

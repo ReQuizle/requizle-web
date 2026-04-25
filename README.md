@@ -58,13 +58,13 @@ npm install
 npm run dev
 ```
 
-The project uses a root **`/`** [Vite `base`](https://vitejs.dev/config/shared-options.html#base) by default. In development, open:
+Development uses a root **`/`** [Vite `base`](https://vitejs.dev/config/shared-options.html#base). Open:
 
 **http://localhost:5173/**
 
 The study UI is at that URL; the **content editor** is at **http://localhost:5173/edit** (or use **Edit content** in the left sidebar).
 
-For a subdirectory deployment, set `VITE_APP_BASE` before building, for example `/requizle-web/`.
+Production builds default to the GitHub Pages project path **`/requizle-web/`**. For another deployment target, set `VITE_APP_BASE` before building, for example `/` for a domain-root deployment or `/your-subpath/` for a different subdirectory.
 
 1. **Select a Subject**:
    - Choose a subject from the left sidebar

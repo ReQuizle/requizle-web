@@ -15,6 +15,7 @@ import type {
     StudyMode
 } from '../types';
 import {hasDuplicateStrings, hasEnoughWordBankEntries} from './validationHelpers';
+import {isRecord} from './typeGuards';
 
 /** Media reference with context about where it's used */
 export interface MediaReference {
@@ -48,16 +49,18 @@ export const getFilename = (path: string): string => {
     return parts[parts.length - 1];
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 function cloneJsonValue(value: unknown): unknown {
     return JSON.parse(JSON.stringify(value));
 }
 
 function isStringArray(value: unknown): value is string[] {
     return Array.isArray(value) && value.length > 0 && value.every(item => typeof item === 'string');
+}
+
+function optionalTrimmedString(value: unknown): string | undefined {
+    if (typeof value !== 'string') return undefined;
+    const trimmed = value.trim();
+    return trimmed ? trimmed : undefined;
 }
 
 export const isQuestionProgress = (data: unknown): data is QuestionProgress => {
@@ -237,7 +240,9 @@ export const validateSubjects = (data: unknown): Subject[] => {
         throw new Error('Invalid format: Expected an object or array of subjects');
     }
 
-    const subjectsToValidate = Array.isArray(data) ? data : [data];
+    const subjectsToValidate = Array.isArray(data)
+        ? cloneJsonValue(data) as unknown[]
+        : [cloneJsonValue(data)];
 
     const validQuestionTypes: QuestionType[] = [
         'multiple_choice',
@@ -250,7 +255,12 @@ export const validateSubjects = (data: unknown): Subject[] => {
 
     // Auto-generate unique IDs (random, no auto-merge - users must provide matching IDs for merging)
     let idCounter = 0;
-    const generateId = (prefix: string) => `${prefix}-${Date.now()}-${idCounter++}`;
+    const generateId = (prefix: string) => {
+        if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+            return `${prefix}-${crypto.randomUUID()}`;
+        }
+        return `${prefix}-${Date.now()}-${idCounter++}`;
+    };
 
     const validateQuestion = (q: unknown, questionIndex: number, topicName: string, topicId: string): Question => {
         if (typeof q !== 'object' || q === null) {
@@ -273,12 +283,15 @@ export const validateSubjects = (data: unknown): Subject[] => {
             throw new Error(`Invalid question ${questionIndex + 1} in topic "${topicName}": Missing or invalid "question" or "prompt"`);
         }
 
-        // Set the normalized values
-        question.id = id;
-        question.prompt = prompt.trim();
-        question.topicId = topicId; // Auto-infer from parent topic
-
         const type = question.type as QuestionType;
+        const baseQuestion = {
+            id,
+            type,
+            prompt: prompt.trim(),
+            topicId,
+            ...(optionalTrimmedString(question.explanation) ? {explanation: optionalTrimmedString(question.explanation)} : {}),
+            ...(optionalTrimmedString(question.media) ? {media: optionalTrimmedString(question.media)} : {})
+        };
 
         // Validate type-specific fields
         switch (type) {
@@ -289,7 +302,12 @@ export const validateSubjects = (data: unknown): Subject[] => {
                 if (typeof question.answerIndex !== 'number' || !Number.isInteger(question.answerIndex) || question.answerIndex < 0 || question.answerIndex >= question.choices.length) {
                     throw new Error(`Invalid multiple_choice question "${question.id}": Missing or invalid "answerIndex"`);
                 }
-                break;
+                return {
+                    ...baseQuestion,
+                    type: 'multiple_choice',
+                    choices: question.choices.map(choice => choice.trim()),
+                    answerIndex: question.answerIndex
+                };
             }
 
             case 'multiple_answer': {
@@ -305,14 +323,24 @@ export const validateSubjects = (data: unknown): Subject[] => {
                 if (new Set(question.answerIndices).size !== question.answerIndices.length) {
                     throw new Error(`Invalid multiple_answer question "${question.id}": "answerIndices" contains duplicate values`);
                 }
-                break;
+                const answerIndices = question.answerIndices as number[];
+                return {
+                    ...baseQuestion,
+                    type: 'multiple_answer',
+                    choices: question.choices.map(choice => choice.trim()),
+                    answerIndices: [...answerIndices].sort((a, b) => a - b)
+                };
             }
 
             case 'true_false': {
                 if (typeof question.answer !== 'boolean') {
                     throw new Error(`Invalid true_false question "${question.id}": Missing or invalid "answer"(must be boolean)`);
                 }
-                break;
+                return {
+                    ...baseQuestion,
+                    type: 'true_false',
+                    answer: question.answer
+                };
             }
 
             case 'keywords': {
@@ -326,7 +354,14 @@ export const validateSubjects = (data: unknown): Subject[] => {
                 if (answers.length === 0 || answers.some(answer => !answer.trim())) {
                     throw new Error(`Invalid keywords question "${question.id}": "answer" cannot be empty`);
                 }
-                break;
+                return {
+                    ...baseQuestion,
+                    type: 'keywords',
+                    answer: Array.isArray(question.answer)
+                        ? question.answer.map(answer => answer.trim())
+                        : question.answer.trim(),
+                    ...(typeof question.caseSensitive === 'boolean' ? {caseSensitive: question.caseSensitive} : {})
+                };
             }
 
             case 'matching': {
@@ -352,7 +387,11 @@ export const validateSubjects = (data: unknown): Subject[] => {
                 ) {
                     throw new Error(`Invalid matching question "${question.id}": "pairs" must have unique left and right values`);
                 }
-                break;
+                return {
+                    ...baseQuestion,
+                    type: 'matching',
+                    pairs: pairs.map(pair => ({left: pair.left.trim(), right: pair.right.trim()}))
+                };
             }
 
             case 'word_bank': {
@@ -377,11 +416,15 @@ export const validateSubjects = (data: unknown): Subject[] => {
                 ) {
                     throw new Error(`Invalid word_bank question "${question.id}": each answer must exist in "wordBank"`);
                 }
-                break;
+                return {
+                    ...baseQuestion,
+                    type: 'word_bank',
+                    sentence: question.sentence.trim(),
+                    wordBank: question.wordBank.map(word => word.trim()),
+                    answers: question.answers.map(answer => answer.trim())
+                };
             }
         }
-
-        return question as unknown as Question;
     };
 
     const validateTopic = (t: unknown, topicIndex: number, subjectName: string): Topic => {
@@ -403,6 +446,15 @@ export const validateSubjects = (data: unknown): Subject[] => {
         }
 
         const questions = topic.questions.map((q, idx) => validateQuestion(q, idx, topic.name as string, id));
+        const questionIds = new Set<string>();
+        for (const question of questions) {
+            if (questionIds.has(question.id)) {
+                throw new Error(
+                    `Invalid topic "${topic.name}": duplicate question id "${question.id}" found`
+                );
+            }
+            questionIds.add(question.id);
+        }
 
         return {
             id,
@@ -430,6 +482,24 @@ export const validateSubjects = (data: unknown): Subject[] => {
         }
 
         const topics = subject.topics.map((t, idx) => validateTopic(t, idx, subject.name as string));
+        const topicIds = new Set<string>();
+        const subjectQuestionIds = new Set<string>();
+        for (const topic of topics) {
+            if (topicIds.has(topic.id)) {
+                throw new Error(
+                    `Invalid subject "${subject.name}": duplicate topic id "${topic.id}" found`
+                );
+            }
+            topicIds.add(topic.id);
+            for (const question of topic.questions) {
+                if (subjectQuestionIds.has(question.id)) {
+                    throw new Error(
+                        `Invalid subject "${subject.name}": duplicate question id "${question.id}" found across topics`
+                    );
+                }
+                subjectQuestionIds.add(question.id);
+            }
+        }
 
         return {
             id,
@@ -438,7 +508,15 @@ export const validateSubjects = (data: unknown): Subject[] => {
         };
     };
 
-    return subjectsToValidate.map((s, idx) => validateSubject(s, idx));
+    const validatedSubjects = subjectsToValidate.map((s, idx) => validateSubject(s, idx));
+    const subjectIds = new Set<string>();
+    for (const subject of validatedSubjects) {
+        if (subjectIds.has(subject.id)) {
+            throw new Error(`Invalid import: duplicate subject id "${subject.id}" found`);
+        }
+        subjectIds.add(subject.id);
+    }
+    return validatedSubjects;
 };
 
 /** Check whether a payload can be imported without mutating the original data. */

@@ -246,6 +246,44 @@ describe('useQuizStore', () => {
             expect(state.profiles['default'].subjects).toHaveLength(1);
             expect(state.profiles['default'].subjects[0].name).toBe('Second');
         });
+
+        it('clears stale progress and resets session when active subject is removed', () => {
+            const {setSubjects, startSession} = useQuizStore.getState();
+            act(() => {
+                setSubjects([createTestSubject('s1', 'First')]);
+                startSession('s1');
+                useQuizStore.setState(state => {
+                    const profile = state.profiles['default'];
+                    return {
+                        profiles: {
+                            ...state.profiles,
+                            default: {
+                                ...profile,
+                                progress: {
+                                    ...profile.progress,
+                                    stale: {
+                                        t9: {
+                                            q9: {id: 'q9', attempts: 1, correctStreak: 0, mastered: false}
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    };
+                });
+            });
+
+            act(() => {
+                setSubjects([createTestSubject('s2', 'Second')]);
+            });
+
+            const profile = useQuizStore.getState().profiles['default'];
+            expect(profile.progress.s1).toBeUndefined();
+            expect(profile.progress.stale).toBeUndefined();
+            expect(profile.session.subjectId).toBeNull();
+            expect(profile.session.currentQuestionId).toBeNull();
+            expect(profile.session.queue).toEqual([]);
+        });
     });
 
     describe('importSubjects', () => {
@@ -262,6 +300,51 @@ describe('useQuizStore', () => {
 
             const state = useQuizStore.getState();
             expect(state.profiles['default'].subjects).toHaveLength(2);
+        });
+
+        it('rebuilds queue state when imported subject changes the active subject questions', () => {
+            const {setSubjects, startSession, importSubjects} = useQuizStore.getState();
+            act(() => {
+                setSubjects([createTestSubject('s1', 'First')]);
+                startSession('s1');
+                useQuizStore.setState(state => {
+                    const profile = state.profiles['default'];
+                    return {
+                        profiles: {
+                            ...state.profiles,
+                            default: {
+                                ...profile,
+                                session: {
+                                    ...profile.session,
+                                    currentQuestionId: 'removed-q',
+                                    queue: ['q1', 'removed-q', 'q2']
+                                }
+                            }
+                        }
+                    };
+                });
+            });
+
+            const importedSubject: Subject = {
+                id: 's1',
+                name: 'First Updated',
+                topics: [
+                    {
+                        id: 't1',
+                        name: 'Only Topic',
+                        questions: [createTrueFalseQuestion('q1', 't1')]
+                    }
+                ]
+            };
+
+            act(() => {
+                importSubjects([importedSubject]);
+            });
+
+            const session = useQuizStore.getState().profiles['default'].session;
+            expect(session.subjectId).toBe('s1');
+            expect(session.currentQuestionId).not.toBe('removed-q');
+            expect(session.queue).not.toContain('removed-q');
         });
     });
 
@@ -1317,6 +1400,57 @@ describe('useQuizStore', () => {
                 const progress = useQuizStore.getState().profiles['default'].progress.s1.t1;
                 expect(progress.q1).toEqual({id: 'q1', attempts: 2, correctStreak: 1, mastered: true});
                 expect(progress.q2).toEqual({id: 'q2', attempts: 5, correctStreak: 0, mastered: false});
+            });
+
+            it('reconciles stale active session state when merging an existing profile', () => {
+                const {setSubjects, startSession, importProfile} = useQuizStore.getState();
+                act(() => {
+                    setSubjects([createTestSubject()]);
+                    startSession('s1');
+                    useQuizStore.setState(state => {
+                        const profile = state.profiles.default;
+                        return {
+                            profiles: {
+                                ...state.profiles,
+                                default: {
+                                    ...profile,
+                                    session: {
+                                        ...profile.session,
+                                        selectedTopicIds: ['t1', 'missing-topic'],
+                                        currentQuestionId: 'removed-q',
+                                        queue: ['q1', 'removed-q', 'q2']
+                                    }
+                                }
+                            }
+                        };
+                    });
+                });
+
+                const profile: Profile = {
+                    id: 'default',
+                    name: 'Imported Default',
+                    subjects: [createTestSubject()],
+                    progress: {},
+                    session: {
+                        subjectId: null,
+                        selectedTopicIds: [],
+                        mode: 'topic_order',
+                        includeMastered: false,
+                        queue: [],
+                        currentQuestionId: null,
+                        turnCounter: 0
+                    },
+                    createdAt: 50
+                };
+
+                act(() => {
+                    importProfile(profile);
+                });
+
+                const session = useQuizStore.getState().profiles.default.session;
+                expect(session.selectedTopicIds).toEqual(['t1']);
+                expect(session.currentQuestionId).not.toBe('removed-q');
+                expect(session.queue).not.toContain('removed-q');
             });
         });
     });

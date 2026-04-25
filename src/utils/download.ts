@@ -1,5 +1,5 @@
 const DOWNLOAD_REVOKE_DELAY_MS = 1000;
-const DOWNLOAD_DEDUPE_WINDOW_MS = 1000;
+const DOWNLOAD_DEDUPE_WINDOW_MS = 350;
 const lastDownloadAtByFilename = new Map<string, number>();
 
 export function triggerJsonDownload(data: unknown, filename: string): void {

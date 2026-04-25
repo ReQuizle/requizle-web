@@ -11,7 +11,7 @@ export const calculateMastery = (
 };
 
 export const getActiveQuestions = (
-    subject: Subject,
+    subject: Subject | null | undefined,
     selectedTopicIds: string[]
 ): Question[] => {
     if (!subject) return [];

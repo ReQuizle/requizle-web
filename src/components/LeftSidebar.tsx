@@ -2,14 +2,14 @@ import React, {useState, useEffect, useCallback, useRef} from 'react';
 import {Link} from 'react-router-dom';
 import {useQuizStore, DEFAULT_SESSION_STATE} from '../store/useQuizStore';
 import {calculateMastery} from '../utils/quizLogic';
-import {CheckCircle2, Circle, Trash2, X, SquarePen} from 'lucide-react';
+import {CheckCircle2, Circle, Trash2, X, SquarePen, EllipsisVertical} from 'lucide-react';
 import {clsx} from 'clsx';
 import {Logo} from './Logo';
 import {SimpleConfirmModal, TypeToConfirmModal} from './AppModals';
 import type {Subject, Topic, SubjectExportV1, QuestionProgress} from '../types';
-import {extractMediaId, getMedia, isIndexedDBMedia} from '../utils/mediaStorage';
 import {triggerBlobDownload, triggerJsonDownload} from '../utils/download';
 import {createRqzlArchiveBlob, type ArchiveMediaEntry} from '../utils/rqzlArchive';
+import {getArchiveMediaEntriesForSubjects} from '../utils/archiveMedia';
 import {
     SidebarContextMenu,
     type ContextMenuState
@@ -18,6 +18,7 @@ import {
     SubjectExportModal,
     type SubjectExportOptions
 } from './leftSidebar/SubjectExportModal';
+import {flattenProgress} from '../store/quizStoreHelpers';
 
 type SimpleConfirmState =
     | null
@@ -42,30 +43,14 @@ async function buildSubjectExportPayload(
 ): Promise<{payload: SubjectExportV1; mediaEntries: ArchiveMediaEntry[]}> {
     const includeProgress = options?.includeProgress !== false;
     const includeMedia = options?.includeMedia !== false;
-    const mediaIds = new Set<string>();
-    if (includeMedia) {
-        subject.topics.forEach(topic => {
-            topic.questions.forEach(q => {
-                if (q.media && isIndexedDBMedia(q.media)) {
-                    mediaIds.add(extractMediaId(q.media));
-                }
-            });
-        });
-    }
-    const storedMediaEntries = await Promise.all([...mediaIds].map((id) => getMedia(id)));
+    const mediaEntries = includeMedia
+        ? await getArchiveMediaEntriesForSubjects([subject])
+        : [];
     const payload: SubjectExportV1 = {
         requizleSubjectExport: 1,
         subject,
         ...(includeProgress ? {progress: progressSlice} : {})
     };
-    const mediaEntries: ArchiveMediaEntry[] = storedMediaEntries
-        .filter((media): media is NonNullable<typeof media> => Boolean(media))
-        .map(media => ({
-            id: media.id,
-            filename: media.filename,
-            mimeType: media.mimeType,
-            blob: media.blob
-        }));
     return {payload, mediaEntries};
 }
 
@@ -95,7 +80,12 @@ export const LeftSidebar: React.FC = () => {
         options: SubjectExportOptions;
     } | null>(null);
 
-    const closeContextMenu = useCallback(() => setContextMenu(null), []);
+    const closeContextMenu = useCallback(() => {
+        setContextMenu(prev => {
+            prev?.triggerEl?.focus();
+            return null;
+        });
+    }, []);
 
     const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const longPressOriginRef = useRef<{x: number; y: number} | null>(null);
@@ -214,16 +204,39 @@ export const LeftSidebar: React.FC = () => {
 
     const currentSubject = subjects.find(s => s.id === session.subjectId);
 
-    const openSubjectMenu = (e: React.MouseEvent, subject: Subject) => {
+    const openSubjectMenu = (e: React.MouseEvent<HTMLElement>, subject: Subject) => {
         e.preventDefault();
         e.stopPropagation();
-        setContextMenu({kind: 'subject', subject, x: e.clientX, y: e.clientY});
+        setContextMenu({kind: 'subject', subject, x: e.clientX, y: e.clientY, triggerEl: e.currentTarget});
     };
 
-    const openTopicMenu = (e: React.MouseEvent, subject: Subject, topic: Topic) => {
+    const openTopicMenu = (e: React.MouseEvent<HTMLElement>, subject: Subject, topic: Topic) => {
         e.preventDefault();
         e.stopPropagation();
-        setContextMenu({kind: 'topic', subject, topic, x: e.clientX, y: e.clientY});
+        setContextMenu({kind: 'topic', subject, topic, x: e.clientX, y: e.clientY, triggerEl: e.currentTarget});
+    };
+
+    const openSubjectMenuFromTrigger = (subject: Subject, trigger: HTMLElement) => {
+        const rect = trigger.getBoundingClientRect();
+        setContextMenu({
+            kind: 'subject',
+            subject,
+            x: rect.right,
+            y: rect.bottom,
+            triggerEl: trigger
+        });
+    };
+
+    const openTopicMenuFromTrigger = (subject: Subject, topic: Topic, trigger: HTMLElement) => {
+        const rect = trigger.getBoundingClientRect();
+        setContextMenu({
+            kind: 'topic',
+            subject,
+            topic,
+            x: rect.right,
+            y: rect.bottom,
+            triggerEl: trigger
+        });
     };
 
     const performSubjectExport = async (subject: Subject, options: SubjectExportOptions) => {
@@ -353,7 +366,7 @@ export const LeftSidebar: React.FC = () => {
                         const isActive = session.subjectId === subject.id;
                         const allQuestions = subject.topics.flatMap(t => t.questions);
 
-                        const flatProgress = Object.values(progress[subject.id] || {}).reduce((acc, val) => ({...acc, ...val}), {});
+                        const flatProgress = flattenProgress(progress[subject.id]);
                         const masteryPct = calculateMastery(allQuestions, flatProgress);
 
                         return (
@@ -405,10 +418,24 @@ export const LeftSidebar: React.FC = () => {
                                             deleteSubject(subject.id);
                                         }
                                     }}
-                                    className="absolute bottom-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
+                                    className="absolute bottom-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-red-400 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
                                     title="Delete subject"
+                                    aria-label={`Delete ${subject.name}`}
                                 >
                                     <Trash2 size={14} />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={e => {
+                                        e.stopPropagation();
+                                        openSubjectMenuFromTrigger(subject, e.currentTarget);
+                                    }}
+                                    className="absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-indigo-400 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
+                                    aria-label={`Open actions for ${subject.name}`}
+                                    aria-haspopup="menu"
+                                    aria-expanded={contextMenu?.kind === 'subject' && contextMenu.subject.id === subject.id}
+                                >
+                                    <EllipsisVertical size={14} />
                                 </button>
                             </div>
                         );
@@ -439,7 +466,7 @@ export const LeftSidebar: React.FC = () => {
                         )}
                     </div>
 
-                    <div className="space-y-1 max-h-[40vh] overflow-y-auto pr-2 custom-scrollbar">
+                    <div className="space-y-1 max-h-[40vh] overflow-y-auto pr-2">
                         {currentSubject.topics.map(topic => {
                             const isSelected = session.selectedTopicIds.length === 0 || session.selectedTopicIds.includes(topic.id);
                             const topicProgress = (progress[currentSubject.id] || {})[topic.id] || {};
@@ -456,7 +483,7 @@ export const LeftSidebar: React.FC = () => {
                                     onTouchEnd={onLongPressTouchEnd}
                                     onTouchCancel={onLongPressTouchEnd}
                                     onClickCapture={swallowSyntheticClickAfterLongPress}
-                                    className="rounded-lg [-webkit-touch-callout:none]"
+                                    className="rounded-lg relative group [-webkit-touch-callout:none]"
                                     aria-haspopup="menu"
                                 >
                                     <button
@@ -481,6 +508,23 @@ export const LeftSidebar: React.FC = () => {
                                                 aria-label={`${topic.name} mastery`}
                                             />
                                         </div>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={e => {
+                                            e.stopPropagation();
+                                            openTopicMenuFromTrigger(currentSubject, topic, e.currentTarget);
+                                        }}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-indigo-400 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
+                                        aria-label={`Open actions for ${topic.name}`}
+                                        aria-haspopup="menu"
+                                        aria-expanded={
+                                            contextMenu?.kind === 'topic' &&
+                                            contextMenu.subject.id === currentSubject.id &&
+                                            contextMenu.topic.id === topic.id
+                                        }
+                                    >
+                                        <EllipsisVertical size={14} />
                                     </button>
                                 </div>
                             );

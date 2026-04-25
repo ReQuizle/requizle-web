@@ -1,31 +1,13 @@
-import React, {useState, useRef, useEffect} from 'react';
+import React, {useState} from 'react';
 import {useQuizStore, DEFAULT_SESSION_STATE} from '../store/useQuizStore';
 import {calculateMastery, getActiveQuestions} from '../utils/quizLogic';
 import {
-    validateSubjects,
-    isSubjectExportV1,
-    sanitizeSubjectProgress,
-    validateProfileImport,
-    isImportableQuizPayload,
-    extractMediaReferencesWithContext,
-    getLocalMediaRefs,
-    groupMediaByFilename,
-    replaceMediaByPath,
-    type MediaGroup
-} from '../utils/importValidation';
-import {
-    storeMedia,
-    createMediaRef,
     getAllMediaIds,
-    deleteMedia,
-    isIndexedDBMedia,
-    extractMediaId,
-    getMedia,
-    restoreRawMediaEntry
+    deleteMedia
 } from '../utils/mediaStorage';
 import {triggerBlobDownload} from '../utils/download';
-import {readFileAsText} from '../utils/fileReaders';
-import {createRqzlArchiveBlob, parseRqzlArchiveFile} from '../utils/rqzlArchive';
+import {createRqzlArchiveBlob} from '../utils/rqzlArchive';
+import {getArchiveMediaEntriesForSubjects} from '../utils/archiveMedia';
 import {
     Upload,
     AlertCircle,
@@ -45,6 +27,9 @@ import {BehaviorSettingsSection} from './rightSidebar/settings/BehaviorSettingsS
 import {DataSettingsSection} from './rightSidebar/settings/DataSettingsSection';
 import {LinksSettingsSection} from './rightSidebar/settings/LinksSettingsSection';
 import {ProfilesSettingsSection} from './rightSidebar/settings/ProfilesSettingsSection';
+import {useImportWorkflow} from './rightSidebar/useImportWorkflow';
+import type {Profile} from '../types';
+import {extractAllMediaIds, flattenProgress} from '../store/quizStoreHelpers';
 
 type SettingsSectionId = 'profiles' | 'appearance' | 'behavior' | 'data' | 'links';
 
@@ -55,6 +40,7 @@ const SETTINGS_SECTIONS: {id: SettingsSectionId; label: string; icon: typeof Use
     {id: 'data', label: 'Data', icon: Database},
     {id: 'links', label: 'Links & help', icon: Link2}
 ];
+const CACHE_DELETE_BATCH_SIZE = 25;
 
 export const RightSidebar: React.FC = () => {
     const {
@@ -82,40 +68,52 @@ export const RightSidebar: React.FC = () => {
     } = useQuizStore();
     const [activeTab, setActiveTab] = useState<RightSidebarTab>('mastery');
     const [settingsSection, setSettingsSection] = useState<SettingsSectionId>('profiles');
-    const [jsonInput, setJsonInput] = useState('');
-    const [importError, setImportError] = useState<string | null>(null);
     const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
     const [editingName, setEditingName] = useState('');
     const [deleteProfileConfirm, setDeleteProfileConfirm] = useState<{id: string; name: string} | null>(null);
     const [lastProfileDeleteId, setLastProfileDeleteId] = useState<string | null>(null);
     const [factoryResetConfirm, setFactoryResetConfirm] = useState(false);
-    const [importSuccessMessage, setImportSuccessMessage] = useState<string | null>(null);
     const [newProfileModalOpen, setNewProfileModalOpen] = useState(false);
     const [clearingCache, setClearingCache] = useState(false);
     const [cacheClearResult, setCacheClearResult] = useState<{removed: number; message: string} | null>(null);
-    const [importDndActive, setImportDndActive] = useState(false);
-    const importDndDepth = useRef(0);
     const [resetSubjectDataConfirm, setResetSubjectDataConfirm] = useState<{id: string; name: string} | null>(null);
-
-    const [pendingImport, setPendingImport] = useState<{
-        data: unknown;
-        mediaGroups: MediaGroup[];
-        uploadError: string | null;
-    } | null>(null);
-    const imageInputRef = useRef<HTMLInputElement>(null);
-
-    useEffect(() => {
-        if (activeTab !== 'import') {
-            importDndDepth.current = 0;
-            setImportDndActive(false);
-        }
-    }, [activeTab]);
+    const [profileExportError, setProfileExportError] = useState<string | null>(null);
 
     const currentProfile = profiles[activeProfileId];
     const subjects = currentProfile?.subjects ?? [];
     const progress = currentProfile?.progress ?? {};
     const session = currentProfile?.session ?? DEFAULT_SESSION_STATE;
     const currentSubject = subjects.find(s => s.id === session.subjectId);
+    const {
+        jsonInput,
+        setJsonInput,
+        importError,
+        importSuccessMessage,
+        setImportSuccessMessage,
+        pendingImport,
+        imageInputRef,
+        isImporting,
+        isCompletingPendingImport,
+        importDndActive,
+        handleImport,
+        handleFileUpload,
+        handleImportDragEnter,
+        handleImportDragLeave,
+        handleImportDragOver,
+        handleImportDrop,
+        handleImageUpload,
+        handleConflictUpload,
+        handleSingleUpload,
+        completePendingImport,
+        cancelPendingImport
+    } = useImportWorkflow({
+        activeTab,
+        profiles,
+        subjects,
+        importProfile,
+        importSubjects,
+        importSubjectExport
+    });
 
     let activeQuestionsCount = 0;
     let activeMastery = 0;
@@ -125,7 +123,7 @@ export const RightSidebar: React.FC = () => {
         const activeQuestions = getActiveQuestions(currentSubject, session.selectedTopicIds);
         activeQuestionsCount = activeQuestions.length;
 
-        const flatProgress = Object.values(progress[currentSubject.id] || {}).reduce((acc, val) => ({...acc, ...val}), {});
+        const flatProgress = flattenProgress(progress[currentSubject.id]);
         activeMastery = calculateMastery(activeQuestions, flatProgress);
 
         const allQuestions = currentSubject.topics.flatMap(t => t.questions);
@@ -135,383 +133,20 @@ export const RightSidebar: React.FC = () => {
 
 
 
-    const performImport = (parsed: unknown): {type: 'profile' | 'subjects'; message: string} => {
-        if (isSubjectExportV1(parsed)) {
-            importSubjectExport(parsed);
-            const subj = parsed.subject;
-            const label = typeof subj.name === 'string' ? subj.name : subj.id;
-            const validProgress = sanitizeSubjectProgress(parsed.progress, parsed.subject);
-            const hasProgress = Object.values(validProgress).some(qMap => Object.keys(qMap).length > 0);
-            return {
-                type: 'subjects',
-                message: hasProgress ? `Imported "${label}" with progress.` : `Imported "${label}".`
-            };
-        }
-
+    const handleExportProfile = async (profile: Profile) => {
         try {
-            const profile = validateProfileImport(parsed);
-            const existingProfile = profiles[profile.id];
-            importProfile(profile);
-            const action = existingProfile ? 'merged with existing' : 'imported';
-            return {type: 'profile', message: `Profile "${profile.name}" ${action} successfully!`};
-        } catch {
-            // Not a profile import. Fall through to subjects import validation.
-        }
-
-        const validatedSubjects = validateSubjects(parsed);
-        const existingSubjectIds = subjects.map(s => s.id);
-        const mergedCount = validatedSubjects.filter(s => existingSubjectIds.includes(s.id)).length;
-        const newCount = validatedSubjects.length - mergedCount;
-
-        importSubjects(validatedSubjects);
-
-        let message = '';
-        if (mergedCount > 0 && newCount > 0) {
-            message = `Merged ${mergedCount} existing subject(s) and added ${newCount} new subject(s)`;
-        } else if (mergedCount > 0) {
-            message = `Merged ${mergedCount} subject(s) with existing data`;
-        } else {
-            message = `Added ${newCount} new subject(s)`;
-        }
-
-        return {type: 'subjects', message};
-    };
-
-    const detectAndImport = async (parsed: unknown): Promise<{type: 'profile' | 'subjects' | 'pending'; message: string}> => {
-        if (!isImportableQuizPayload(parsed)) {
-            throw new Error('Invalid import format: expected a profile, subject export, subject, or subject array');
-        }
-
-        const allRefs = extractMediaReferencesWithContext(parsed);
-        const localRefs = getLocalMediaRefs(allRefs);
-
-        if (localRefs.length > 0) {
-            const mediaGroups = groupMediaByFilename(localRefs);
-            setPendingImport({
-                data: parsed,
-                mediaGroups,
-                uploadError: null
-            });
-            const conflictCount = mediaGroups.filter(g => g.isConflict).length;
-            return {
-                type: 'pending',
-                message: `Found ${mediaGroups.length} media file(s). ${conflictCount > 0 ? `${conflictCount} have naming conflicts.` : ''}`
-            };
-        }
-
-        return performImport(parsed);
-    };
-
-    const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!pendingImport || !e.target.files) return;
-
-        const files = Array.from(e.target.files);
-
-        const nonConflictFilenames = pendingImport.mediaGroups
-            .filter(g => !g.isConflict && !g.uploaded)
-            .map(g => g.filename);
-
-        const validFiles = files.filter(file => nonConflictFilenames.includes(file.name));
-        const skipped = files.filter(file => !nonConflictFilenames.includes(file.name)).map(f => f.name);
-
-        if (validFiles.length === 0) {
-            setPendingImport({
-                ...pendingImport,
-                uploadError: skipped.length > 0
-                    ? `Skipped: ${skipped.join(', ')} (not in required list or is a conflict)`
-                    : 'No matching files selected'
-            });
-            e.target.value = '';
-            return;
-        }
-
-        const uploadResults = new Map<string, File>();
-        validFiles.forEach(file => {
-            uploadResults.set(file.name, file);
-        });
-
-        setPendingImport(prev => {
-            if (!prev) return prev;
-
-            const newMediaGroups = prev.mediaGroups.map(group => {
-                if (group.isConflict) return group;
-                const uploadedFile = uploadResults.get(group.filename);
-                if (!uploadedFile) return group;
-                return {
-                    ...group,
-                    uploaded: true,
-                    uploadedFile
-                };
-            });
-
-            const notices: string[] = [];
-            if (skipped.length > 0) {
-                notices.push(`Skipped ${skipped.length} file(s) not in required list`);
-            }
-
-            return {
-                ...prev,
-                mediaGroups: newMediaGroups,
-                uploadError: notices.length > 0 ? notices.join('. ') : null
-            };
-        });
-
-        e.target.value = '';
-    };
-
-    const handleConflictUpload = (groupIndex: number, refIndex: number, e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!e.target.files || !e.target.files[0]) return;
-
-        const file = e.target.files[0];
-        setPendingImport(prev => {
-            if (!prev) return prev;
-
-            const newMediaGroups = prev.mediaGroups.map((group, idx) => {
-                if (idx !== groupIndex) return group;
-
-                const refMap = new Map(group.uploadedPerRef || []);
-                refMap.set(group.references[refIndex].path, file);
-                const allUploaded = group.references.every(ref => refMap.has(ref.path));
-
-                return {
-                    ...group,
-                    uploaded: allUploaded,
-                    uploadedPerRef: refMap
-                };
-            });
-
-            return {
-                ...prev,
-                mediaGroups: newMediaGroups,
-                uploadError: null
-            };
-        });
-        e.target.value = '';
-    };
-
-    const handleSingleUpload = (groupIndex: number, e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!e.target.files || !e.target.files[0]) return;
-
-        const file = e.target.files[0];
-        setPendingImport(prev => {
-            if (!prev) return prev;
-
-            const newMediaGroups = prev.mediaGroups.map((group, idx) => {
-                if (idx !== groupIndex) return group;
-                return {
-                    ...group,
-                    uploaded: true,
-                    uploadedFile: file
-                };
-            });
-
-            return {
-                ...prev,
-                mediaGroups: newMediaGroups,
-                uploadError: null
-            };
-        });
-        e.target.value = '';
-    };
-
-    const completePendingImport = async () => {
-        if (!pendingImport) return;
-
-        const {data, mediaGroups} = pendingImport;
-
-        const missingGroups = mediaGroups.filter(g => !g.uploaded);
-        if (missingGroups.length > 0) {
-            const missingNames = missingGroups.map(g => g.filename).join(', ');
-            setPendingImport({
-                ...pendingImport,
-                uploadError: `Missing files: ${missingNames}`
-            });
-            return;
-        }
-
-        try {
-            const mediaRefMap = new Map<string, string>();
-
-            for (const group of mediaGroups) {
-                if (group.isConflict) {
-                    const refMap = group.uploadedPerRef;
-                    if (!refMap) continue;
-                    for (const ref of group.references) {
-                        const uploadedFile = refMap.get(ref.path);
-                        if (uploadedFile) {
-                            const mediaId = await storeMedia(uploadedFile, ref.filename);
-                            mediaRefMap.set(ref.path, createMediaRef(mediaId));
-                        }
-                    }
-                } else {
-                    if (group.uploadedFile) {
-                        const mediaId = await storeMedia(group.uploadedFile, group.filename);
-                        const idbRef = createMediaRef(mediaId);
-                        for (const ref of group.references) {
-                            mediaRefMap.set(ref.path, idbRef);
-                        }
-                    }
-                }
-            }
-
-            const processedData = replaceMediaByPath(data, mediaRefMap);
-
-            const result = performImport(processedData);
-            setPendingImport(null);
-            setJsonInput('');
-            setImportError(null);
-            setImportSuccessMessage(result.message);
-        } catch (e) {
-            const errorMessage = e instanceof Error ? e.message : 'Unknown error';
-            setPendingImport({
-                ...pendingImport,
-                uploadError: `Import failed: ${errorMessage}`
-            });
+            const archiveMediaEntries = await getArchiveMediaEntriesForSubjects(profile.subjects);
+            const safeName = profile.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/gi, '') || 'profile';
+            const archive = await createRqzlArchiveBlob(profile, archiveMediaEntries);
+            triggerBlobDownload(archive, `quiz-profile-${safeName}.rqzl`);
+            setProfileExportError(null);
+        } catch (error) {
+            console.error('Profile export failed:', error);
+            setProfileExportError('Profile export failed. Try again.');
         }
     };
 
-
-
-    const cancelPendingImport = () => {
-        setPendingImport(null);
-        setImportError(null);
-    };
-
-    const handleImport = () => {
-        try {
-            const parsed: unknown = JSON.parse(jsonInput);
-            detectAndImport(parsed).then(result => {
-                if (result.type === 'pending') {
-                    setImportError(null);
-                    return;
-                }
-
-                setJsonInput('');
-                setImportError(null);
-                setImportSuccessMessage(result.message);
-            }).catch(e => {
-                setImportError(`Import failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
-            });
-        } catch (e) {
-            const errorMessage = e instanceof Error ? e.message : 'Unknown error';
-            setImportError(`Import failed: ${errorMessage}`);
-        }
-    };
-
-    const readAndImportFile = async (file: File) => {
-        const lowerName = file.name.toLowerCase();
-        if (!(lowerName.endsWith('.json') || lowerName.endsWith('.rqzl'))) {
-            setImportError('Unsupported file type. Use .rqzl or .json files.');
-            return;
-        }
-
-        try {
-            let parsed: unknown;
-            if (lowerName.endsWith('.rqzl')) {
-                const archive = await parseRqzlArchiveFile(file);
-                parsed = archive.payload;
-                await Promise.all(
-                    archive.mediaEntries.map(entry =>
-                        restoreRawMediaEntry({
-                            id: entry.id,
-                            filename: entry.filename,
-                            mimeType: entry.mimeType,
-                            blob: entry.blob
-                        })
-                    )
-                );
-            } else {
-                const content = await readFileAsText(file);
-                parsed = JSON.parse(content);
-            }
-
-            const result = await detectAndImport(parsed);
-            if (result.type === 'pending') {
-                setImportError(null);
-                return;
-            }
-
-            setJsonInput('');
-            setImportError(null);
-            setImportSuccessMessage(result.message);
-        } catch (e) {
-            const errorMessage = e instanceof Error ? e.message : 'Unknown error';
-            if (errorMessage.includes('read file')) {
-                setImportError('Could not read that file. Try another file or paste JSON below.');
-            } else {
-                setImportError(`File import failed: ${errorMessage}`);
-            }
-        }
-    };
-
-    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, resetInput = true) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        void readAndImportFile(file);
-        if (resetInput) {
-            e.target.value = '';
-        }
-    };
-
-    const handleImportDragEnter = (e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        importDndDepth.current += 1;
-        setImportDndActive(true);
-    };
-
-    const handleImportDragLeave = (e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        importDndDepth.current -= 1;
-        if (importDndDepth.current <= 0) {
-            importDndDepth.current = 0;
-            setImportDndActive(false);
-        }
-    };
-
-    const handleImportDragOver = (e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        e.dataTransfer.dropEffect = 'copy';
-    };
-
-    const handleImportDrop = (e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        importDndDepth.current = 0;
-        setImportDndActive(false);
-        const file = e.dataTransfer.files?.[0];
-        if (!file) return;
-        void readAndImportFile(file);
-    };
-
-    const handleExportProfile = async (profile: typeof currentProfile) => {
-        const mediaIds = new Set<string>();
-        profile.subjects.forEach(subject => {
-            subject.topics.forEach(topic => {
-                topic.questions.forEach(q => {
-                    if (q.media && isIndexedDBMedia(q.media)) {
-                        mediaIds.add(extractMediaId(q.media));
-                    }
-                });
-            });
-        });
-        const mediaEntries = await Promise.all([...mediaIds].map(id => getMedia(id)));
-        const archiveMediaEntries = mediaEntries
-            .filter((media): media is NonNullable<typeof media> => Boolean(media))
-            .map(media => ({
-                id: media.id,
-                filename: media.filename,
-                mimeType: media.mimeType,
-                blob: media.blob
-            }));
-        const safeName = profile.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/gi, '') || 'profile';
-        const archive = await createRqzlArchiveBlob(profile, archiveMediaEntries);
-        triggerBlobDownload(archive, `quiz-profile-${safeName}.rqzl`);
-    };
-
-    const handleDeleteProfileFromSettings = (profile: typeof currentProfile) => {
+    const handleDeleteProfileFromSettings = (profile: Profile) => {
         const isLastProfile = Object.keys(profiles).length === 1;
         if (settings.confirmProfileDelete) {
             setDeleteProfileConfirm({id: profile.id, name: profile.name});
@@ -536,21 +171,11 @@ export const RightSidebar: React.FC = () => {
         setCacheClearResult(null);
         try {
             const allStoredIds = await getAllMediaIds();
-            const usedMediaIds = new Set<string>();
-            for (const profile of Object.values(profiles)) {
-                for (const subject of profile.subjects) {
-                    for (const topic of subject.topics) {
-                        for (const question of topic.questions) {
-                            if (question.media && isIndexedDBMedia(question.media)) {
-                                usedMediaIds.add(extractMediaId(question.media));
-                            }
-                        }
-                    }
-                }
-            }
+            const usedMediaIds = extractAllMediaIds(profiles);
             const orphanedIds = allStoredIds.filter(id => !usedMediaIds.has(id));
-            for (const id of orphanedIds) {
-                await deleteMedia(id);
+            for (let index = 0; index < orphanedIds.length; index += CACHE_DELETE_BATCH_SIZE) {
+                const chunk = orphanedIds.slice(index, index + CACHE_DELETE_BATCH_SIZE);
+                await Promise.allSettled(chunk.map(id => deleteMedia(id)));
             }
             setCacheClearResult({
                 removed: orphanedIds.length,
@@ -574,7 +199,12 @@ export const RightSidebar: React.FC = () => {
             <SidebarTabs activeTab={activeTab} onChange={setActiveTab} />
 
             {activeTab === 'mastery' && (
-                <div className="space-y-6 animate-in fade-in duration-300">
+                <div
+                    id="right-sidebar-panel-mastery"
+                    role="tabpanel"
+                    aria-labelledby="right-sidebar-tab-mastery"
+                    className="space-y-6 animate-in fade-in duration-300"
+                >
                     {!currentSubject ? (
                         <div className="text-center text-slate-400 py-10">
                             Select a subject to view mastery
@@ -617,11 +247,16 @@ export const RightSidebar: React.FC = () => {
             )}
 
             {activeTab === 'import' && (
-                <div className="space-y-4 animate-in fade-in duration-300">
+                <div
+                    id="right-sidebar-panel-import"
+                    role="tabpanel"
+                    aria-labelledby="right-sidebar-tab-import"
+                    className="space-y-4 animate-in fade-in duration-300"
+                >
                     <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg text-sm text-blue-700 dark:text-blue-300 space-y-2">
                         <div className="flex items-start gap-2">
                             <AlertCircle size={18} className="mt-0.5 flex-shrink-0" />
-                            <p>Import a .rqzl (Profile) or .json (Subjects) file.</p>
+                            <p>Import a .rqzl, .zip, or .json file (profile, subject export, or subjects).</p>
                         </div>
                         <a
                             href="https://requizle.github.io/requizle-wiki/import-export"
@@ -653,8 +288,9 @@ export const RightSidebar: React.FC = () => {
                             <input
                                 id="import-file-input"
                                 type="file"
-                                accept=".rqzl,.json,application/json"
+                                accept=".rqzl,.zip,.json,application/json,application/zip"
                                 onChange={handleFileUpload}
+                                disabled={isImporting}
                                 className="sr-only"
                             />
                             <div className="flex flex-col items-center gap-2 py-8 px-4 text-center">
@@ -673,11 +309,11 @@ export const RightSidebar: React.FC = () => {
                                         htmlFor="import-file-input"
                                         className="font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 underline-offset-2 hover:underline cursor-pointer"
                                     >
-                                        Choose a file
+                                        {isImporting ? 'Importing...' : 'Choose a file'}
                                     </label>
                                     <span className="text-slate-500 dark:text-slate-400"> or drag and drop</span>
                                 </p>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">.rqzl (profile) or .json (subjects)</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">.rqzl/.zip/.json (profile, subject export, or subjects)</p>
                             </div>
                         </div>
                     </div>
@@ -700,11 +336,11 @@ export const RightSidebar: React.FC = () => {
                         />
                         <button
                             onClick={handleImport}
-                            disabled={!jsonInput.trim()}
+                            disabled={!jsonInput.trim() || isImporting}
                             className="w-full btn-primary flex items-center justify-center gap-2"
                         >
                             <Upload size={16} />
-                            Apply JSON
+                            {isImporting ? 'Importing...' : 'Apply JSON'}
                         </button>
                     </div>
 
@@ -718,9 +354,10 @@ export const RightSidebar: React.FC = () => {
 
             {activeTab === 'settings' && (
                 <div
+                    id="right-sidebar-panel-settings"
+                    role="tabpanel"
+                    aria-labelledby="right-sidebar-tab-settings"
                     className="flex flex-col gap-4 animate-in fade-in duration-300 min-h-0 -mx-1"
-                    role="region"
-                    aria-label="Settings"
                 >
                     <div
                         className="sticky top-0 z-10 -mx-2 px-2 pt-0 pb-2 -mt-1 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-100 dark:border-slate-800"
@@ -806,7 +443,7 @@ export const RightSidebar: React.FC = () => {
 
                     {settingsSection === 'behavior' && (
                         <BehaviorSettingsSection
-                            mode={session?.mode ?? 'random'}
+                            mode={session?.mode ?? DEFAULT_SESSION_STATE.mode}
                             quizRequeueOnIncorrect={settings.quizRequeueOnIncorrect}
                             quizRequeueOnSkip={settings.quizRequeueOnSkip}
                             quizRequeueGapMin={settings.quizRequeueGapMin}
@@ -953,6 +590,7 @@ export const RightSidebar: React.FC = () => {
 
             <PendingMediaImportModal
                 pendingImport={pendingImport}
+                isCompleting={isCompletingPendingImport}
                 imageInputRef={imageInputRef}
                 onCancel={cancelPendingImport}
                 onConflictUpload={handleConflictUpload}
@@ -961,6 +599,13 @@ export const RightSidebar: React.FC = () => {
                 onCompleteImport={() => {
                     void completePendingImport();
                 }}
+            />
+
+            <MessageModal
+                open={!!profileExportError}
+                title="Export"
+                message={profileExportError ?? ''}
+                onClose={() => setProfileExportError(null)}
             />
         </div>
     );

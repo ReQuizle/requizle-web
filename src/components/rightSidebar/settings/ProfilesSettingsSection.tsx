@@ -75,6 +75,7 @@ export const ProfilesSettingsSection: React.FC<ProfilesSettingsSectionProps> = (
                                             autoFocus
                                         />
                                         <button
+                                            type="button"
                                             onClick={() => {
                                                 if (editingName.trim()) {
                                                     onRenameProfile(profile.id, editingName.trim());
@@ -83,13 +84,16 @@ export const ProfilesSettingsSection: React.FC<ProfilesSettingsSectionProps> = (
                                             }}
                                             className="p-1 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded"
                                             title="Save"
+                                            aria-label={`Save name for ${profile.name}`}
                                         >
                                             <Check size={14} />
                                         </button>
                                         <button
+                                            type="button"
                                             onClick={() => onSetEditingProfileId(null)}
                                             className="p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded"
                                             title="Cancel"
+                                            aria-label={`Cancel renaming ${profile.name}`}
                                         >
                                             <X size={14} />
                                         </button>
@@ -107,12 +111,14 @@ export const ProfilesSettingsSection: React.FC<ProfilesSettingsSectionProps> = (
                                             {profile.name}
                                         </span>
                                         <button
+                                            type="button"
                                             onClick={() => {
                                                 onSetEditingProfileId(profile.id);
                                                 onSetEditingName(profile.name);
                                             }}
                                             className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors opacity-0 group-hover:opacity-100"
                                             title="Rename Profile"
+                                            aria-label={`Rename ${profile.name}`}
                                         >
                                             <Pencil size={12} />
                                         </button>
@@ -127,16 +133,20 @@ export const ProfilesSettingsSection: React.FC<ProfilesSettingsSectionProps> = (
                             {editingProfileId !== profile.id && (
                                 <div className="flex items-center gap-1 flex-shrink-0">
                                     <button
+                                        type="button"
                                         onClick={() => onExportProfile(profile)}
                                         className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
                                         title="Export Profile"
+                                        aria-label={`Export ${profile.name}`}
                                     >
                                         <Download size={14} />
                                     </button>
                                     <button
+                                        type="button"
                                         onClick={() => onDeleteProfile(profile)}
                                         className="p-1.5 text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
                                         title={confirmProfileDelete ? 'Delete Profile (confirm required)' : 'Delete Profile'}
+                                        aria-label={`Delete ${profile.name}`}
                                     >
                                         <Trash2 size={14} />
                                     </button>
@@ -148,6 +158,7 @@ export const ProfilesSettingsSection: React.FC<ProfilesSettingsSectionProps> = (
                             <span>{profile.subjects.length} Subjects</span>
                             {activeProfileId !== profile.id && (
                                 <button
+                                    type="button"
                                     onClick={() => onSwitchProfile(profile.id)}
                                     className="text-indigo-600 dark:text-indigo-400 hover:underline font-medium"
                                 >
@@ -173,7 +184,7 @@ export const ProfilesSettingsSection: React.FC<ProfilesSettingsSectionProps> = (
                 Import Data
                 <input
                     type="file"
-                    accept=".rqzl,.json"
+                    accept=".rqzl,.zip,.json"
                     className="hidden"
                     onChange={onImportFileUpload}
                 />

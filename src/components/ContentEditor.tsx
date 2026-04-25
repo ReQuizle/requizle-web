@@ -1,14 +1,10 @@
-import React, {useCallback, useEffect, useMemo, useState} from 'react';
+import React, {useCallback, useMemo, useState} from 'react';
 import {useQuizStore} from '../store/useQuizStore';
 import type {Question, QuestionType, Topic} from '../types';
 import {QUESTION_TYPES, createEmptyQuestion, migrateQuestionShape} from '../utils/contentEditor';
 import {
     createMediaRef,
-    createMediaObjectUrl,
-    extractMediaId,
-    getMedia,
     isIndexedDBMedia,
-    revokeMediaObjectUrl,
     storeMedia
 } from '../utils/mediaStorage';
 import {isVideoMediaUrl} from '../utils/mediaFormat';
@@ -16,6 +12,7 @@ import {hasDuplicateStrings, hasEnoughWordBankEntries} from '../utils/validation
 import {clsx} from 'clsx';
 import {BookOpen, Layers, Plus, Save, Trash2, Upload} from 'lucide-react';
 import {SimpleConfirmModal, TypeToConfirmModal} from './AppModals';
+import {useResolvedMediaUrl} from '../utils/useResolvedMediaUrl';
 
 function getQuestionDraftError(question: Question): string | null {
     if (!question.prompt.trim()) return 'Prompt is required.';
@@ -95,66 +92,12 @@ function QuestionMediaEditor({
     media: string | undefined;
     onMediaChange: (next: string | undefined) => void;
 }) {
-    const needsAsyncLoad = media && isIndexedDBMedia(media);
-    const [resolvedUrl, setResolvedUrl] = useState<string | null>(
-        media && !needsAsyncLoad ? media : null
-    );
-    const [mediaLoading, setMediaLoading] = useState(!!needsAsyncLoad);
-    const [mediaError, setMediaError] = useState(false);
+    const {resolvedUrl, loading: mediaLoading, error: mediaError} = useResolvedMediaUrl(media, {
+        maxRetries: isIndexedDBMedia(media ?? '') ? 1 : 0,
+        retryDelayMs: 250
+    });
     const [uploadBusy, setUploadBusy] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
-
-    useEffect(() => {
-        if (!media) {
-            setResolvedUrl(null);
-            setMediaLoading(false);
-            setMediaError(false);
-            return;
-        }
-        if (!isIndexedDBMedia(media)) {
-            setResolvedUrl(media);
-            setMediaLoading(false);
-            setMediaError(false);
-            return;
-        }
-
-        setMediaLoading(true);
-        setMediaError(false);
-        setResolvedUrl(null);
-        const mediaId = extractMediaId(media);
-        let cancelled = false;
-
-        getMedia(mediaId)
-            .then(entry => {
-                if (cancelled) return;
-                if (entry) {
-                    setResolvedUrl(createMediaObjectUrl(entry));
-                    setMediaError(false);
-                } else {
-                    setResolvedUrl(null);
-                    setMediaError(true);
-                }
-                setMediaLoading(false);
-            })
-            .catch(() => {
-                if (cancelled) return;
-                setResolvedUrl(null);
-                setMediaError(true);
-                setMediaLoading(false);
-            });
-
-        return () => {
-            cancelled = true;
-        };
-    }, [media]);
-
-    useEffect(() => {
-        return () => {
-            if (resolvedUrl?.startsWith('blob:')) {
-                revokeMediaObjectUrl(resolvedUrl);
-            }
-        };
-    }, [resolvedUrl]);
 
     const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -604,7 +547,7 @@ export const ContentEditor: React.FC = () => {
                                 </span>
                                 <AddQuestionSelect onPick={handleAddQuestion} />
                             </div>
-                            <div className="max-h-36 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                            <div className="max-h-36 overflow-y-auto space-y-1 pr-1">
                                 {topic.questions.length === 0 ? (
                                     <p className="text-xs text-slate-500 dark:text-slate-400 italic py-2">
                                         No questions yet. Choose a type above.
@@ -719,6 +662,7 @@ export const ContentEditor: React.FC = () => {
                                             type="button"
                                             onClick={handleDeleteQuestion}
                                             className="inline-flex items-center justify-center gap-1 px-3 py-2 rounded-lg border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                            aria-label="Delete selected question"
                                         >
                                             <Trash2 size={16} />
                                         </button>
@@ -877,6 +821,7 @@ function QuestionTypeFields({
                             <button
                                 type="button"
                                 title="Remove choice"
+                                aria-label={`Remove choice ${i + 1}`}
                                 disabled={!canRemoveChoice}
                                 onClick={() => removeChoice(i)}
                                 className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-30 disabled:pointer-events-none"
@@ -941,6 +886,7 @@ function QuestionTypeFields({
                             <button
                                 type="button"
                                 title="Remove choice"
+                                aria-label={`Remove choice ${i + 1}`}
                                 disabled={!canRemoveChoice}
                                 onClick={() => removeChoice(i)}
                                 className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-30 disabled:pointer-events-none"
@@ -1019,6 +965,7 @@ function QuestionTypeFields({
                             <button
                                 type="button"
                                 title="Remove pair"
+                                aria-label={`Remove pair ${i + 1}`}
                                 onClick={() => {
                                     const pairs = draft.pairs.filter((_, j) => j !== i);
                                     setDraft({...draft, pairs: pairs.length ? pairs : [{left: '', right: ''}]});

@@ -176,14 +176,12 @@ describe('quizLogic', () => {
         });
 
         it('should return empty array for null subject', () => {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const questions = getActiveQuestions(null as any, []);
+            const questions = getActiveQuestions(null, []);
             expect(questions).toHaveLength(0);
         });
 
         it('should return empty array for undefined subject', () => {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const questions = getActiveQuestions(undefined as any, []);
+            const questions = getActiveQuestions(undefined, []);
             expect(questions).toHaveLength(0);
         });
     });
@@ -449,8 +447,7 @@ describe('quizLogic', () => {
                     type: 'unknown_type' as const,
                     topicId: 't1',
                     prompt: 'Unknown'
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                } as any;
+                } as unknown as Question;
                 expect(checkAnswer(question, 'anything')).toBe(false);
             });
         });

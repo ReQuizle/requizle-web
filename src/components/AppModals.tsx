@@ -1,7 +1,51 @@
-import React, {useState} from 'react';
+import React, {useId, useRef, useState} from 'react';
 import {createPortal} from 'react-dom';
+import {useModalA11y} from './modalA11y';
 
-const modalOverlayClass = 'fixed inset-0 z-[110] bg-black/50 flex items-center justify-center p-4';
+export const modalOverlayClass = 'fixed inset-0 z-[110] bg-black/50 flex items-center justify-center p-4';
+export const modalPanelClass = 'bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4';
+
+type ModalShellProps = {
+    titleId?: string;
+    ariaLabel?: string;
+    onClose: () => void;
+    dialogRef: React.RefObject<HTMLDivElement | null>;
+    panelClassName?: string;
+    closeOnOverlayMouseDown?: boolean;
+    children: React.ReactNode;
+};
+
+export function ModalShell({
+    titleId,
+    ariaLabel,
+    onClose,
+    dialogRef,
+    panelClassName = modalPanelClass,
+    closeOnOverlayMouseDown = true,
+    children
+}: ModalShellProps) {
+    return createPortal(
+        <div
+            className={modalOverlayClass}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            aria-label={ariaLabel}
+            onMouseDown={e => {
+                if (closeOnOverlayMouseDown && e.target === e.currentTarget) onClose();
+            }}
+        >
+            <div
+                ref={dialogRef}
+                tabIndex={-1}
+                className={panelClassName}
+            >
+                {children}
+            </div>
+        </div>,
+        document.body
+    );
+}
 
 type TypeToConfirmModalProps = {
     open: boolean;
@@ -34,24 +78,23 @@ function TypeToConfirmModalMounted({
 }: Omit<TypeToConfirmModalProps, 'open'>) {
     const [input, setInput] = useState('');
     const canConfirm = input === phraseToMatch;
+    const titleId = useId();
+    const inputId = useId();
+    const dialogRef = useRef<HTMLDivElement>(null);
+    useModalA11y(dialogRef, onClose);
 
-    return createPortal(
-        <div
-            className={modalOverlayClass}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="type-confirm-title"
-        >
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
-                <h3 id="type-confirm-title" className="text-lg font-bold text-slate-900 dark:text-white">
+    return (
+        <ModalShell titleId={titleId} onClose={onClose} dialogRef={dialogRef}>
+                <h3 id={titleId} className="text-lg font-bold text-slate-900 dark:text-white">
                     {title}
                 </h3>
                 <div className="text-sm text-slate-600 dark:text-slate-400">{description}</div>
                 <div className="space-y-2">
-                    <label className="text-sm text-slate-600 dark:text-slate-400">
+                    <label htmlFor={inputId} className="text-sm text-slate-600 dark:text-slate-400">
                         Type <strong className="text-red-600 dark:text-red-400">{phraseToMatch}</strong> to confirm:
                     </label>
                     <input
+                        id={inputId}
                         type="text"
                         value={input}
                         onChange={e => setInput(e.target.value)}
@@ -79,9 +122,7 @@ function TypeToConfirmModalMounted({
                         {confirmLabel}
                     </button>
                 </div>
-            </div>
-        </div>,
-        document.body
+        </ModalShell>
     );
 }
 
@@ -99,6 +140,13 @@ type SimpleConfirmModalProps = {
 
 export function SimpleConfirmModal({
     open,
+    ...rest
+}: SimpleConfirmModalProps) {
+    if (!open) return null;
+    return <SimpleConfirmModalMounted {...rest} />;
+}
+
+function SimpleConfirmModalMounted({
     title,
     children,
     cancelLabel = 'Cancel',
@@ -106,18 +154,14 @@ export function SimpleConfirmModal({
     confirmClassName = 'flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors',
     onConfirm,
     onClose
-}: SimpleConfirmModalProps) {
-    if (!open) return null;
+}: Omit<SimpleConfirmModalProps, 'open'>) {
+    const titleId = useId();
+    const dialogRef = useRef<HTMLDivElement>(null);
+    useModalA11y(dialogRef, onClose);
 
-    return createPortal(
-        <div
-            className={modalOverlayClass}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="simple-confirm-title"
-        >
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
-                <h3 id="simple-confirm-title" className="text-lg font-bold text-slate-900 dark:text-white">
+    return (
+        <ModalShell titleId={titleId} onClose={onClose} dialogRef={dialogRef}>
+                <h3 id={titleId} className="text-lg font-bold text-slate-900 dark:text-white">
                     {title}
                 </h3>
                 <div className="text-sm text-slate-600 dark:text-slate-400">{children}</div>
@@ -133,9 +177,7 @@ export function SimpleConfirmModal({
                         {confirmLabel}
                     </button>
                 </div>
-            </div>
-        </div>,
-        document.body
+        </ModalShell>
     );
 }
 
@@ -149,16 +191,32 @@ type MessageModalProps = {
 
 export function MessageModal({open, title, message, buttonLabel = 'OK', onClose}: MessageModalProps) {
     if (!open) return null;
+    return (
+        <MessageModalMounted
+            title={title}
+            message={message}
+            buttonLabel={buttonLabel}
+            onClose={onClose}
+        />
+    );
+}
 
-    return createPortal(
-        <div
-            className={modalOverlayClass}
-            role="dialog"
-            aria-modal="true"
+function MessageModalMounted({title, message, buttonLabel = 'OK', onClose}: Omit<MessageModalProps, 'open'>) {
+    const titleId = useId();
+    const dialogRef = useRef<HTMLDivElement>(null);
+    useModalA11y(dialogRef, onClose);
+
+    return (
+        <ModalShell
+            titleId={title ? titleId : undefined}
+            ariaLabel={title ? undefined : 'Message'}
+            onClose={onClose}
+            dialogRef={dialogRef}
         >
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
                 {title && (
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">{title}</h3>
+                    <h3 id={titleId} className="text-lg font-bold text-slate-900 dark:text-white">
+                        {title}
+                    </h3>
                 )}
                 <p className="text-sm text-slate-600 dark:text-slate-400 whitespace-pre-wrap">{message}</p>
                 <button
@@ -168,9 +226,7 @@ export function MessageModal({open, title, message, buttonLabel = 'OK', onClose}
                 >
                     {buttonLabel}
                 </button>
-            </div>
-        </div>,
-        document.body
+        </ModalShell>
     );
 }
 
@@ -203,20 +259,23 @@ function TextPromptModalMounted({
 }: Omit<TextPromptModalProps, 'open'>) {
     const [value, setValue] = useState(initialValue);
     const trimmed = value.trim();
+    const titleId = useId();
+    const inputId = useId();
+    const dialogRef = useRef<HTMLDivElement>(null);
+    useModalA11y(dialogRef, onClose);
 
-    return createPortal(
-        <div
-            className={modalOverlayClass}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="text-prompt-title"
-        >
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
-                <h3 id="text-prompt-title" className="text-lg font-bold text-slate-900 dark:text-white">
+    return (
+        <ModalShell titleId={titleId} onClose={onClose} dialogRef={dialogRef}>
+                <h3 id={titleId} className="text-lg font-bold text-slate-900 dark:text-white">
                     {title}
                 </h3>
-                {label && <label className="block text-sm text-slate-600 dark:text-slate-400">{label}</label>}
+                {label && (
+                    <label htmlFor={inputId} className="block text-sm text-slate-600 dark:text-slate-400">
+                        {label}
+                    </label>
+                )}
                 <input
+                    id={inputId}
                     type="text"
                     value={value}
                     onChange={e => setValue(e.target.value)}
@@ -250,8 +309,6 @@ function TextPromptModalMounted({
                         {confirmLabel}
                     </button>
                 </div>
-            </div>
-        </div>,
-        document.body
+        </ModalShell>
     );
 }

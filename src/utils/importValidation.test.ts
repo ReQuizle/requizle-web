@@ -499,6 +499,34 @@ describe('importValidation', () => {
             expect(result[0].topics[0].questions[0].id).toBe('my-question');
         });
 
+        it('normalizes questions and strips invalid optional fields', () => {
+            const result = validateSubjects([{
+                id: 's1',
+                name: 'Subject',
+                topics: [{
+                    id: 't1',
+                    name: 'Topic',
+                    questions: [{
+                        id: 'q1',
+                        type: 'true_false',
+                        prompt: '  Question?  ',
+                        answer: true,
+                        media: 123,
+                        explanation: ['not valid'],
+                        unexpected: 'remove me'
+                    }]
+                }]
+            }]);
+
+            expect(result[0].topics[0].questions[0]).toEqual({
+                id: 'q1',
+                type: 'true_false',
+                prompt: 'Question?',
+                topicId: 't1',
+                answer: true
+            });
+        });
+
         it('should validate all question types', () => {
             const data = [{
                 name: 'Test',
@@ -517,6 +545,58 @@ describe('importValidation', () => {
 
             const result = validateSubjects(data);
             expect(result[0].topics[0].questions).toHaveLength(6);
+        });
+
+        it('rejects duplicate subject IDs in one import payload', () => {
+            expect(() => validateSubjects([
+                {
+                    id: 's1',
+                    name: 'Subject A',
+                    topics: [{id: 't1', name: 'Topic A', questions: [{id: 'q1', type: 'true_false', prompt: 'Q?', answer: true}]}]
+                },
+                {
+                    id: 's1',
+                    name: 'Subject B',
+                    topics: [{id: 't2', name: 'Topic B', questions: [{id: 'q2', type: 'true_false', prompt: 'Q?', answer: false}]}]
+                }
+            ])).toThrow(/duplicate subject id/i);
+        });
+
+        it('rejects duplicate topic IDs within a subject', () => {
+            expect(() => validateSubjects([{
+                id: 's1',
+                name: 'Subject',
+                topics: [
+                    {id: 't1', name: 'Topic A', questions: [{id: 'q1', type: 'true_false', prompt: 'Q1?', answer: true}]},
+                    {id: 't1', name: 'Topic B', questions: [{id: 'q2', type: 'true_false', prompt: 'Q2?', answer: false}]}
+                ]
+            }])).toThrow(/duplicate topic id/i);
+        });
+
+        it('rejects duplicate question IDs within the same topic', () => {
+            expect(() => validateSubjects([{
+                id: 's1',
+                name: 'Subject',
+                topics: [{
+                    id: 't1',
+                    name: 'Topic',
+                    questions: [
+                        {id: 'q1', type: 'true_false', prompt: 'Q1?', answer: true},
+                        {id: 'q1', type: 'true_false', prompt: 'Q2?', answer: false}
+                    ]
+                }]
+            }])).toThrow(/duplicate question id/i);
+        });
+
+        it('rejects duplicate question IDs across topics in the same subject', () => {
+            expect(() => validateSubjects([{
+                id: 's1',
+                name: 'Subject',
+                topics: [
+                    {id: 't1', name: 'Topic A', questions: [{id: 'q1', type: 'true_false', prompt: 'Q1?', answer: true}]},
+                    {id: 't2', name: 'Topic B', questions: [{id: 'q1', type: 'true_false', prompt: 'Q2?', answer: false}]}
+                ]
+            }])).toThrow(/duplicate question id/i);
         });
     });
 
