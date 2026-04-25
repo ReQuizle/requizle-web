@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ReQuizle</title>
+  <script>
+    (function redirectSpaRoute() {
+      // GitHub Pages project sites keep one path segment (e.g. "/requizle-web").
+      // Set this to 0 if hosting from a domain root.
+      var pathSegmentsToKeep = 1;
+
+      var l = window.location;
+      var pathSegments = l.pathname.split('/');
+      var basePath = pathSegments.slice(0, pathSegmentsToKeep + 1).join('/') || '/';
+      var appPath = '/' + pathSegments.slice(pathSegmentsToKeep + 1).join('/');
+
+      var query = l.search ? l.search.slice(1) : '';
+      var redirectUrl =
+        l.protocol +
+        '//' +
+        l.host +
+        basePath +
+        '/?__rq_path=' +
+        encodeURIComponent(appPath) +
+        '&__rq_query=' +
+        encodeURIComponent(query) +
+        l.hash;
+
+      l.replace(redirectUrl);
+    })();
+  </script>
+</head>
+<body></body>
+</html>
