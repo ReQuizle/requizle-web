@@ -5,6 +5,7 @@ type CacheClearResult = {removed: number; message: string} | null;
 
 type DataSettingsSectionProps = {
     currentSubjectName: string | null;
+    canResetSubjectProgress: boolean;
     confirmResetSubjectProgress: boolean;
     clearingCache: boolean;
     cacheClearResult: CacheClearResult;
@@ -15,6 +16,7 @@ type DataSettingsSectionProps = {
 
 export const DataSettingsSection: React.FC<DataSettingsSectionProps> = ({
     currentSubjectName,
+    canResetSubjectProgress,
     confirmResetSubjectProgress,
     clearingCache,
     cacheClearResult,
@@ -30,7 +32,7 @@ export const DataSettingsSection: React.FC<DataSettingsSectionProps> = ({
     >
         <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Data Management</h3>
 
-        {currentSubjectName && (
+        {currentSubjectName && canResetSubjectProgress && (
             <button
                 type="button"
                 onClick={onResetSubjectProgress}

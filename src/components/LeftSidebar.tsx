@@ -323,6 +323,24 @@ export const LeftSidebar: React.FC = () => {
         resetTopicProgress(subject.id, topic.id);
     };
 
+    const getSubjectMasteryPct = (subject: Subject): number => {
+        const allQuestions = subject.topics.flatMap(topic => topic.questions);
+        const flatProgress = flattenProgress(progress[subject.id]);
+        return calculateMastery(allQuestions, flatProgress);
+    };
+
+    const getTopicMasteryPct = (subject: Subject, topic: Topic): number => {
+        const topicProgress = (progress[subject.id] || {})[topic.id] || {};
+        return calculateMastery(topic.questions, topicProgress);
+    };
+
+    const showResetSubjectProgress =
+        contextMenu?.kind === 'subject' ? getSubjectMasteryPct(contextMenu.subject) > 0 : false;
+    const showMarkTopicMastered =
+        contextMenu?.kind === 'topic' ? getTopicMasteryPct(contextMenu.subject, contextMenu.topic) < 100 : false;
+    const showResetTopicProgress =
+        contextMenu?.kind === 'topic' ? getTopicMasteryPct(contextMenu.subject, contextMenu.topic) > 0 : false;
+
     return (
         <div className="p-6 space-y-8">
             {/* Header */}
@@ -554,6 +572,9 @@ export const LeftSidebar: React.FC = () => {
 
             <SidebarContextMenu
                 contextMenu={contextMenu}
+                showResetSubjectProgress={showResetSubjectProgress}
+                showMarkTopicMastered={showMarkTopicMastered}
+                showResetTopicProgress={showResetTopicProgress}
                 onQuickExportSubject={handleQuickExportSubject}
                 onExportAsSubject={handleOpenSubjectExportAs}
                 onResetSubjectProgress={handleResetSubjectProgressFromContext}

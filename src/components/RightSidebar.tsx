@@ -466,6 +466,7 @@ export const RightSidebar: React.FC = () => {
                     {settingsSection === 'data' && (
                         <DataSettingsSection
                             currentSubjectName={currentSubject?.name ?? null}
+                            canResetSubjectProgress={subjectMastery > 0}
                             confirmResetSubjectProgress={settings.confirmResetSubjectProgress}
                             clearingCache={clearingCache}
                             cacheClearResult={cacheClearResult}

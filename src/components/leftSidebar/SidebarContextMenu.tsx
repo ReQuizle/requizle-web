@@ -10,6 +10,9 @@ export type ContextMenuState =
 
 type SidebarContextMenuProps = {
     contextMenu: ContextMenuState;
+    showResetSubjectProgress: boolean;
+    showMarkTopicMastered: boolean;
+    showResetTopicProgress: boolean;
     onQuickExportSubject: (subject: Subject) => void;
     onExportAsSubject: (subject: Subject) => void;
     onResetSubjectProgress: (subject: Subject) => void;
@@ -20,6 +23,9 @@ type SidebarContextMenuProps = {
 
 export const SidebarContextMenu: React.FC<SidebarContextMenuProps> = ({
     contextMenu,
+    showResetSubjectProgress,
+    showMarkTopicMastered,
+    showResetTopicProgress,
     onQuickExportSubject,
     onExportAsSubject,
     onResetSubjectProgress,
@@ -102,15 +108,17 @@ export const SidebarContextMenu: React.FC<SidebarContextMenuProps> = ({
                         <Download size={16} className="text-slate-500 shrink-0" />
                         Export as...
                     </button>
-                    <button
-                        type="button"
-                        role="menuitem"
-                        className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
-                        onClick={() => onResetSubjectProgress(contextMenu.subject)}
-                    >
-                        <RotateCcw size={16} className="text-slate-500 shrink-0" />
-                        Reset subject progress
-                    </button>
+                    {showResetSubjectProgress && (
+                        <button
+                            type="button"
+                            role="menuitem"
+                            className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+                            onClick={() => onResetSubjectProgress(contextMenu.subject)}
+                        >
+                            <RotateCcw size={16} className="text-slate-500 shrink-0" />
+                            Reset subject progress
+                        </button>
+                    )}
                     <button
                         type="button"
                         role="menuitem"
@@ -124,24 +132,28 @@ export const SidebarContextMenu: React.FC<SidebarContextMenuProps> = ({
             )}
             {contextMenu.kind === 'topic' && (
                 <>
-                    <button
-                        type="button"
-                        role="menuitem"
-                        className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
-                        onClick={() => onMarkTopicMastered(contextMenu.subject, contextMenu.topic)}
-                    >
-                        <CheckCheck size={16} className="text-slate-500 shrink-0" />
-                        Mark topic mastered
-                    </button>
-                    <button
-                        type="button"
-                        role="menuitem"
-                        className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
-                        onClick={() => onResetTopicProgress(contextMenu.subject, contextMenu.topic)}
-                    >
-                        <RotateCcw size={16} className="text-slate-500 shrink-0" />
-                        Reset topic progress
-                    </button>
+                    {showMarkTopicMastered && (
+                        <button
+                            type="button"
+                            role="menuitem"
+                            className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+                            onClick={() => onMarkTopicMastered(contextMenu.subject, contextMenu.topic)}
+                        >
+                            <CheckCheck size={16} className="text-slate-500 shrink-0" />
+                            Mark topic mastered
+                        </button>
+                    )}
+                    {showResetTopicProgress && (
+                        <button
+                            type="button"
+                            role="menuitem"
+                            className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+                            onClick={() => onResetTopicProgress(contextMenu.subject, contextMenu.topic)}
+                        >
+                            <RotateCcw size={16} className="text-slate-500 shrink-0" />
+                            Reset topic progress
+                        </button>
+                    )}
                 </>
             )}
         </div>,
