@@ -21,7 +21,7 @@ ReQuizle is a modern web application designed to help users study efficiently th
 - **LaTeX Support**: Render mathematical equations using `\(...\)` (inline) and `\[...\]` (block) syntax.
 - **Media Support**: Add images or videos to questions via URL, base64, or local file upload.
 - **Data Persistence**: Progress automatically saved to IndexedDB for large datasets.
-- **Custom Content Import**: Import your own subjects and questions via JSON with automatic type detection.
+- **Custom Content Import**: Import subjects, subject exports, or full profiles via `.json` or `.rqzl` with automatic type detection.
 - **In-App Content Editor**: Create, rename, and delete subjects, topics, and questions (including media uploads) from a dedicated editor page.
 - **Profile Management**: Create, rename, and manage multiple study profiles.
 - **Dark Mode**: Built-in theme toggle for comfortable studying.
@@ -81,7 +81,7 @@ Production builds default to the GitHub Pages project path **`/requizle-web/`**.
 
 4. **Import Custom Content**:
    - Use the Import tab in the right sidebar
-   - Upload JSON files with subjects, questions, or full profiles
+   - Upload `.json` or `.rqzl` files with subjects, subject exports, or full profiles
    - Import type is automatically detected
    - Imported data merges by matching explicit IDs; imports without IDs create new copies
 
@@ -128,9 +128,9 @@ requizle-web/
 │   │   └── inputs/       # Question-type inputs used during study
 │   ├── context/          # React context (e.g. theme)
 │   ├── pages/            # Full-page routes (e.g. EditorPage)
-│   ├── store/            # Zustand store (useQuizStore)
+│   ├── store/            # Zustand store composition (useQuizStore + action/helper modules)
 │   ├── test/             # Vitest setup
-│   ├── utils/            # quizLogic, importValidation, mediaStorage, appBaseUrl, contentEditor, ...
+│   ├── utils/            # quizLogic, importValidation, mediaStorage, rqzlArchive, archiveMedia, appBaseUrl, ...
 │   ├── App.tsx           # Root component (theme + routes)
 │   ├── main.tsx          # Entry (URL normalization, then React mount)
 │   ├── router.tsx        # React Router: study layout vs. /edit
