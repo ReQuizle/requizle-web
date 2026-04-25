@@ -12,9 +12,13 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 export const ThemeProvider: React.FC<{children: React.ReactNode}> = ({children}) => {
     const [theme, setTheme] = useState<Theme>(() => {
         // First check if user has a saved preference
-        const savedTheme = localStorage.getItem('theme');
-        if (savedTheme === 'light' || savedTheme === 'dark') {
-            return savedTheme;
+        try {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'light' || savedTheme === 'dark') {
+                return savedTheme;
+            }
+        } catch {
+            // Storage can be unavailable in restricted browser contexts.
         }
 
         // Otherwise, detect system preference
@@ -31,7 +35,11 @@ export const ThemeProvider: React.FC<{children: React.ReactNode}> = ({children})
         const root = window.document.documentElement;
         root.classList.remove('light', 'dark');
         root.classList.add(theme);
-        localStorage.setItem('theme', theme);
+        try {
+            localStorage.setItem('theme', theme);
+        } catch {
+            // Theme still applies for this session even if persistence is blocked.
+        }
     }, [theme]);
 
     const toggleTheme = () => {

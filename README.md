@@ -10,7 +10,7 @@ ReQuizle is a modern web application designed to help users study efficiently th
 
 - **Focused Study Experience**: Clean, distraction-free UI with smooth animations.
 - **Mastery Tracking**: Track progress and mastery percentage for each subject and topic.
-- **Spaced Repetition**: Option to include or exclude mastered questions from the study queue.
+- **Spaced Repetition**: Smart queueing for missed/skipped cards, plus an option to include or exclude mastered questions.
 - **Multiple Question Types**: Support for various question formats:
   - Multiple Choice
   - Multiple Answer
@@ -21,7 +21,8 @@ ReQuizle is a modern web application designed to help users study efficiently th
 - **LaTeX Support**: Render mathematical equations using `\(...\)` (inline) and `\[...\]` (block) syntax.
 - **Media Support**: Add images or videos to questions via URL, base64, or local file upload.
 - **Data Persistence**: Progress automatically saved to IndexedDB for large datasets.
-- **Custom Content Import**: Import your own subjects and questions via JSON with automatic type detection.
+- **Custom Content Import**: Import subjects, subject exports, or full profiles via `.json` or `.rqzl` with automatic type detection.
+- **In-App Content Editor**: Create, rename, and delete subjects, topics, and questions (including media uploads) from a dedicated editor page.
 - **Profile Management**: Create, rename, and manage multiple study profiles.
 - **Dark Mode**: Built-in theme toggle for comfortable studying.
 - **Responsive Design**: Works seamlessly on desktop and mobile devices.
@@ -57,6 +58,14 @@ npm install
 npm run dev
 ```
 
+Development uses a root **`/`** [Vite `base`](https://vitejs.dev/config/shared-options.html#base). Open:
+
+**http://localhost:5173/**
+
+The study UI is at that URL; the **content editor** is at **http://localhost:5173/edit** (or use **Edit content** in the left sidebar).
+
+Production builds default to the GitHub Pages project path **`/requizle-web/`**. For another deployment target, set `VITE_APP_BASE` before building, for example `/` for a domain-root deployment or `/your-subpath/` for a different subdirectory.
+
 1. **Select a Subject**:
    - Choose a subject from the left sidebar
    - Select specific topics or study all
@@ -72,9 +81,9 @@ npm run dev
 
 4. **Import Custom Content**:
    - Use the Import tab in the right sidebar
-   - Upload JSON files with subjects, questions, or full profiles
+   - Upload `.json` or `.rqzl` files with subjects, subject exports, or full profiles
    - Import type is automatically detected
-   - Imported data merges with existing content (updates existing, adds new)
+   - Imported data merges by matching explicit IDs; imports without IDs create new copies
 
 ## Development
 
@@ -113,21 +122,23 @@ The build files will be created in the `dist` directory.
 ## Project Structure
 
 ```
-requizle/
+requizle-web/
 ├── src/
-│   ├── components/       # React components
-│   │   └── inputs/       # Question type input components
-│   ├── context/          # React context providers
-│   ├── store/            # Zustand state management
-│   ├── test/             # Test setup
-│   ├── utils/            # Utility functions
-│   ├── App.tsx           # Main application component
-│   ├── main.tsx          # Application entry point
-│   ├── types.ts          # TypeScript type definitions
+│   ├── components/       # React components (Layout, sidebars, QuestionCard, AppModals, ...)
+│   │   └── inputs/       # Question-type inputs used during study
+│   ├── context/          # React context (e.g. theme)
+│   ├── pages/            # Full-page routes (e.g. EditorPage)
+│   ├── store/            # Zustand store composition (useQuizStore + action/helper modules)
+│   ├── test/             # Vitest setup
+│   ├── utils/            # quizLogic, importValidation, mediaStorage, rqzlArchive, archiveMedia, appBaseUrl, ...
+│   ├── App.tsx           # Root component (theme + routes)
+│   ├── main.tsx          # Entry (URL normalization, then React mount)
+│   ├── router.tsx        # React Router: study layout vs. /edit
+│   ├── types.ts          # Shared TypeScript types
 │   └── index.css         # Global styles
-├── public/               # Static assets
-├── .github/workflows/    # CI/CD configuration
-└── dist/                 # Production build output
+├── public/               # Static assets: icon.svg, PWA icon-192.png / icon-512.png, sample media
+├── .github/workflows/    # CI: lint, test:coverage, build
+└── dist/                 # Production build output (generated)
 ```
 
 ## Contributing
@@ -141,10 +152,16 @@ requizle/
 ## Credits
 
 - [React](https://react.dev/) - UI framework
+- [React Router](https://reactrouter.com/) - Client-side routing
 - [Zustand](https://github.com/pmndrs/zustand) - State management
 - [Framer Motion](https://www.framer.com/motion/) - Animations
-- [TailwindCSS](https://tailwindcss.com/) - Styling
+- [Tailwind CSS](https://tailwindcss.com/) - Styling
 - [Lucide](https://lucide.dev/) - Icons
+- [KaTeX](https://katex.org/) and [react-katex](https://github.com/MichaelDeBoey/react-katex) - Math rendering
+- [react-syntax-highlighter](https://github.com/react-syntax-highlighter/react-syntax-highlighter) - Code block highlighting
+- [canvas-confetti](https://www.npmjs.com/package/canvas-confetti) - Celebration effects
+- [Vite](https://vitejs.dev/) - Build tool and dev server
+- [vite-plugin-pwa](https://vite-pwa-org.netlify.app/) - Progressive Web App / offline support
 
 ## License
 

@@ -1,13 +1,18 @@
-import React from 'react';
-import {useQuizStore} from '../store/useQuizStore';
+import React, {useState} from 'react';
+import {useQuizStore, DEFAULT_SESSION_STATE} from '../store/useQuizStore';
 import {QuestionCard} from './QuestionCard';
+import {ErrorBoundary} from './ErrorBoundary';
+import {SimpleConfirmModal} from './AppModals';
 import {Shuffle, ListOrdered, RotateCcw, CheckCircle2} from 'lucide-react';
 
 
 export const CenterArea: React.FC = () => {
-    const {profiles, activeProfileId, setMode, restartQueue} = useQuizStore();
+    const {profiles, activeProfileId, setMode, restartQueue, setIncludeMastered} = useQuizStore();
+    const [reviewMasteredOpen, setReviewMasteredOpen] = useState(false);
+    const [feedbackVisible, setFeedbackVisible] = useState(false);
     const activeProfile = profiles[activeProfileId];
-    const {subjects, session} = activeProfile;
+    const subjects = activeProfile?.subjects ?? [];
+    const session = activeProfile?.session ?? DEFAULT_SESSION_STATE;
 
     const currentSubject = subjects.find(s => s.id === session.subjectId);
 
@@ -51,14 +56,8 @@ export const CenterArea: React.FC = () => {
                 </p>
                 <button
                     onClick={() => {
-                        // If we are here, it means the queue is empty.
-                        // If includeMastered is false, we need to enable it to restart.
                         if (!session.includeMastered) {
-                            if (confirm("All questions are mastered. Do you want to review them anyway?")) {
-                                useQuizStore.getState().setIncludeMastered(true);
-                                // We need to wait for state update or just force restart in next tick
-                                setTimeout(() => restartQueue(), 0);
-                            }
+                            setReviewMasteredOpen(true);
                         } else {
                             restartQueue();
                         }
@@ -68,6 +67,23 @@ export const CenterArea: React.FC = () => {
                     <RotateCcw size={18} />
                     Start Over
                 </button>
+                <SimpleConfirmModal
+                    open={reviewMasteredOpen}
+                    title="Review mastered questions?"
+                    confirmLabel="Include mastered"
+                    confirmClassName="flex-1 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors"
+                    onClose={() => setReviewMasteredOpen(false)}
+                    onConfirm={() => {
+                        setIncludeMastered(true);
+                        setReviewMasteredOpen(false);
+                        restartQueue();
+                    }}
+                >
+                    <p>
+                        All questions in your selection are mastered. Include mastered questions so you can review them
+                        again?
+                    </p>
+                </SimpleConfirmModal>
             </div>
         );
     }
@@ -92,8 +108,11 @@ export const CenterArea: React.FC = () => {
 
                 <div className="flex items-center gap-2">
                     <button
+                        disabled={feedbackVisible}
                         onClick={() => setMode(session.mode === 'random' ? 'topic_order' : 'random')}
-                        className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors"
+                        aria-label={session.mode === 'random' ? 'Switch to topic order mode' : 'Switch to random mode'}
+                        aria-pressed={session.mode === 'random'}
+                        className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         title={session.mode === 'random' ? "Switch to Topic Order" : "Switch to Random Shuffle"}
                     >
                         {session.mode === 'random' ? <Shuffle size={20} /> : <ListOrdered size={20} />}
@@ -103,9 +122,19 @@ export const CenterArea: React.FC = () => {
 
             {/* Question Area */}
             <div className="flex-1 overflow-y-auto p-4 md:p-8">
-                <div className="min-h-full flex items-center justify-center">
-                    {/* Key uses turnCounter from store to force remount when advancing to same question */}
-                    <QuestionCard key={`${currentQuestion.id}-${session.turnCounter}`} question={currentQuestion} />
+                <div className="min-h-full flex flex-col items-center justify-center">
+                    <ErrorBoundary 
+                        key={`eb-${currentQuestion.id}-${session.turnCounter}`}
+                        fallbackMessage="This question contains invalid formatting or corrupted data."
+                        onSkip={() => useQuizStore.getState().skipQuestion()} // Skip safely
+                    >
+                        {/* Key uses turnCounter from store to force remount when advancing to same question */}
+                        <QuestionCard
+                            key={`${currentQuestion.id}-${session.turnCounter}`}
+                            question={currentQuestion}
+                            onFeedbackVisibilityChange={setFeedbackVisible}
+                        />
+                    </ErrorBoundary>
                 </div>
             </div>
         </div>

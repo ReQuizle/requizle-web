@@ -14,6 +14,7 @@ import 'fake-indexeddb/auto';
 describe('indexedDBStorage', () => {
     beforeEach(async () => {
         await clearStoreData();
+        localStorage.clear();
     });
 
     describe('setItem and getItem', () => {
@@ -54,6 +55,16 @@ describe('indexedDBStorage', () => {
             const result = await indexedDBStorage.getItem('key');
 
             expect(result).toBe('value2');
+        });
+
+        it('should hydrate from legacy localStorage and migrate it to IndexedDB', async () => {
+            localStorage.setItem('quiz-storage', 'legacy-value');
+
+            const result = await indexedDBStorage.getItem('quiz-storage');
+
+            expect(result).toBe('legacy-value');
+            expect(localStorage.getItem('quiz-storage')).toBeNull();
+            expect(await indexedDBStorage.getItem('quiz-storage')).toBe('legacy-value');
         });
     });
 

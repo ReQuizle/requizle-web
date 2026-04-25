@@ -13,13 +13,8 @@
  * GNU Affero General Public License for more details.
  */
 
-import {useEffect} from 'react';
-import {Layout} from './components/Layout';
-import {LeftSidebar} from './components/LeftSidebar';
-import {RightSidebar} from './components/RightSidebar';
-import {CenterArea} from './components/CenterArea';
-import {useQuizStore} from './store/useQuizStore';
 import {ThemeProvider} from './context/ThemeContext';
+import {AppRoutes} from './router';
 import type {Subject} from './types';
 
 // Sample data for initial load if empty
@@ -233,41 +228,62 @@ const SAMPLE_SUBJECTS: Subject[] = [
             explanation: 'The icon clearly depicts headphones with two ear cups connected by a headband.'
           }
         ]
+      },
+      {
+        id: 'code-blocks',
+        name: 'Code Formatting',
+        questions: [
+          {
+            id: 'q-code-1',
+            type: 'multiple_choice',
+            topicId: 'code-blocks',
+            prompt: 'What does the following JavaScript code output?\n```javascript\nconst arr = [1, 2, 3];\nconsole.log(arr.length);\n```',
+            choices: ['1', '2', '3', 'undefined'],
+            answerIndex: 2,
+            explanation: 'The `length` property of an array returns the number of elements in it, which is `3`.'
+          },
+          {
+            id: 'q-code-2',
+            type: 'multiple_choice',
+            topicId: 'code-blocks',
+            prompt: 'Which CSS property is used here?\n```css\n.box {\n  display: flex;\n}\n```',
+            choices: ['display', 'flex', 'box', 'None'],
+            answerIndex: 0,
+            explanation: '`display` is the CSS property being set to the value `flex`.'
+          }
+        ]
+      },
+      {
+        id: 'markdown-features',
+        name: 'Markdown & Rich Text',
+        questions: [
+          {
+            id: 'q-md-1',
+            type: 'multiple_choice',
+            topicId: 'markdown-features',
+            prompt: 'Which of the following describes what the **ReQuizle** Markdown engine does best?\n\n> "The system efficiently balances the complexity of full Markdown parsers with the **absolute necessity** of *seamless* `inline math` and `code formatting`."\n\nTake your time to guess, if you need a hint, click this spoiler: ||It involves text rendering.|| Or check out [our Wiki](https://requizle.github.io/requizle-wiki/) for more info!',
+            choices: ['Parses all markdown perfectly', 'Supports __underlines__, ~~strikethroughs~~, and spoilers', 'Replaces React entirely', 'Compiles Code'],
+            answerIndex: 1,
+            explanation: 'Yes! It seamlessly parses custom tags like **bold**, *italic*, __underline__, ~~strikethrough~~, spoilers ||hidden||, [links](https://google.com), and blockquotes.'
+          },
+          {
+            id: 'q-md-2',
+            type: 'true_false',
+            topicId: 'markdown-features',
+            prompt: 'Does ReQuizle also support beautiful Markdown tables like this one?\n\n| Feature | Supported? | Coolness |\n|---------|------------|----------|\n| Tables | **Yes** | 100/100 |\n| Code | *Yes* | 90/100 |\n| Math | \\(x^2\\) | 99/100 |',
+            answer: true,
+            explanation: 'Yes! Our custom regex engine intelligently parses standard markdown tables and renders them beautifully with alternating styles and seamless inline element support inside the cells.'
+          }
+        ]
       }
     ]
   }
 ];
 
 function App() {
-  const {profiles, activeProfileId, setSubjects} = useQuizStore();
-  const subjects = profiles[activeProfileId]?.subjects || [];
-
-  useEffect(() => {
-    // Load sample data if no subjects exist (first run)
-    if (subjects.length === 0) {
-      // Convert relative media paths to absolute URLs for portability
-      const baseUrl = window.location.origin + import.meta.env.BASE_URL;
-      const subjectsWithAbsoluteMedia = SAMPLE_SUBJECTS.map(subject => ({
-        ...subject,
-        topics: subject.topics.map(topic => ({
-          ...topic,
-          questions: topic.questions.map(question => ({
-            ...question,
-            media: question.media ? baseUrl + question.media : undefined
-          }))
-        }))
-      }));
-      setSubjects(subjectsWithAbsoluteMedia);
-    }
-  }, [subjects.length, setSubjects]);
-
   return (
     <ThemeProvider>
-      <Layout
-        leftSidebar={<LeftSidebar />}
-        center={<CenterArea />}
-        rightSidebar={<RightSidebar />}
-      />
+      <AppRoutes sampleSubjects={SAMPLE_SUBJECTS} />
     </ThemeProvider>
   );
 }

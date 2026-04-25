@@ -2,7 +2,7 @@ import React, {useState} from 'react';
 import type {WordBankQuestion} from '../../types';
 import {clsx} from 'clsx';
 import {motion} from 'framer-motion';
-import {Latex} from '../Latex';
+import {RichText} from '../RichText';
 
 interface Props {
     question: WordBankQuestion;
@@ -74,7 +74,7 @@ export const WordBankInput: React.FC<Props> = ({question, onAnswer, disabled, su
             <div className="p-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 leading-loose text-lg text-slate-800 dark:text-slate-200">
                 {parts.map((part, i) => (
                     <React.Fragment key={i}>
-                        <span><Latex>{part}</Latex></span>
+                        <span><RichText inline>{part}</RichText></span>
                         {i < parts.length - 1 && (
                             <button
                                 onClick={() => handleSlotClick(i)}
@@ -86,7 +86,7 @@ export const WordBankInput: React.FC<Props> = ({question, onAnswer, disabled, su
                                         : "bg-slate-200/60 dark:bg-slate-600/40 border-slate-400 dark:border-slate-400"
                                 )}
                             >
-                                {filledSlots[i] ? <Latex>{filledSlots[i]}</Latex> : <span className="w-full h-0.5 bg-slate-400 dark:bg-slate-400 rounded"></span>}
+                                {filledSlots[i] ? <RichText inline>{filledSlots[i]}</RichText> : <span className="w-full h-0.5 bg-slate-400 dark:bg-slate-400 rounded"></span>}
                             </button>
                         )}
                     </React.Fragment>
@@ -105,7 +105,7 @@ export const WordBankInput: React.FC<Props> = ({question, onAnswer, disabled, su
                             disabled={disabled}
                             className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm rounded-lg text-slate-700 dark:text-slate-200 font-medium hover:border-indigo-300 dark:hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:-translate-y-0.5 transition-all"
                         >
-                            <Latex>{word}</Latex>
+                            <RichText inline>{word}</RichText>
                         </motion.button>
                     ))}
                 </div>

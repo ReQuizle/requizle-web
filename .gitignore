@@ -8,13 +8,15 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+.vite
+.gh-pages-cache
 dist
 dist-ssr
 coverage
 *.local
 
 # Editor directories and files
-test-data/*
+test-data/
 .vscode/*
 !.vscode/extensions.json
 .idea

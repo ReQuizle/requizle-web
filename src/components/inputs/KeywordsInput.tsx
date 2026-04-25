@@ -43,5 +43,3 @@ export const KeywordsInput: React.FC<Props> = ({onAnswer, disabled, submittedAns
     );
 };
 
-// Legacy export for backwards compatibility
-export {KeywordsInput as ShortAnswerInput};

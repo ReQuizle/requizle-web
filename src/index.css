@@ -69,20 +69,102 @@
     @apply p-2 rounded-lg transition-all duration-200 bg-indigo-600 text-white shadow-lg shadow-indigo-200 dark:shadow-indigo-500/25;
   }
 
-  .text-muted {
-    @apply text-slate-500 dark:text-slate-400;
+  .toggle-switch-input {
+    @apply sr-only;
   }
 
-  .tab-button {
-    @apply flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors text-muted hover:text-slate-700 dark:hover:text-slate-200;
+  .toggle-switch-track {
+    @apply relative block w-11 h-6 rounded-full bg-slate-200 transition-colors dark:bg-slate-700;
   }
 
-  .tab-button-active {
-    @apply flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm;
+  .toggle-switch-track::after {
+    content: '';
+    @apply absolute top-[2px] left-[2px] h-5 w-5 rounded-full border border-gray-300 bg-white transition-all;
+  }
+
+  .toggle-switch-input:focus-visible + .toggle-switch-track {
+    @apply outline-none ring-4 ring-indigo-100 dark:ring-indigo-900;
+  }
+
+  .toggle-switch-input:checked + .toggle-switch-track {
+    @apply bg-indigo-600;
+  }
+
+  .toggle-switch-input:checked + .toggle-switch-track::after {
+    @apply translate-x-full border-white;
+  }
+
+  /* Code blocks (fenced: ```lang ... ```) */
+  .code-block {
+    @apply relative my-4 p-4 pt-8 rounded-xl text-sm leading-relaxed overflow-x-auto font-mono;
+    @apply bg-slate-900 text-slate-100 dark:bg-slate-950 dark:text-slate-200;
+    @apply border border-slate-700/50 dark:border-slate-700;
+    @apply shadow-md;
+  }
+
+  .code-block code {
+    @apply font-mono text-sm whitespace-pre;
+  }
+
+  .code-block-lang {
+    @apply absolute top-0 right-0 px-3 py-1 text-xs font-semibold rounded-bl-lg rounded-tr-xl;
+    @apply bg-indigo-600/80 text-indigo-100;
+  }
+
+  /* Inline code (`...`) */
+  .inline-code {
+    @apply px-1.5 py-0.5 rounded-md text-sm font-mono font-medium;
+    @apply bg-indigo-100/70 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300;
+    @apply border border-indigo-200/60 dark:border-indigo-700/40;
+  }
+
+  .quiz-progress {
+    @apply block w-full h-1.5 mt-2 overflow-hidden rounded-full appearance-none border-0;
+    @apply bg-slate-100 dark:bg-slate-700;
+  }
+
+  .quiz-progress-sm {
+    @apply h-1 mt-1.5;
+  }
+
+  .quiz-progress::-webkit-progress-bar {
+    @apply bg-slate-100 dark:bg-slate-700 rounded-full;
+  }
+
+  .quiz-progress::-webkit-progress-value {
+    @apply rounded-full transition-all duration-500;
+  }
+
+  .quiz-progress::-moz-progress-bar {
+    @apply rounded-full transition-all duration-500;
+  }
+
+  .quiz-progress-green::-webkit-progress-value {
+    @apply bg-green-500;
+  }
+
+  .quiz-progress-green::-moz-progress-bar {
+    @apply bg-green-500;
+  }
+
+  .quiz-progress-indigo::-webkit-progress-value {
+    @apply bg-indigo-500;
+  }
+
+  .quiz-progress-indigo::-moz-progress-bar {
+    @apply bg-indigo-500;
+  }
+
+  .quiz-progress-emerald::-webkit-progress-value {
+    @apply bg-emerald-500;
+  }
+
+  .quiz-progress-emerald::-moz-progress-bar {
+    @apply bg-emerald-500;
   }
 }
 
-/* Custom Animations */
+/* Ambient background animation */
 @keyframes blob {
   0% {
     transform: translate(0px, 0px) scale(1);

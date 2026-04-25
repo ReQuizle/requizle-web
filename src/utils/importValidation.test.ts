@@ -6,10 +6,255 @@ import {
     groupMediaByFilename,
     replaceMediaByPath,
     isRemoteOrStoredMedia,
-    getFilename
+    getFilename,
+    isSubjectExportV1,
+    sanitizeSubjectProgress,
+    validateProfileImport,
+    isImportableQuizPayload
 } from './importValidation';
 
 describe('importValidation', () => {
+    describe('isSubjectExportV1', () => {
+        it('accepts export with progress', () => {
+            expect(
+                isSubjectExportV1({
+                    requizleSubjectExport: 1,
+                    subject: {id: 's1', name: 'S', topics: []},
+                    progress: {}
+                })
+            ).toBe(true);
+        });
+
+        it('accepts export without progress (questions-only share)', () => {
+            expect(
+                isSubjectExportV1({
+                    requizleSubjectExport: 1,
+                    subject: {id: 's1', name: 'S', topics: []}
+                })
+            ).toBe(true);
+        });
+
+        it('rejects non-object progress', () => {
+            expect(
+                isSubjectExportV1({
+                    requizleSubjectExport: 1,
+                    subject: {id: 's1', name: 'S', topics: []},
+                    progress: 'nope'
+                })
+            ).toBe(false);
+        });
+
+        it('rejects invalid subject shape', () => {
+            expect(
+                isSubjectExportV1({
+                    requizleSubjectExport: 1,
+                    subject: {id: 's1', name: 'S'}
+                })
+            ).toBe(false);
+        });
+
+        it('rejects malformed progress entries', () => {
+            expect(
+                isSubjectExportV1({
+                    requizleSubjectExport: 1,
+                    subject: {
+                        id: 's1',
+                        name: 'S',
+                        topics: [{
+                            id: 't1',
+                            name: 'T',
+                            questions: [{id: 'q1', type: 'true_false', prompt: 'Q?', answer: true}]
+                        }]
+                    },
+                    progress: {
+                        t1: {
+                            q1: {id: 'q1', attempts: 'many', correctStreak: 1, mastered: true}
+                        }
+                    }
+                })
+            ).toBe(false);
+        });
+
+        it('rejects progress for unknown questions', () => {
+            expect(
+                isSubjectExportV1({
+                    requizleSubjectExport: 1,
+                    subject: {
+                        id: 's1',
+                        name: 'S',
+                        topics: [{
+                            id: 't1',
+                            name: 'T',
+                            questions: [{id: 'q1', type: 'true_false', prompt: 'Q?', answer: true}]
+                        }]
+                    },
+                    progress: {
+                        t1: {
+                            q2: {id: 'q2', attempts: 1, correctStreak: 1, mastered: true}
+                        }
+                    }
+                })
+            ).toBe(false);
+        });
+    });
+
+    describe('sanitizeSubjectProgress', () => {
+        it('keeps valid progress and drops malformed entries', () => {
+            const subject = validateSubjects({
+                id: 's1',
+                name: 'S',
+                topics: [{
+                    id: 't1',
+                    name: 'T',
+                    questions: [
+                        {id: 'q1', type: 'true_false', prompt: 'Q1?', answer: true},
+                        {id: 'q2', type: 'true_false', prompt: 'Q2?', answer: false}
+                    ]
+                }]
+            })[0];
+
+            const progress = sanitizeSubjectProgress(
+                {
+                    t1: {
+                        q1: {id: 'wrong-id', attempts: 2, correctStreak: 1, mastered: true},
+                        q2: {id: 'q2', attempts: 'bad', correctStreak: 0, mastered: false}
+                    },
+                    missingTopic: {
+                        q3: {id: 'q3', attempts: 1, correctStreak: 1, mastered: true}
+                    }
+                },
+                subject
+            );
+
+            expect(progress).toEqual({
+                t1: {
+                    q1: {id: 'q1', attempts: 2, correctStreak: 1, mastered: true}
+                }
+            });
+        });
+    });
+
+    describe('validateProfileImport', () => {
+        it('sanitizes profile imports and strips transport-only fields', () => {
+            const profile = validateProfileImport({
+                id: ' imported ',
+                name: ' Imported Profile ',
+                createdAt: 123,
+                subjects: [{
+                    id: 's1',
+                    name: 'S',
+                    topics: [{
+                        id: 't1',
+                        name: 'T',
+                        questions: [
+                            {id: 'q1', type: 'true_false', prompt: 'Q1?', answer: true},
+                            {id: 'q2', type: 'true_false', prompt: 'Q2?', answer: false}
+                        ]
+                    }]
+                }],
+                progress: {
+                    s1: {
+                        t1: {
+                            q1: {id: 'q1', attempts: 2, correctStreak: 1, mastered: true},
+                            q2: {id: 'q2', attempts: 'bad', correctStreak: 0, mastered: false},
+                            q3: {id: 'q3', attempts: 1, correctStreak: 1, mastered: true}
+                        }
+                    },
+                    rogueSubject: {
+                        t1: {
+                            q1: {id: 'q1', attempts: 1, correctStreak: 1, mastered: true}
+                        }
+                    }
+                },
+                session: {
+                    subjectId: 's1',
+                    selectedTopicIds: ['t1', 'missing-topic', 42],
+                    mode: 'invalid-mode',
+                    includeMastered: 'yes',
+                    queue: ['q1', 'missing-question', 42],
+                    currentQuestionId: 'q2',
+                    turnCounter: -1
+                },
+                _media: [{id: 'm1', filename: 'image.png', mimeType: 'image/png', dataBase64: 'abc'}]
+            });
+
+            expect(profile).toMatchObject({
+                id: 'imported',
+                name: 'Imported Profile',
+                createdAt: 123,
+                progress: {
+                    s1: {
+                        t1: {
+                            q1: {id: 'q1', attempts: 2, correctStreak: 1, mastered: true}
+                        }
+                    }
+                },
+                session: {
+                    subjectId: 's1',
+                    selectedTopicIds: ['t1'],
+                    mode: 'topic_order',
+                    includeMastered: false,
+                    queue: ['q1'],
+                    currentQuestionId: 'q2',
+                    turnCounter: 0
+                }
+            });
+            expect(profile).not.toHaveProperty('_media');
+            expect(profile.progress.s1?.t1?.q2).toBeUndefined();
+            expect(profile.progress.s1?.t1?.q3).toBeUndefined();
+            expect(profile.progress.rogueSubject).toBeUndefined();
+        });
+
+        it('rejects malformed profile imports', () => {
+            expect(() => validateProfileImport({
+                id: '',
+                name: 'Profile',
+                subjects: []
+            })).toThrow(/id/);
+
+            expect(() => validateProfileImport({
+                id: 'p1',
+                name: 'Profile',
+                subjects: [{id: 's1', name: 'Broken'}]
+            })).toThrow(/topics/);
+        });
+    });
+
+    describe('isImportableQuizPayload', () => {
+        it('accepts valid subject, profile, and subject-export payloads', () => {
+            const subject = {
+                id: 's1',
+                name: 'S',
+                topics: [{
+                    id: 't1',
+                    name: 'T',
+                    questions: [{id: 'q1', type: 'true_false', prompt: 'Q?', answer: true}]
+                }]
+            };
+
+            expect(isImportableQuizPayload(subject)).toBe(true);
+            expect(isImportableQuizPayload({
+                id: 'p1',
+                name: 'Profile',
+                subjects: [subject],
+                progress: {},
+                session: {},
+                createdAt: 123
+            })).toBe(true);
+            expect(isImportableQuizPayload({
+                requizleSubjectExport: 1,
+                subject
+            })).toBe(true);
+        });
+
+        it('rejects invalid payloads before media restoration', () => {
+            expect(isImportableQuizPayload({
+                _media: [{id: 'm1', filename: 'image.png', mimeType: 'image/png', dataBase64: 'abc'}],
+                subjects: [{id: 's1', name: 'Broken'}]
+            })).toBe(false);
+        });
+    });
+
     describe('isRemoteOrStoredMedia', () => {
         it('should identify HTTP URLs', () => {
             expect(isRemoteOrStoredMedia('http://example.com/image.png')).toBe(true);
@@ -100,6 +345,119 @@ describe('importValidation', () => {
             expect(() => validateSubjects(data)).toThrow(/Missing or invalid "type"/);
         });
 
+        it('should reject non-string answer content that would break rendering', () => {
+            expect(() => validateSubjects([{
+                name: 'Test',
+                topics: [{
+                    name: 'Topic',
+                    questions: [{
+                        type: 'multiple_choice',
+                        prompt: 'Question?',
+                        choices: ['A', 123],
+                        answerIndex: 0
+                    }]
+                }]
+            }])).toThrow(/choices/);
+
+            expect(() => validateSubjects([{
+                name: 'Test',
+                topics: [{
+                    name: 'Topic',
+                    questions: [{
+                        type: 'keywords',
+                        prompt: 'Question?',
+                        answer: ['ok', 123]
+                    }]
+                }]
+            }])).toThrow(/array must contain strings/);
+
+            expect(() => validateSubjects([{
+                name: 'Test',
+                topics: [{
+                    name: 'Topic',
+                    questions: [{
+                        type: 'word_bank',
+                        prompt: 'Question?',
+                        sentence: 'A _',
+                        wordBank: ['A'],
+                        answers: [123]
+                    }]
+                }]
+            }])).toThrow(/answers/);
+        });
+
+        it('should reject fractional answer indices', () => {
+            expect(() => validateSubjects([{
+                name: 'Test',
+                topics: [{
+                    name: 'Topic',
+                    questions: [{
+                        type: 'multiple_choice',
+                        prompt: 'Question?',
+                        choices: ['A', 'B'],
+                        answerIndex: 0.5
+                    }]
+                }]
+            }])).toThrow(/answerIndex/);
+
+            expect(() => validateSubjects([{
+                name: 'Test',
+                topics: [{
+                    name: 'Topic',
+                    questions: [{
+                        type: 'multiple_answer',
+                        prompt: 'Question?',
+                        choices: ['A', 'B'],
+                        answerIndices: [0.5]
+                    }]
+                }]
+            }])).toThrow(/answerIndices/);
+        });
+
+        it('should reject impossible answer definitions', () => {
+            expect(() => validateSubjects([{
+                name: 'Test',
+                topics: [{
+                    name: 'Topic',
+                    questions: [{
+                        type: 'multiple_answer',
+                        prompt: 'Question?',
+                        choices: ['A', 'B'],
+                        answerIndices: [0, 0]
+                    }]
+                }]
+            }])).toThrow(/duplicate/);
+
+            expect(() => validateSubjects([{
+                name: 'Test',
+                topics: [{
+                    name: 'Topic',
+                    questions: [{
+                        type: 'matching',
+                        prompt: 'Question?',
+                        pairs: [
+                            {left: 'A', right: '1'},
+                            {left: 'A', right: '2'}
+                        ]
+                    }]
+                }]
+            }])).toThrow(/unique/);
+
+            expect(() => validateSubjects([{
+                name: 'Test',
+                topics: [{
+                    name: 'Topic',
+                    questions: [{
+                        type: 'word_bank',
+                        prompt: 'Question?',
+                        sentence: '_ and _',
+                        wordBank: ['same'],
+                        answers: ['same', 'same']
+                    }]
+                }]
+            }])).toThrow(/wordBank/);
+        });
+
         it('should generate IDs when not provided', () => {
             const data = [{
                 name: 'Test',
@@ -141,6 +499,34 @@ describe('importValidation', () => {
             expect(result[0].topics[0].questions[0].id).toBe('my-question');
         });
 
+        it('normalizes questions and strips invalid optional fields', () => {
+            const result = validateSubjects([{
+                id: 's1',
+                name: 'Subject',
+                topics: [{
+                    id: 't1',
+                    name: 'Topic',
+                    questions: [{
+                        id: 'q1',
+                        type: 'true_false',
+                        prompt: '  Question?  ',
+                        answer: true,
+                        media: 123,
+                        explanation: ['not valid'],
+                        unexpected: 'remove me'
+                    }]
+                }]
+            }]);
+
+            expect(result[0].topics[0].questions[0]).toEqual({
+                id: 'q1',
+                type: 'true_false',
+                prompt: 'Question?',
+                topicId: 't1',
+                answer: true
+            });
+        });
+
         it('should validate all question types', () => {
             const data = [{
                 name: 'Test',
@@ -159,6 +545,58 @@ describe('importValidation', () => {
 
             const result = validateSubjects(data);
             expect(result[0].topics[0].questions).toHaveLength(6);
+        });
+
+        it('rejects duplicate subject IDs in one import payload', () => {
+            expect(() => validateSubjects([
+                {
+                    id: 's1',
+                    name: 'Subject A',
+                    topics: [{id: 't1', name: 'Topic A', questions: [{id: 'q1', type: 'true_false', prompt: 'Q?', answer: true}]}]
+                },
+                {
+                    id: 's1',
+                    name: 'Subject B',
+                    topics: [{id: 't2', name: 'Topic B', questions: [{id: 'q2', type: 'true_false', prompt: 'Q?', answer: false}]}]
+                }
+            ])).toThrow(/duplicate subject id/i);
+        });
+
+        it('rejects duplicate topic IDs within a subject', () => {
+            expect(() => validateSubjects([{
+                id: 's1',
+                name: 'Subject',
+                topics: [
+                    {id: 't1', name: 'Topic A', questions: [{id: 'q1', type: 'true_false', prompt: 'Q1?', answer: true}]},
+                    {id: 't1', name: 'Topic B', questions: [{id: 'q2', type: 'true_false', prompt: 'Q2?', answer: false}]}
+                ]
+            }])).toThrow(/duplicate topic id/i);
+        });
+
+        it('rejects duplicate question IDs within the same topic', () => {
+            expect(() => validateSubjects([{
+                id: 's1',
+                name: 'Subject',
+                topics: [{
+                    id: 't1',
+                    name: 'Topic',
+                    questions: [
+                        {id: 'q1', type: 'true_false', prompt: 'Q1?', answer: true},
+                        {id: 'q1', type: 'true_false', prompt: 'Q2?', answer: false}
+                    ]
+                }]
+            }])).toThrow(/duplicate question id/i);
+        });
+
+        it('rejects duplicate question IDs across topics in the same subject', () => {
+            expect(() => validateSubjects([{
+                id: 's1',
+                name: 'Subject',
+                topics: [
+                    {id: 't1', name: 'Topic A', questions: [{id: 'q1', type: 'true_false', prompt: 'Q1?', answer: true}]},
+                    {id: 't2', name: 'Topic B', questions: [{id: 'q1', type: 'true_false', prompt: 'Q2?', answer: false}]}
+                ]
+            }])).toThrow(/duplicate question id/i);
         });
     });
 

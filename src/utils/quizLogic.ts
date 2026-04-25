@@ -1,4 +1,5 @@
 import type {Question, QuestionProgress, Subject, StudyMode} from '../types';
+import {shuffleArray} from './array';
 
 export const calculateMastery = (
     questions: Question[],
@@ -10,7 +11,7 @@ export const calculateMastery = (
 };
 
 export const getActiveQuestions = (
-    subject: Subject,
+    subject: Subject | null | undefined,
     selectedTopicIds: string[]
 ): Question[] => {
     if (!subject) return [];
@@ -43,11 +44,7 @@ export const generateQueue = (
     const queue = [...candidates];
 
     if (mode === 'random') {
-        // Fisher-Yates shuffle
-        for (let i = queue.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [queue[i], queue[j]] = [queue[j], queue[i]];
-        }
+        return shuffleArray(queue).map(q => q.id);
     } else {
         // Topic order is preserved by default if we just flatMap topics in order
         // But we need to ensure 'questions' passed in is already in topic order
@@ -55,6 +52,29 @@ export const generateQueue = (
     }
 
     return queue.map(q => q.id);
+};
+
+/** Clamp and order requeue gap bounds for "N positions ahead" in the queue (0 = front). */
+export const normalizeRequeueGapRange = (minGap: number, maxGap: number): {min: number; max: number} => {
+    let min = Number.isFinite(minGap) ? Math.round(minGap) : 4;
+    let max = Number.isFinite(maxGap) ? Math.round(maxGap) : 6;
+    min = Math.max(0, Math.min(100, min));
+    max = Math.max(0, Math.min(100, max));
+    if (min > max) {
+        [min, max] = [max, min];
+    }
+    return {min, max};
+};
+
+/**
+ * Random insert index for re-queuing the current question after a wrong answer or skip.
+ * Matches previous behavior: pick offset in [minGap, maxGap], then cap at queue length.
+ */
+export const randomRequeueInsertIndex = (queueLength: number, minGap: number, maxGap: number): number => {
+    const {min, max} = normalizeRequeueGapRange(minGap, maxGap);
+    const span = max - min + 1;
+    const offset = min + Math.floor(Math.random() * span);
+    return Math.min(offset, queueLength);
 };
 
 export const checkAnswer = (question: Question, userAnswer: unknown): boolean => {

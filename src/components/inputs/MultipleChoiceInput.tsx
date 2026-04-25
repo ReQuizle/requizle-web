@@ -2,7 +2,7 @@ import React from 'react';
 import type {MultipleChoiceQuestion} from '../../types';
 import {clsx} from 'clsx';
 import {motion} from 'framer-motion';
-import {Latex} from '../Latex';
+import {RichText} from '../RichText';
 
 interface Props {
     question: MultipleChoiceQuestion;
@@ -59,7 +59,7 @@ export const MultipleChoiceInput: React.FC<Props> = ({question, onAnswer, disabl
                             )}>
                                 {String.fromCharCode(65 + index)}
                             </div>
-                            <span><Latex>{choice}</Latex></span>
+                            <span><RichText inline>{choice}</RichText></span>
                         </div>
                     </motion.button>
                 );

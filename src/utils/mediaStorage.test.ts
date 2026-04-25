@@ -11,7 +11,9 @@ import {
     clearAllMedia,
     isIndexedDBMedia,
     extractMediaId,
-    createMediaRef
+    createMediaRef,
+    serializeMediaEntry,
+    restoreMediaEntry
 } from './mediaStorage';
 
 // Mock IndexedDB with fake-indexeddb
@@ -25,40 +27,38 @@ describe('mediaStorage', () => {
 
     describe('storeMedia', () => {
         it('should store media and return an id', async () => {
-            const dataUri = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
             const filename = 'test.png';
+            const blob = new Blob(['abc'], {type: 'image/png'});
 
-            const id = await storeMedia(dataUri, filename);
+            const id = await storeMedia(blob, filename);
 
             expect(id).toMatch(/^media-\d+-[a-z0-9]+$/);
         });
 
         it('should store media with correct metadata', async () => {
-            const dataUri = 'data:image/jpeg;base64,/9j/4AAQSkZJRg==';
             const filename = 'photo.jpg';
+            const blob = new Blob(['jpeg-data'], {type: 'image/jpeg'});
 
-            const id = await storeMedia(dataUri, filename);
+            const id = await storeMedia(blob, filename);
             const entry = await getMedia(id);
 
             expect(entry).not.toBeNull();
             expect(entry?.filename).toBe('photo.jpg');
             expect(entry?.mimeType).toBe('image/jpeg');
-            expect(entry?.data).toBe(dataUri);
-            expect(entry?.size).toBe(dataUri.length);
+            expect(entry?.blob).toBeDefined();
+            expect(entry?.size).toBe(blob.size);
             expect(entry?.createdAt).toBeLessThanOrEqual(Date.now());
         });
 
-        it('should extract mime type from data URI', async () => {
-            const videoUri = 'data:video/mp4;base64,AAAAHGZ0eXBpc29t';
-            const id = await storeMedia(videoUri, 'video.mp4');
+        it('should keep blob mime type', async () => {
+            const id = await storeMedia(new Blob(['video'], {type: 'video/mp4'}), 'video.mp4');
             const entry = await getMedia(id);
 
             expect(entry?.mimeType).toBe('video/mp4');
         });
 
-        it('should use fallback mime type for unknown format', async () => {
-            const unknownUri = 'data:;base64,SGVsbG8=';
-            const id = await storeMedia(unknownUri, 'unknown.bin');
+        it('should use fallback mime type for unknown blob type', async () => {
+            const id = await storeMedia(new Blob(['unknown']), 'unknown.bin');
             const entry = await getMedia(id);
 
             expect(entry?.mimeType).toBe('application/octet-stream');
@@ -67,14 +67,13 @@ describe('mediaStorage', () => {
 
     describe('getMedia', () => {
         it('should retrieve stored media by id', async () => {
-            const dataUri = 'data:image/png;base64,test123';
-            const id = await storeMedia(dataUri, 'test.png');
+            const id = await storeMedia(new Blob(['test123'], {type: 'image/png'}), 'test.png');
 
             const entry = await getMedia(id);
 
             expect(entry).not.toBeNull();
             expect(entry?.id).toBe(id);
-            expect(entry?.data).toBe(dataUri);
+            expect(entry?.blob).toBeDefined();
         });
 
         it('should return null for non-existent id', async () => {
@@ -86,7 +85,7 @@ describe('mediaStorage', () => {
 
     describe('deleteMedia', () => {
         it('should delete media by id', async () => {
-            const id = await storeMedia('data:image/png;base64,test', 'test.png');
+            const id = await storeMedia(new Blob(['test'], {type: 'image/png'}), 'test.png');
 
             await deleteMedia(id);
 
@@ -107,9 +106,9 @@ describe('mediaStorage', () => {
         });
 
         it('should return all stored media ids', async () => {
-            const id1 = await storeMedia('data:image/png;base64,a', 'a.png');
-            const id2 = await storeMedia('data:image/png;base64,b', 'b.png');
-            const id3 = await storeMedia('data:video/mp4;base64,c', 'c.mp4');
+            const id1 = await storeMedia(new Blob(['a'], {type: 'image/png'}), 'a.png');
+            const id2 = await storeMedia(new Blob(['b'], {type: 'image/png'}), 'b.png');
+            const id3 = await storeMedia(new Blob(['c'], {type: 'video/mp4'}), 'c.mp4');
 
             const ids = await getAllMediaIds();
 
@@ -122,8 +121,8 @@ describe('mediaStorage', () => {
 
     describe('clearAllMedia', () => {
         it('should remove all stored media', async () => {
-            await storeMedia('data:image/png;base64,a', 'a.png');
-            await storeMedia('data:image/png;base64,b', 'b.png');
+            await storeMedia(new Blob(['a'], {type: 'image/png'}), 'a.png');
+            await storeMedia(new Blob(['b'], {type: 'image/png'}), 'b.png');
 
             await clearAllMedia();
 
@@ -133,6 +132,23 @@ describe('mediaStorage', () => {
     });
 
     describe('helper functions', () => {
+        it('serializes and restores media entries', async () => {
+            const id = await storeMedia(new Blob(['payload'], {type: 'text/plain'}), 'payload.txt');
+            const serialized = await serializeMediaEntry({
+                id,
+                blob: new Blob(['payload'], {type: 'text/plain'}),
+                filename: 'payload.txt',
+                mimeType: 'text/plain',
+                size: 7,
+                createdAt: Date.now()
+            });
+            await clearAllMedia();
+            await restoreMediaEntry(serialized);
+            const restored = await getMedia(id);
+            expect(restored?.filename).toBe('payload.txt');
+            expect(restored?.mimeType).toBe('text/plain');
+        });
+
         describe('isIndexedDBMedia', () => {
             it('should return true for idb: references', () => {
                 expect(isIndexedDBMedia('idb:media-123')).toBe(true);

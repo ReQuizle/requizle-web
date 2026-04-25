@@ -3,7 +3,7 @@ import type {MultipleAnswerQuestion} from '../../types';
 import {clsx} from 'clsx';
 import {motion} from 'framer-motion';
 import {CheckSquare, Square} from 'lucide-react';
-import {Latex} from '../Latex';
+import {RichText} from '../RichText';
 
 interface Props {
     question: MultipleAnswerQuestion;
@@ -93,7 +93,7 @@ export const MultipleAnswerInput: React.FC<Props> = ({question, onAnswer, disabl
                             )}>
                                 {isSelected ? <CheckSquare size={24} /> : <Square size={24} />}
                             </div>
-                            <span className="text-lg font-medium"><Latex>{choice}</Latex></span>
+                            <span className="text-lg font-medium"><RichText inline>{choice}</RichText></span>
                         </motion.button>
                     );
                 })}

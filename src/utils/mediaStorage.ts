@@ -9,6 +9,21 @@ const STORE_NAME = 'media';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
+function waitForTransaction(transaction: IDBTransaction, message: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+        transaction.oncomplete = () => resolve();
+        transaction.onabort = () => reject(transaction.error ?? new Error(message));
+        transaction.onerror = () => reject(transaction.error ?? new Error(message));
+    });
+}
+
+function waitForRequest<T>(request: IDBRequest<T>, message: string): Promise<T> {
+    return new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error ?? new Error(message));
+    });
+}
+
 function openDB(): Promise<IDBDatabase> {
     if (dbPromise) return dbPromise;
 
@@ -16,10 +31,15 @@ function openDB(): Promise<IDBDatabase> {
         const request = indexedDB.open(DB_NAME, DB_VERSION);
 
         request.onerror = () => {
+            dbPromise = null;
             reject(new Error('Failed to open IndexedDB'));
         };
 
         request.onsuccess = () => {
+            request.result.onversionchange = () => {
+                request.result.close();
+                dbPromise = null;
+            };
             resolve(request.result);
         };
 
@@ -36,70 +56,97 @@ function openDB(): Promise<IDBDatabase> {
 
 export interface MediaEntry {
     id: string;
-    data: string; // base64 data URI
+    blob: Blob;
     filename: string;
     mimeType: string;
     size: number;
     createdAt: number;
 }
 
+export interface SerializedMediaEntry {
+    id: string;
+    filename: string;
+    mimeType: string;
+    dataBase64: string;
+}
+
+export interface RawMediaEntry {
+    id: string;
+    filename: string;
+    mimeType: string;
+    blob: Blob;
+}
+
 /**
  * Store media in IndexedDB
  * @returns The media ID (use as `idb:${id}` in question.media)
  */
-export async function storeMedia(dataUri: string, filename: string): Promise<string> {
+export async function storeMedia(blob: Blob, filename: string): Promise<string> {
     const db = await openDB();
     const id = `media-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-
-    // Extract mime type from data URI
-    const mimeMatch = dataUri.match(/^data:([^;]+);/);
-    const mimeType = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+    const mimeType = blob.type || 'application/octet-stream';
 
     const entry: MediaEntry = {
         id,
-        data: dataUri,
+        blob,
         filename,
         mimeType,
-        size: dataUri.length,
+        size: blob.size,
         createdAt: Date.now()
     };
 
     return new Promise((resolve, reject) => {
         const transaction = db.transaction(STORE_NAME, 'readwrite');
         const store = transaction.objectStore(STORE_NAME);
-        const request = store.put(entry);
+        store.put(entry);
 
-        request.onsuccess = () => resolve(id);
-        request.onerror = () => reject(new Error('Failed to store media'));
+        waitForTransaction(transaction, 'Failed to store media')
+            .then(() => resolve(id))
+            .catch(reject);
     });
 }
 
 /**
- * Restore a full media entry (used for import/export)
+ * Restore a full media entry from serialized payload (used for import/export)
  */
-export async function restoreMediaEntry(entry: {id: string; data: string; filename: string}): Promise<void> {
-    const db = await openDB();
+export async function restoreMediaEntry(entry: SerializedMediaEntry): Promise<void> {
+    const blob = base64ToBlob(entry.dataBase64, entry.mimeType);
+    await restoreRawMediaEntry({
+        id: entry.id,
+        filename: entry.filename,
+        mimeType: entry.mimeType,
+        blob
+    });
+}
 
-    // Extract mime type from data URI
-    const mimeMatch = entry.data.match(/^data:([^;]+);/);
-    const mimeType = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+export async function restoreRawMediaEntry(
+    entry: RawMediaEntry,
+    options: {overwrite?: boolean} = {}
+): Promise<void> {
+    const {overwrite = false} = options;
+    if (!overwrite) {
+        const existing = await getMedia(entry.id);
+        if (existing) {
+            throw new Error(`Media ID already exists: ${entry.id}`);
+        }
+    }
+    const db = await openDB();
 
     const fullEntry: MediaEntry = {
         id: entry.id,
-        data: entry.data,
+        blob: entry.blob,
         filename: entry.filename,
-        mimeType,
-        size: entry.data.length,
+        mimeType: entry.mimeType,
+        size: entry.blob.size,
         createdAt: Date.now()
     };
 
     return new Promise((resolve, reject) => {
         const transaction = db.transaction(STORE_NAME, 'readwrite');
         const store = transaction.objectStore(STORE_NAME);
-        const request = store.put(fullEntry);
+        store.put(fullEntry);
 
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(new Error('Failed to restore media'));
+        waitForTransaction(transaction, 'Failed to restore media').then(resolve).catch(reject);
     });
 }
 
@@ -113,9 +160,14 @@ export async function getMedia(id: string): Promise<MediaEntry | null> {
         const transaction = db.transaction(STORE_NAME, 'readonly');
         const store = transaction.objectStore(STORE_NAME);
         const request = store.get(id);
+        const transactionDone = waitForTransaction(transaction, 'Failed to retrieve media');
 
-        request.onsuccess = () => resolve(request.result || null);
-        request.onerror = () => reject(new Error('Failed to retrieve media'));
+        Promise.all([
+            waitForRequest<MediaEntry | undefined>(request, 'Failed to retrieve media'),
+            transactionDone
+        ])
+            .then(([result]) => resolve(result || null))
+            .catch(reject);
     });
 }
 
@@ -128,10 +180,9 @@ export async function deleteMedia(id: string): Promise<void> {
     return new Promise((resolve, reject) => {
         const transaction = db.transaction(STORE_NAME, 'readwrite');
         const store = transaction.objectStore(STORE_NAME);
-        const request = store.delete(id);
+        store.delete(id);
 
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(new Error('Failed to delete media'));
+        waitForTransaction(transaction, 'Failed to delete media').then(resolve).catch(reject);
     });
 }
 
@@ -145,9 +196,14 @@ export async function getAllMediaIds(): Promise<string[]> {
         const transaction = db.transaction(STORE_NAME, 'readonly');
         const store = transaction.objectStore(STORE_NAME);
         const request = store.getAllKeys();
+        const transactionDone = waitForTransaction(transaction, 'Failed to get media keys');
 
-        request.onsuccess = () => resolve(request.result as string[]);
-        request.onerror = () => reject(new Error('Failed to get media keys'));
+        Promise.all([
+            waitForRequest<IDBValidKey[]>(request, 'Failed to get media keys'),
+            transactionDone
+        ])
+            .then(([result]) => resolve(result as string[]))
+            .catch(reject);
     });
 }
 
@@ -160,10 +216,9 @@ export async function clearAllMedia(): Promise<void> {
     return new Promise((resolve, reject) => {
         const transaction = db.transaction(STORE_NAME, 'readwrite');
         const store = transaction.objectStore(STORE_NAME);
-        const request = store.clear();
+        store.clear();
 
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(new Error('Failed to clear media'));
+        waitForTransaction(transaction, 'Failed to clear media').then(resolve).catch(reject);
     });
 }
 
@@ -186,4 +241,48 @@ export function extractMediaId(mediaRef: string): string {
  */
 export function createMediaRef(id: string): string {
     return `idb:${id}`;
+}
+
+export function createMediaObjectUrl(media: MediaEntry): string {
+    return URL.createObjectURL(media.blob);
+}
+
+export function revokeMediaObjectUrl(url: string): void {
+    URL.revokeObjectURL(url);
+}
+
+export async function serializeMediaEntry(media: MediaEntry): Promise<SerializedMediaEntry> {
+    return {
+        id: media.id,
+        filename: media.filename,
+        mimeType: media.mimeType,
+        dataBase64: await blobToBase64(media.blob)
+    };
+}
+
+async function blobToBase64(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const result = String(reader.result);
+            const marker = 'base64,';
+            const markerIndex = result.indexOf(marker);
+            if (markerIndex === -1) {
+                reject(new Error('Failed to serialize media blob'));
+                return;
+            }
+            resolve(result.slice(markerIndex + marker.length));
+        };
+        reader.onerror = () => reject(reader.error ?? new Error('Failed to serialize media blob'));
+        reader.readAsDataURL(blob);
+    });
+}
+
+function base64ToBlob(dataBase64: string, mimeType: string): Blob {
+    const binary = atob(dataBase64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return new Blob([bytes], {type: mimeType || 'application/octet-stream'});
 }

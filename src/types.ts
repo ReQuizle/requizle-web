@@ -12,7 +12,7 @@ export interface BaseQuestion {
     prompt: string;
     topicId: string;
     explanation?: string;
-    media?: string; // URL, data URI, or filename for images/videos
+    media?: string; // URL/path or idb: reference for images/videos
 }
 
 export interface MultipleChoiceQuestion extends BaseQuestion {
@@ -95,6 +95,14 @@ export interface SessionState {
     queue: string[]; // question IDs
     currentQuestionId: string | null;
     turnCounter: number; // Increments each time we advance to a new question
+}
+
+/** Single-subject backup for Import tab or left-sidebar export (optional progress + optional embedded media). */
+export interface SubjectExportV1 {
+    requizleSubjectExport: 1;
+    subject: Subject;
+    /** topicId -> questionId -> progress. Omit or leave empty to share the question set only. */
+    progress?: Record<string, Record<string, QuestionProgress>>;
 }
 
 export interface Profile {

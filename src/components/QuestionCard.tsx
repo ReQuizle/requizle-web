@@ -1,92 +1,70 @@
-import React, {useState, useEffect} from 'react';
+import React, {useState} from 'react';
 import type {Question} from '../types';
 import {useQuizStore} from '../store/useQuizStore';
-import {getMedia, isIndexedDBMedia, extractMediaId} from '../utils/mediaStorage';
+import {isIndexedDBMedia} from '../utils/mediaStorage';
+import {isVideoMediaUrl} from '../utils/mediaFormat';
 import {MultipleAnswerInput} from './inputs/MultipleAnswerInput';
 import {MultipleChoiceInput} from './inputs/MultipleChoiceInput';
 import {TrueFalseInput} from './inputs/TrueFalseInput';
 import {KeywordsInput} from './inputs/KeywordsInput';
 import {MatchingInput} from './inputs/MatchingInput';
 import {WordBankInput} from './inputs/WordBankInput';
-import {Latex} from './Latex';
+import {RichText} from './RichText';
 import {motion, AnimatePresence} from 'framer-motion';
 import confetti from 'canvas-confetti';
 import {ArrowRight, SkipForward, AlertCircle, CheckCircle2} from 'lucide-react';
+import {useResolvedMediaUrl} from '../utils/useResolvedMediaUrl';
+
+const CONFETTI_COOLDOWN_MS = 700;
+let lastConfettiAt = 0;
+
+function shouldPlayConfetti(): boolean {
+    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+        return false;
+    }
+    const now = Date.now();
+    if (now - lastConfettiAt < CONFETTI_COOLDOWN_MS) {
+        return false;
+    }
+    lastConfettiAt = now;
+    return true;
+}
 
 interface Props {
     question: Question;
+    onFeedbackVisibilityChange?: (visible: boolean) => void;
 }
 
 type AnswerType = number | number[] | boolean | string | Record<string, string> | string[];
 
-export const QuestionCard: React.FC<Props> = ({question}) => {
-    const {submitAnswer, skipQuestion} = useQuizStore();
-    const [submittedAnswer, setSubmittedAnswer] = useState<AnswerType | null>(null);
-    const [result, setResult] = useState<{correct: boolean; explanation?: string} | null>(null);
+export const QuestionCard: React.FC<Props> = ({question, onFeedbackVisibilityChange}) => {
+    const {submitAnswer, skipQuestion, nextQuestion} = useQuizStore();
+    const [submittedAnswerState, setSubmittedAnswerState] = useState<{questionId: string; answer: AnswerType} | null>(null);
+    const [resultState, setResultState] = useState<{questionId: string; result: {correct: boolean; explanation?: string}} | null>(null);
 
-    // Initialize media state based on the type of media reference
-    // - No media: no loading needed
-    // - IndexedDB reference (idb:...): needs async loading
-    // - Direct URL or data URI: immediately resolved
-    const needsAsyncLoad = question.media && isIndexedDBMedia(question.media);
-    const [resolvedMediaUrl, setResolvedMediaUrl] = useState<string | null>(
-        question.media && !needsAsyncLoad ? question.media : null
-    );
-    const [mediaLoading, setMediaLoading] = useState(needsAsyncLoad ?? false);
-    const [mediaError, setMediaError] = useState(false);
+    const {resolvedUrl, loading: effectiveMediaLoading, error: effectiveMediaError} = useResolvedMediaUrl(question.media, {
+        maxRetries: isIndexedDBMedia(question.media ?? '') ? 3 : 0,
+        retryDelayMs: 500
+    });
+    const effectiveMediaUrl = resolvedUrl ?? null;
+    const submittedAnswer = submittedAnswerState?.questionId === question.id ? submittedAnswerState.answer : null;
+    const result = resultState?.questionId === question.id ? resultState.result : null;
+    const hasSubmitted = submittedAnswer !== null;
 
-    // Load media from IndexedDB if needed (with retry logic)
-    // Note: Parent uses key prop to force remount on question change,
-    // so state resets automatically when question changes
-    useEffect(() => {
-        // Only need to load if it's an IndexedDB reference
-        if (!question.media || !isIndexedDBMedia(question.media)) {
-            return;
-        }
-
-        const mediaId = extractMediaId(question.media);
-        const maxRetries = 3;
-        const retryDelay = 500; // ms
-
-        const attemptLoad = (retryCount: number) => {
-            getMedia(mediaId).then(entry => {
-                if (entry) {
-                    setResolvedMediaUrl(entry.data);
-                    setMediaLoading(false);
-                } else if (retryCount < maxRetries) {
-                    // Retry after delay
-                    setTimeout(() => attemptLoad(retryCount + 1), retryDelay);
-                } else {
-                    // Give up after max retries
-                    setResolvedMediaUrl(null);
-                    setMediaError(true);
-                    setMediaLoading(false);
-                }
-            }).catch(() => {
-                if (retryCount < maxRetries) {
-                    // Retry after delay
-                    setTimeout(() => attemptLoad(retryCount + 1), retryDelay);
-                } else {
-                    // Give up after max retries
-                    setResolvedMediaUrl(null);
-                    setMediaError(true);
-                    setMediaLoading(false);
-                }
-            });
-        };
-
-        attemptLoad(0);
-    }, [question.media]);
+    React.useEffect(() => {
+        onFeedbackVisibilityChange?.(hasSubmitted);
+        return () => onFeedbackVisibilityChange?.(false);
+    }, [hasSubmitted, onFeedbackVisibilityChange]);
 
     const handleAnswer = (answer: AnswerType) => {
-        setSubmittedAnswer(answer);
+        setSubmittedAnswerState({questionId: question.id, answer});
         const res = submitAnswer(answer);
-        setResult(res);
+        setResultState({questionId: question.id, result: res});
 
-        if (res.correct) {
+        if (res.correct && shouldPlayConfetti()) {
             confetti({
-                particleCount: 100,
-                spread: 70,
+                particleCount: 65,
+                spread: 60,
                 origin: {y: 0.6},
                 colors: ['#6366f1', '#8b5cf6', '#ec4899', '#10b981']
             });
@@ -114,9 +92,10 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-300">
                                 {question.type.replace('_', ' ').toUpperCase()}
                             </span>
-                            {!submittedAnswer && (
+                            {!hasSubmitted && (
                                 <button
                                     onClick={handleSkip}
+                                    aria-label="Skip current question"
                                     className="text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 text-sm flex items-center gap-1 transition-colors"
                                 >
                                     Skip <SkipForward size={14} />
@@ -124,10 +103,9 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                             )}
                         </div>
 
-                        {/* Question Media (Image or Video) */}
+                        {/* Question media */}
                         {question.media && (() => {
-                            // Show loading state while media is being loaded from IndexedDB
-                            if (mediaLoading) {
+                            if (effectiveMediaLoading) {
                                 return (
                                     <div className="mb-4 flex items-center justify-center h-32 bg-slate-100 dark:bg-slate-700 rounded-lg">
                                         <span className="text-slate-400 dark:text-slate-500 text-sm">Loading media...</span>
@@ -135,8 +113,7 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                                 );
                             }
 
-                            // Show error state if media failed to load
-                            if (mediaError || !resolvedMediaUrl) {
+                            if (effectiveMediaError || !effectiveMediaUrl) {
                                 return (
                                     <div className="mb-4 flex items-center justify-center h-24 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
                                         <span className="text-red-500 dark:text-red-400 text-sm">Failed to load media</span>
@@ -144,23 +121,11 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                                 );
                             }
 
-                            // Detect if it's a video based on extension or data URI
-                            const isVideo = (url: string): boolean => {
-                                const videoExtensions = ['.mp4', '.webm', '.ogg', '.mov', '.avi', '.mkv'];
-                                const lowerUrl = url.toLowerCase();
-
-                                // Check data URI mime type
-                                if (lowerUrl.startsWith('data:video/')) return true;
-
-                                // Check file extension
-                                return videoExtensions.some(ext => lowerUrl.includes(ext));
-                            };
-
-                            if (isVideo(resolvedMediaUrl)) {
+                            if (isVideoMediaUrl(effectiveMediaUrl)) {
                                 return (
                                     <div className="mb-4">
                                         <video
-                                            src={resolvedMediaUrl}
+                                            src={effectiveMediaUrl}
                                             controls
                                             className="max-w-full max-h-80 rounded-lg border border-slate-200 dark:border-slate-700 mx-auto"
                                             title="Question video"
@@ -174,7 +139,7 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                             return (
                                 <div className="mb-4">
                                     <img
-                                        src={resolvedMediaUrl}
+                                        src={effectiveMediaUrl}
                                         alt="Question illustration"
                                         className="max-w-full max-h-64 rounded-lg border border-slate-200 dark:border-slate-700 object-contain mx-auto"
                                     />
@@ -182,9 +147,13 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                             );
                         })()}
 
-                        <h2 className="text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100 leading-relaxed">
-                            <Latex>{question.prompt}</Latex>
-                        </h2>
+                        <div
+                            role="heading"
+                            aria-level={2}
+                            className="text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100 leading-relaxed"
+                        >
+                            <RichText>{question.prompt}</RichText>
+                        </div>
                     </div>
 
                     {/* Input Area */}
@@ -193,7 +162,7 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                             <MultipleChoiceInput
                                 question={question}
                                 onAnswer={handleAnswer}
-                                disabled={!!submittedAnswer}
+                                disabled={hasSubmitted}
                                 submittedAnswer={submittedAnswer as number | null}
                             />
                         )}
@@ -201,7 +170,7 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                             <MultipleAnswerInput
                                 question={question}
                                 onAnswer={handleAnswer}
-                                disabled={!!submittedAnswer}
+                                disabled={hasSubmitted}
                                 submittedAnswer={submittedAnswer as number[] | null}
                             />
                         )}
@@ -209,7 +178,7 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                             <TrueFalseInput
                                 question={question}
                                 onAnswer={handleAnswer}
-                                disabled={!!submittedAnswer}
+                                disabled={hasSubmitted}
                                 submittedAnswer={submittedAnswer as boolean | null}
                             />
                         )}
@@ -217,7 +186,7 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                             <KeywordsInput
                                 question={question}
                                 onAnswer={handleAnswer}
-                                disabled={!!submittedAnswer}
+                                disabled={hasSubmitted}
                                 submittedAnswer={submittedAnswer as string | null}
                             />
                         )}
@@ -225,7 +194,7 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                             <MatchingInput
                                 question={question}
                                 onAnswer={handleAnswer}
-                                disabled={!!submittedAnswer}
+                                disabled={hasSubmitted}
                                 submittedAnswer={submittedAnswer as Record<string, string> | null}
                             />
                         )}
@@ -233,7 +202,7 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                             <WordBankInput
                                 question={question}
                                 onAnswer={handleAnswer}
-                                disabled={!!submittedAnswer}
+                                disabled={hasSubmitted}
                                 submittedAnswer={submittedAnswer as string[] | null}
                             />
                         )}
@@ -257,18 +226,18 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                                                 {result.correct ? 'Correct!' : 'Not quite right'}
                                             </h3>
                                             {result.explanation && (
-                                                <p className="mt-2 text-slate-600 dark:text-slate-300 leading-relaxed">
-                                                    <Latex>{result.explanation}</Latex>
-                                                </p>
+                                                <div className="mt-2 text-slate-600 dark:text-slate-300 leading-relaxed">
+                                                    <RichText>{result.explanation}</RichText>
+                                                </div>
                                             )}
                                             {!result.correct && (
                                                 <div className="mt-3 p-3 bg-white dark:bg-slate-900/50 rounded-lg border border-red-100 dark:border-red-900/30 text-sm">
                                                     <span className="font-semibold text-red-800 dark:text-red-300 block mb-1">Correct Answer:</span>
-                                                    <span className="text-slate-700 dark:text-slate-300 font-medium">
+                                                    <div className="text-slate-700 dark:text-slate-300 font-medium">
                                                         {question.type === 'multiple_choice' && (
                                                             <span className="inline-flex mt-1">
                                                                 <span className="px-2 py-1 bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300 rounded font-semibold">
-                                                                    <Latex>{question.choices[question.answerIndex]}</Latex>
+                                                                    <RichText inline>{question.choices[question.answerIndex]}</RichText>
                                                                 </span>
                                                             </span>
                                                         )}
@@ -276,7 +245,7 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                                                             <span className="flex flex-wrap gap-2 mt-1">
                                                                 {question.answerIndices.map((i) => (
                                                                     <span key={i} className="px-2 py-1 bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300 rounded font-semibold">
-                                                                        <Latex>{question.choices[i]}</Latex>
+                                                                        <RichText inline>{question.choices[i]}</RichText>
                                                                     </span>
                                                                 ))}
                                                             </span>
@@ -293,7 +262,7 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                                                                 {(Array.isArray(question.answer) ? question.answer : [question.answer]).map((keyword, i, arr) => (
                                                                     <React.Fragment key={i}>
                                                                         <span className="px-2 py-1 bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300 rounded font-semibold">
-                                                                            <Latex>{keyword}</Latex>
+                                                                            <RichText inline>{keyword}</RichText>
                                                                         </span>
                                                                         {i < arr.length - 1 && <span className="text-slate-400 self-center">or</span>}
                                                                     </React.Fragment>
@@ -305,11 +274,11 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                                                                 {question.pairs.map((pair, i) => (
                                                                     <div key={i} className="flex items-center gap-2 flex-wrap">
                                                                         <span className="px-2 py-1 bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300 rounded font-semibold">
-                                                                            <Latex>{pair.left}</Latex>
+                                                                            <RichText inline>{pair.left}</RichText>
                                                                         </span>
                                                                         <span className="text-slate-400">→</span>
                                                                         <span className="px-2 py-1 bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300 rounded font-semibold">
-                                                                            <Latex>{pair.right}</Latex>
+                                                                            <RichText inline>{pair.right}</RichText>
                                                                         </span>
                                                                     </div>
                                                                 ))}
@@ -318,19 +287,13 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
                                                         {question.type === 'word_bank' && (
                                                             question.sentence.split(/(_)/g).map((part, i) => {
                                                                 if (part === '_') {
-                                                                    // Find which answer corresponds to this blank
-                                                                    // The sentence is split by _, so every odd index is a blank
-                                                                    // e.g. "A _ B _" -> ["A ", "_", " B ", "_", ""]
-                                                                    // blanks are at indices 1, 3.
-                                                                    // The answer array corresponds to these blanks in order.
-                                                                    // blankIndex = (i - 1) / 2
                                                                     const blankIndex = (i - 1) / 2;
-                                                                    return <span key={i} className="px-1.5 py-0.5 mx-0.5 bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300 rounded font-bold"><Latex>{question.answers[blankIndex]}</Latex></span>;
+                                                                    return <span key={i} className="px-1.5 py-0.5 mx-0.5 bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300 rounded font-bold"><RichText inline>{question.answers[blankIndex]}</RichText></span>;
                                                                 }
                                                                 return <span key={i}>{part}</span>;
                                                             })
                                                         )}
-                                                    </span>
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>
@@ -338,7 +301,7 @@ export const QuestionCard: React.FC<Props> = ({question}) => {
 
                                     <div className="mt-6 flex justify-end">
                                         <button
-                                            onClick={() => useQuizStore.getState().nextQuestion()}
+                                            onClick={nextQuestion}
                                             className={`${result.correct ? 'btn-success' : 'btn-danger'} flex items-center gap-2`}
                                             autoFocus
                                         >

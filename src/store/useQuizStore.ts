@@ -1,17 +1,53 @@
 import {create} from 'zustand';
 import {persist, createJSONStorage} from 'zustand/middleware';
-import type {Subject, SessionState, StudyMode, QuestionProgress, Profile} from '../types';
-import {generateQueue, getActiveQuestions, checkAnswer} from '../utils/quizLogic';
-import {indexedDBStorage, clearStoreData, migrateFromLocalStorage} from '../utils/indexedDBStorage';
-import {deleteMedia, isIndexedDBMedia, extractMediaId} from '../utils/mediaStorage';
+import type {Subject, SessionState, StudyMode, Profile, SubjectExportV1, Question} from '../types';
+import {validateProfileImport} from '../utils/importValidation';
+import {
+    normalizeRequeueGapRange
+} from '../utils/quizLogic';
+import {indexedDBStorage} from '../utils/indexedDBStorage';
 import {v4 as uuidv4} from 'uuid';
+import {createProfileSettingsActions} from './profileSettingsActions';
+import {createQuizCoreActions} from './quizCoreActions';
+import {
+    cleanupOrphanedMedia,
+    extractMediaIdsFromQuestion,
+    extractMediaIdsFromSubject,
+    extractMediaIdsFromTopic,
+    flattenProgress,
+    getCurrentProfile,
+    getCurrentSubject,
+    mergeSubjectsIntoList,
+    reconcileProfileStateForSubjects,
+    rebuildSessionForSubjectIfActive,
+    removeLocalStorageItem,
+    sanitizeBoolean,
+    sanitizeNumber
+} from './quizStoreHelpers';
+import {isRecord} from '../utils/typeGuards';
 
 interface Settings {
     confirmSubjectDelete: boolean;
     confirmProfileDelete: boolean;
+    /** When false, reset subject progress immediately (sidebar, context menu, data settings). */
+    confirmResetSubjectProgress: boolean;
+    /** When false, reset topic progress immediately from the context menu. */
+    confirmResetTopicProgress: boolean;
+    /** When false, wrong answers do not put the question back in the queue (advance-only for this pass). */
+    quizRequeueOnIncorrect: boolean;
+    /** When false, skipped questions are not reinserted. */
+    quizRequeueOnSkip: boolean;
+    /** Minimum positions ahead to reinsert (inclusive). Default 4 matches previous app behavior. */
+    quizRequeueGapMin: number;
+    /** Maximum positions ahead to reinsert (inclusive). */
+    quizRequeueGapMax: number;
+    /** When false, hide the ambient animated background. */
+    animatedBackground: boolean;
+    /** Whether the starter sample deck has already been added for this install. */
+    sampleDataSeeded: boolean;
 }
 
-interface QuizState {
+export interface QuizState {
     profiles: Record<string, Profile>;
     activeProfileId: string;
     settings: Settings;
@@ -33,6 +69,18 @@ interface QuizState {
     nextQuestion: () => void;
 
     resetSubjectProgress: (subjectId: string) => void;
+    importSubjectExport: (bundle: SubjectExportV1) => void;
+    resetTopicProgress: (subjectId: string, topicId: string) => void;
+    markTopicMastered: (subjectId: string, topicId: string) => void;
+
+    createSubject: (name: string) => string;
+    renameSubject: (subjectId: string, name: string) => void;
+    addTopic: (subjectId: string, name: string) => string;
+    renameTopic: (subjectId: string, topicId: string, name: string) => void;
+    deleteTopic: (subjectId: string, topicId: string) => void;
+    addQuestion: (subjectId: string, topicId: string, question: Question) => void;
+    updateQuestion: (subjectId: string, topicId: string, question: Question) => void;
+    deleteQuestion: (subjectId: string, topicId: string, questionId: string) => void;
 
     // Profile Actions
     createProfile: (name: string) => void;
@@ -40,896 +88,199 @@ interface QuizState {
     switchProfile: (id: string) => void;
     deleteProfile: (id: string) => void;
     importProfile: (profile: Profile) => void;
-    resetAllData: () => void;
+    resetAllData: () => Promise<void>;
 
     // Settings Actions
     setConfirmSubjectDelete: (confirm: boolean) => void;
     setConfirmProfileDelete: (confirm: boolean) => void;
+    setConfirmResetSubjectProgress: (confirm: boolean) => void;
+    setConfirmResetTopicProgress: (confirm: boolean) => void;
+    setQuizRequeueOnIncorrect: (value: boolean) => void;
+    setQuizRequeueOnSkip: (value: boolean) => void;
+    setQuizRequeueGaps: (minGap: number, maxGap: number) => void;
+    setAnimatedBackground: (value: boolean) => void;
+    markSampleDataSeeded: () => void;
 }
 
-// Helper to get current profile
-const getCurrentProfile = (state: QuizState) => state.profiles[state.activeProfileId];
+type PersistedQuizSlice = Pick<QuizState, 'profiles' | 'activeProfileId' | 'settings'>;
 
-// Helper to get current subject from state
-const getCurrentSubject = (state: QuizState) => {
-    const profile = getCurrentProfile(state);
-    if (!profile) return undefined;
-    return profile.subjects.find(s => s.id === profile.session.subjectId);
+const DEFAULT_PROFILE_ID = 'default';
+
+function createDefaultProfile(): Profile {
+    return {
+        id: DEFAULT_PROFILE_ID,
+        name: 'Default',
+        subjects: [],
+        progress: {},
+        session: {...DEFAULT_SESSION_STATE},
+        createdAt: Date.now()
+    };
+}
+
+/** Fresh study session before a subject is chosen. Exported for UI fallbacks. */
+export const DEFAULT_SESSION_STATE: SessionState = {
+    subjectId: null,
+    selectedTopicIds: [],
+    mode: 'topic_order',
+    includeMastered: false,
+    queue: [],
+    currentQuestionId: null,
+    turnCounter: 0
 };
 
-// Helper to flatten progress map for a subject
-function flattenProgress(subjectProgress: Record<string, Record<string, QuestionProgress>> | undefined): Record<string, QuestionProgress> {
-    if (!subjectProgress) return {};
-    const flat: Record<string, QuestionProgress> = {};
-    Object.values(subjectProgress).forEach(topicProgress => {
-        Object.assign(flat, topicProgress);
-    });
-    return flat;
+export const DEFAULT_SETTINGS: Settings = {
+    confirmSubjectDelete: true,
+    confirmProfileDelete: true,
+    confirmResetSubjectProgress: true,
+    confirmResetTopicProgress: true,
+    quizRequeueOnIncorrect: true,
+    quizRequeueOnSkip: true,
+    quizRequeueGapMin: 4,
+    quizRequeueGapMax: 6,
+    animatedBackground: true,
+    sampleDataSeeded: false
+};
+
+function sanitizeSettings(input: unknown, sampleDataSeededFallback: boolean): Settings {
+    const raw = isRecord(input) ? input : {};
+    const {min, max} = normalizeRequeueGapRange(
+        sanitizeNumber(raw.quizRequeueGapMin, DEFAULT_SETTINGS.quizRequeueGapMin),
+        sanitizeNumber(raw.quizRequeueGapMax, DEFAULT_SETTINGS.quizRequeueGapMax)
+    );
+
+    return {
+        confirmSubjectDelete: sanitizeBoolean(raw.confirmSubjectDelete, DEFAULT_SETTINGS.confirmSubjectDelete),
+        confirmProfileDelete: sanitizeBoolean(raw.confirmProfileDelete, DEFAULT_SETTINGS.confirmProfileDelete),
+        confirmResetSubjectProgress: sanitizeBoolean(
+            raw.confirmResetSubjectProgress,
+            DEFAULT_SETTINGS.confirmResetSubjectProgress
+        ),
+        confirmResetTopicProgress: sanitizeBoolean(
+            raw.confirmResetTopicProgress,
+            DEFAULT_SETTINGS.confirmResetTopicProgress
+        ),
+        quizRequeueOnIncorrect: sanitizeBoolean(raw.quizRequeueOnIncorrect, DEFAULT_SETTINGS.quizRequeueOnIncorrect),
+        quizRequeueOnSkip: sanitizeBoolean(raw.quizRequeueOnSkip, DEFAULT_SETTINGS.quizRequeueOnSkip),
+        quizRequeueGapMin: min,
+        quizRequeueGapMax: max,
+        animatedBackground: sanitizeBoolean(raw.animatedBackground, DEFAULT_SETTINGS.animatedBackground),
+        sampleDataSeeded: sanitizeBoolean(raw.sampleDataSeeded, sampleDataSeededFallback)
+    };
 }
 
-// Extract all IndexedDB media IDs from a subject
-function extractMediaIdsFromSubject(subject: Subject): Set<string> {
-    const mediaIds = new Set<string>();
-    for (const topic of subject.topics) {
-        for (const question of topic.questions) {
-            if (question.media && isIndexedDBMedia(question.media)) {
-                mediaIds.add(extractMediaId(question.media));
+export function sanitizePersistedQuizState(persistedState: unknown): PersistedQuizSlice {
+    const hasPersistedState = isRecord(persistedState);
+    const input = hasPersistedState ? persistedState : {};
+    const profiles: Record<string, Profile> = {};
+
+    if (isRecord(input.profiles)) {
+        for (const [profileId, profile] of Object.entries(input.profiles)) {
+            try {
+                const profileInput = isRecord(profile) && typeof profile.id === 'string'
+                    ? profile
+                    : {...(isRecord(profile) ? profile : {}), id: profileId};
+                const validated = validateProfileImport(profileInput);
+                profiles[validated.id] = validated;
+            } catch {
+                // Drop corrupt persisted profiles instead of letting one bad record break startup.
+                console.warn(`Dropping corrupt persisted profile "${profileId}" during hydration.`);
             }
         }
     }
-    return mediaIds;
-}
 
-// Extract all IndexedDB media IDs from all profiles
-function extractAllMediaIds(profiles: Record<string, Profile>): Set<string> {
-    const allMediaIds = new Set<string>();
-    for (const profile of Object.values(profiles)) {
-        for (const subject of profile.subjects) {
-            const subjectMediaIds = extractMediaIdsFromSubject(subject);
-            subjectMediaIds.forEach(id => allMediaIds.add(id));
-        }
+    if (Object.keys(profiles).length === 0) {
+        profiles[DEFAULT_PROFILE_ID] = createDefaultProfile();
     }
-    return allMediaIds;
-}
 
-const DEFAULT_PROFILE_ID = 'default';
+    const activeProfileId = typeof input.activeProfileId === 'string' && profiles[input.activeProfileId]
+        ? input.activeProfileId
+        : Object.values(profiles).sort((a, b) => b.createdAt - a.createdAt)[0].id;
+
+    return {
+        profiles,
+        activeProfileId,
+        settings: sanitizeSettings(input.settings, hasPersistedState)
+    };
+}
 
 export const useQuizStore = create<QuizState>()(
     persist(
         (set, get) => ({
             profiles: {
-                [DEFAULT_PROFILE_ID]: {
-                    id: DEFAULT_PROFILE_ID,
-                    name: 'Default',
-                    subjects: [],
-                    progress: {},
-                    session: {
-                        subjectId: null,
-                        selectedTopicIds: [],
-                        mode: 'random',
-                        includeMastered: false,
-                        queue: [],
-                        currentQuestionId: null,
-                        turnCounter: 0,
-                    },
-                    createdAt: Date.now()
-
-                }
+                [DEFAULT_PROFILE_ID]: createDefaultProfile()
             },
             activeProfileId: DEFAULT_PROFILE_ID,
-            settings: {
-                confirmSubjectDelete: true,
-                confirmProfileDelete: true
-            },
-
-            setSubjects: (subjects) => set((state) => {
-                const profile = getCurrentProfile(state);
-                return {
-                    profiles: {
-                        ...state.profiles,
-                        [state.activeProfileId]: {
-                            ...profile,
-                            subjects
-                        }
-                    }
-                };
+            settings: {...DEFAULT_SETTINGS},
+            ...createQuizCoreActions({
+                set,
+                get,
+                createId: uuidv4,
+                getCurrentProfile,
+                getCurrentSubject,
+                mergeSubjectsIntoList,
+                rebuildSessionForSubjectIfActive,
+                flattenProgress,
+                extractMediaIdsFromQuestion,
+                extractMediaIdsFromTopic,
+                extractMediaIdsFromSubject,
+                cleanupOrphanedMedia,
+                reconcileProfileStateForSubjects
             }),
 
-            importSubjects: (newSubjects) => set((state) => {
-                const profile = getCurrentProfile(state);
-
-                // Merge subjects: update existing, add new
-                const mergedSubjects = [...profile.subjects];
-
-                for (const newSubject of newSubjects) {
-                    const existingIndex = mergedSubjects.findIndex(s => s.id === newSubject.id);
-
-                    if (existingIndex === -1) {
-                        // Subject doesn't exist, add it
-                        mergedSubjects.push(newSubject);
-                    } else {
-                        // Subject exists, merge topics
-                        const existingSubject = mergedSubjects[existingIndex];
-                        const mergedTopics = [...existingSubject.topics];
-
-                        for (const newTopic of newSubject.topics) {
-                            const existingTopicIndex = mergedTopics.findIndex(t => t.id === newTopic.id);
-
-                            if (existingTopicIndex === -1) {
-                                // Topic doesn't exist, add it
-                                mergedTopics.push(newTopic);
-                            } else {
-                                // Topic exists, merge questions
-                                const existingTopic = mergedTopics[existingTopicIndex];
-                                const mergedQuestions = [...existingTopic.questions];
-
-                                for (const newQuestion of newTopic.questions) {
-                                    const existingQuestionIndex = mergedQuestions.findIndex(q => q.id === newQuestion.id);
-
-                                    if (existingQuestionIndex === -1) {
-                                        // Question doesn't exist, add it
-                                        mergedQuestions.push(newQuestion);
-                                    } else {
-                                        // Question exists, overwrite it
-                                        mergedQuestions[existingQuestionIndex] = newQuestion;
-                                    }
-                                }
-
-                                mergedTopics[existingTopicIndex] = {
-                                    ...existingTopic,
-                                    ...newTopic,
-                                    questions: mergedQuestions
-                                };
-                            }
-                        }
-
-                        mergedSubjects[existingIndex] = {
-                            ...existingSubject,
-                            ...newSubject,
-                            topics: mergedTopics
-                        };
-                    }
-                }
-
-                return {
-                    profiles: {
-                        ...state.profiles,
-                        [state.activeProfileId]: {
-                            ...profile,
-                            subjects: mergedSubjects
-                        }
-                    }
-                };
-            }),
-
-            deleteSubject: (subjectId) => {
-                const state = get();
-                const profile = getCurrentProfile(state);
-                const subjectToDelete = profile.subjects.find(s => s.id === subjectId);
-
-                // Extract media IDs from the subject being deleted
-                const mediaToCheck = subjectToDelete ? extractMediaIdsFromSubject(subjectToDelete) : new Set<string>();
-
-                // Update state synchronously
-                set((state) => {
-                    const currentProfile = getCurrentProfile(state);
-                    const newSubjects = currentProfile.subjects.filter(s => s.id !== subjectId);
-
-                    // Also remove progress for this subject
-                    const newProgress = {...currentProfile.progress};
-                    delete newProgress[subjectId];
-
-                    // If we're deleting the current subject, clear the session
-                    let newSession = currentProfile.session;
-                    if (currentProfile.session.subjectId === subjectId) {
-                        newSession = {
-                            ...currentProfile.session,
-                            subjectId: null,
-                            selectedTopicIds: [],
-                            queue: [],
-                            currentQuestionId: null
-                        };
-                    }
-
-                    return {
-                        profiles: {
-                            ...state.profiles,
-                            [state.activeProfileId]: {
-                                ...currentProfile,
-                                subjects: newSubjects,
-                                progress: newProgress,
-                                session: newSession
-                            }
-                        }
-                    };
-                });
-
-                // Clean up orphaned media asynchronously (after state update)
-                if (mediaToCheck.size > 0) {
-                    // Get updated state after deletion
-                    const updatedState = get();
-                    const stillInUse = extractAllMediaIds(updatedState.profiles);
-
-                    // Delete media that's no longer used anywhere
-                    for (const mediaId of mediaToCheck) {
-                        if (!stillInUse.has(mediaId)) {
-                            deleteMedia(mediaId).catch(err => {
-                                console.error(`Failed to delete orphaned media ${mediaId}:`, err);
-                            });
-                        }
-                    }
-                }
-            },
-
-            startSession: (subjectId) => {
-                set((state) => {
-                    const profile = getCurrentProfile(state);
-                    const subject = profile.subjects.find(s => s.id === subjectId);
-                    if (!subject) return state;
-
-                    const newSession: SessionState = {
-                        ...profile.session,
-                        subjectId,
-                        selectedTopicIds: [], // Reset selection to "all"
-                        queue: [],
-                        currentQuestionId: null
-                    };
-
-                    // Generate initial queue
-                    const questions = getActiveQuestions(subject, []);
-                    const queue = generateQueue(
-                        questions,
-                        flattenProgress(profile.progress[subjectId]),
-                        newSession.mode,
-                        newSession.includeMastered
-                    );
-
-                    newSession.queue = queue.slice(1);
-                    newSession.currentQuestionId = queue[0] || null;
-
-                    return {
-                        profiles: {
-                            ...state.profiles,
-                            [state.activeProfileId]: {
-                                ...profile,
-                                session: newSession
-                            }
-                        }
-                    };
-                });
-            },
-
-            toggleTopic: (topicId) => {
-                set((state) => {
-                    const profile = getCurrentProfile(state);
-                    const subject = getCurrentSubject(state);
-                    if (!subject) return state;
-
-                    const currentSelected = profile.session.selectedTopicIds;
-                    let newSelected = currentSelected.includes(topicId)
-                        ? currentSelected.filter(id => id !== topicId)
-                        : [...currentSelected, topicId];
-
-                    // If all topics are now selected, reset to empty array (which means "all")
-                    if (newSelected.length === subject.topics.length) {
-                        newSelected = [];
-                    }
-
-                    // Rebuild queue
-                    const questions = getActiveQuestions(subject, newSelected);
-                    const queue = generateQueue(
-                        questions,
-                        flattenProgress(profile.progress[subject.id]),
-                        profile.session.mode,
-                        profile.session.includeMastered
-                    );
-
-                    return {
-                        profiles: {
-                            ...state.profiles,
-                            [state.activeProfileId]: {
-                                ...profile,
-                                session: {
-                                    ...profile.session,
-                                    selectedTopicIds: newSelected,
-                                    queue: queue.slice(1),
-                                    currentQuestionId: queue[0] || null
-                                }
-                            }
-                        }
-                    };
-                });
-            },
-
-            selectAllTopics: () => {
-                set((state) => {
-                    const profile = getCurrentProfile(state);
-                    const subject = getCurrentSubject(state);
-                    if (!subject) return state;
-
-                    // Empty array means all topics selected
-                    const questions = getActiveQuestions(subject, []);
-                    const queue = generateQueue(
-                        questions,
-                        flattenProgress(profile.progress[subject.id]),
-                        profile.session.mode,
-                        profile.session.includeMastered
-                    );
-
-                    return {
-                        profiles: {
-                            ...state.profiles,
-                            [state.activeProfileId]: {
-                                ...profile,
-                                session: {
-                                    ...profile.session,
-                                    selectedTopicIds: [],
-                                    queue: queue.slice(1),
-                                    currentQuestionId: queue[0] || null
-                                }
-                            }
-                        }
-                    };
-                });
-            },
-
-            setMode: (mode) => {
-                set((state) => {
-                    const profile = getCurrentProfile(state);
-                    const subject = getCurrentSubject(state);
-
-                    if (!subject) {
-                        return {
-                            profiles: {
-                                ...state.profiles,
-                                [state.activeProfileId]: {
-                                    ...profile,
-                                    session: {...profile.session, mode}
-                                }
-                            }
-                        };
-                    }
-
-                    const questions = getActiveQuestions(subject, profile.session.selectedTopicIds);
-                    const queue = generateQueue(
-                        questions,
-                        flattenProgress(profile.progress[subject.id]),
-                        mode,
-                        profile.session.includeMastered
-                    );
-
-                    return {
-                        profiles: {
-                            ...state.profiles,
-                            [state.activeProfileId]: {
-                                ...profile,
-                                session: {
-                                    ...profile.session,
-                                    mode,
-                                    queue: queue.slice(1),
-                                    currentQuestionId: queue[0] || null
-                                }
-                            }
-                        }
-                    };
-                });
-            },
-
-            setIncludeMastered: (include) => {
-                set((state) => {
-                    const profile = getCurrentProfile(state);
-                    return {
-                        profiles: {
-                            ...state.profiles,
-                            [state.activeProfileId]: {
-                                ...profile,
-                                session: {...profile.session, includeMastered: include}
-                            }
-                        }
-                    };
-                });
-            },
-
-            restartQueue: () => {
-                set((state) => {
-                    const profile = getCurrentProfile(state);
-                    const subject = getCurrentSubject(state);
-                    if (!subject) return state;
-
-                    const questions = getActiveQuestions(subject, profile.session.selectedTopicIds);
-                    const queue = generateQueue(
-                        questions,
-                        flattenProgress(profile.progress[subject.id]),
-                        profile.session.mode,
-                        profile.session.includeMastered
-                    );
-
-                    return {
-                        profiles: {
-                            ...state.profiles,
-                            [state.activeProfileId]: {
-                                ...profile,
-                                session: {
-                                    ...profile.session,
-                                    queue: queue.slice(1),
-                                    currentQuestionId: queue[0] || null
-                                }
-                            }
-                        }
-                    };
-                });
-            },
-
-            submitAnswer: (answer) => {
-                const state = get();
-                const profile = getCurrentProfile(state);
-                const subject = getCurrentSubject(state);
-                const {currentQuestionId} = profile.session;
-
-                if (!subject || !currentQuestionId) return {correct: false};
-
-                // Find question
-                let question = null;
-                let topicId = null;
-                for (const topic of subject.topics) {
-                    const q = topic.questions.find(q => q.id === currentQuestionId);
-                    if (q) {
-                        question = q;
-                        topicId = topic.id;
-                        break;
-                    }
-                }
-
-                if (!question || !topicId) return {correct: false};
-
-                const isCorrect = checkAnswer(question, answer);
-
-                // Update progress
-                set((state) => {
-                    const currentProfile = state.profiles[state.activeProfileId];
-                    const subjectProgress = currentProfile.progress[subject.id] || {};
-                    const topicProgress = subjectProgress[topicId!] || {};
-                    const currentQProgress = topicProgress[currentQuestionId] || {
-                        id: currentQuestionId,
-                        correctStreak: 0,
-                        attempts: 0,
-                        mastered: false
-                    };
-
-                    const newQProgress: QuestionProgress = {
-                        ...currentQProgress,
-                        attempts: currentQProgress.attempts + 1,
-                        correctStreak: isCorrect ? currentQProgress.correctStreak + 1 : 0,
-                        mastered: isCorrect
-                    };
-
-                    const newProgress = {
-                        ...currentProfile.progress,
-                        [subject.id]: {
-                            ...subjectProgress,
-                            [topicId!]: {
-                                ...topicProgress,
-                                [currentQuestionId]: newQProgress
-                            }
-                        }
-                    };
-
-                    // Queue management
-                    const newQueue = [...currentProfile.session.queue];
-
-                    if (!isCorrect) {
-                        // Reinsert 4-6 positions later
-                        const offset = Math.floor(Math.random() * 3) + 4; // 4, 5, or 6
-                        const insertIndex = Math.min(offset, newQueue.length);
-                        newQueue.splice(insertIndex, 0, currentQuestionId);
-                    }
-
-                    return {
-                        profiles: {
-                            ...state.profiles,
-                            [state.activeProfileId]: {
-                                ...currentProfile,
-                                progress: newProgress,
-                                session: {
-                                    ...currentProfile.session,
-                                    queue: newQueue
-                                }
-                            }
-                        }
-                    };
-                });
-
-                return {correct: isCorrect, explanation: question.explanation};
-            },
-
-            nextQuestion: () => {
-                set((state) => {
-                    const profile = getCurrentProfile(state);
-                    const newQueue = [...profile.session.queue];
-                    const nextQuestionId = newQueue.shift() || null;
-
-                    return {
-                        profiles: {
-                            ...state.profiles,
-                            [state.activeProfileId]: {
-                                ...profile,
-                                session: {
-                                    ...profile.session,
-                                    queue: newQueue,
-                                    currentQuestionId: nextQuestionId,
-                                    turnCounter: profile.session.turnCounter + 1,
-                                }
-                            }
-                        }
-                    };
-                });
-            },
-
-            skipQuestion: () => {
-                const state = get();
-                const profile = getCurrentProfile(state);
-                const subject = getCurrentSubject(state);
-                const {currentQuestionId} = profile.session;
-                if (!subject || !currentQuestionId) return;
-
-                let topicId = null;
-                for (const topic of subject.topics) {
-                    if (topic.questions.some(q => q.id === currentQuestionId)) {
-                        topicId = topic.id;
-                        break;
-                    }
-                }
-                if (!topicId) return;
-
-                set((state) => {
-                    const currentProfile = state.profiles[state.activeProfileId];
-                    const subjectProgress = currentProfile.progress[subject.id] || {};
-                    const topicProgress = subjectProgress[topicId!] || {};
-                    const currentQProgress = topicProgress[currentQuestionId] || {
-                        id: currentQuestionId,
-                        correctStreak: 0,
-                        attempts: 0,
-                        mastered: false
-                    };
-
-                    const newQProgress = {
-                        ...currentQProgress,
-                        attempts: currentQProgress.attempts + 1,
-                        correctStreak: 0,
-                        mastered: false
-                    };
-
-                    const newProgress = {
-                        ...currentProfile.progress,
-                        [subject.id]: {
-                            ...subjectProgress,
-                            [topicId!]: {
-                                ...topicProgress,
-                                [currentQuestionId]: newQProgress
-                            }
-                        }
-                    };
-
-                    const newQueue = [...currentProfile.session.queue];
-                    const offset = Math.floor(Math.random() * 3) + 4;
-                    const insertIndex = Math.min(offset, newQueue.length);
-                    newQueue.splice(insertIndex, 0, currentQuestionId);
-
-                    const nextQuestionId = newQueue.shift() || null;
-
-                    return {
-                        profiles: {
-                            ...state.profiles,
-                            [state.activeProfileId]: {
-                                ...currentProfile,
-                                progress: newProgress,
-                                session: {
-                                    ...currentProfile.session,
-                                    queue: newQueue,
-                                    currentQuestionId: nextQuestionId
-                                }
-                            }
-                        }
-                    };
-                });
-            },
-
-            resetSubjectProgress: (subjectId) => {
-                set((state) => {
-                    const profile = getCurrentProfile(state);
-                    const newProgress = {...profile.progress};
-                    delete newProgress[subjectId];
-
-                    let newSession = profile.session;
-                    if (profile.session.subjectId === subjectId) {
-                        const subject = profile.subjects.find(s => s.id === subjectId);
-                        if (subject) {
-                            const questions = getActiveQuestions(subject, profile.session.selectedTopicIds);
-                            const queue = generateQueue(questions, {}, profile.session.mode, profile.session.includeMastered);
-                            newSession = {
-                                ...profile.session,
-                                queue: queue.slice(1),
-                                currentQuestionId: queue[0] || null
-                            };
-                        }
-                    }
-
-                    return {
-                        profiles: {
-                            ...state.profiles,
-                            [state.activeProfileId]: {
-                                ...profile,
-                                progress: newProgress,
-                                session: newSession
-                            }
-                        }
-                    };
-                });
-            },
-
-            // Profile Actions
-            createProfile: (name) => {
-                const newId = uuidv4();
-                const newProfile: Profile = {
-                    id: newId,
-                    name,
-                    subjects: [],
-                    progress: {},
-                    session: {
-                        subjectId: null,
-                        selectedTopicIds: [],
-                        mode: 'random',
-                        includeMastered: false,
-                        queue: [],
-                        currentQuestionId: null,
-                        turnCounter: 0,
-                    },
-                    createdAt: Date.now()
-                };
-
-                set(state => ({
-                    profiles: {...state.profiles, [newId]: newProfile},
-                    activeProfileId: newId
-                }));
-            },
-
-            renameProfile: (id, newName) => {
-                set(state => {
-                    const profile = state.profiles[id];
-                    if (!profile) return state;
-
-                    return {
-                        profiles: {
-                            ...state.profiles,
-                            [id]: {
-                                ...profile,
-                                name: newName
-                            }
-                        }
-                    };
-                });
-            },
-
-            switchProfile: (id) => {
-                set(state => {
-                    if (!state.profiles[id]) return state;
-                    return {activeProfileId: id};
-                });
-            },
-
-            deleteProfile: (id) => {
-                set(state => {
-                    const profileIds = Object.keys(state.profiles);
-
-                    // If this is the last profile, reset it to Default
-                    if (profileIds.length === 1 && profileIds[0] === id) {
-                        const resetDefault: Profile = {
-                            id: DEFAULT_PROFILE_ID,
-                            name: 'Default',
-                            subjects: [],
-                            progress: {},
-                            session: {
-                                subjectId: null,
-                                selectedTopicIds: [],
-                                mode: 'random',
-                                includeMastered: false,
-                                queue: [],
-                                currentQuestionId: null,
-                                turnCounter: 0,
-                            },
-                            createdAt: Date.now()
-                        };
-                        return {
-                            profiles: {
-                                [DEFAULT_PROFILE_ID]: resetDefault
-                            },
-                            activeProfileId: DEFAULT_PROFILE_ID
-                        };
-                    }
-
-                    const newProfiles = {...state.profiles};
-                    delete newProfiles[id];
-
-                    // If deleting active profile, switch to another one
-                    let newActiveId = state.activeProfileId;
-                    if (state.activeProfileId === id) {
-                        // Switch to the most recently created profile
-                        const remaining = Object.values(newProfiles).sort((a, b) => b.createdAt - a.createdAt);
-                        newActiveId = remaining[0].id;
-                    }
-
-                    return {
-                        profiles: newProfiles,
-                        activeProfileId: newActiveId
-                    };
-                });
-            },
-
-            importProfile: (profile) => {
-                set(state => {
-                    const existingProfile = state.profiles[profile.id];
-
-                    if (!existingProfile) {
-                        // Profile doesn't exist, add it directly
-                        return {
-                            profiles: {
-                                ...state.profiles,
-                                [profile.id]: profile
-                            },
-                            activeProfileId: profile.id
-                        };
-                    }
-
-                    // Profile exists, merge it
-                    // Merge subjects using the same logic
-                    const mergedSubjects = [...existingProfile.subjects];
-
-                    for (const newSubject of profile.subjects) {
-                        const existingIndex = mergedSubjects.findIndex(s => s.id === newSubject.id);
-
-                        if (existingIndex === -1) {
-                            mergedSubjects.push(newSubject);
-                        } else {
-                            const existingSubject = mergedSubjects[existingIndex];
-                            const mergedTopics = [...existingSubject.topics];
-
-                            for (const newTopic of newSubject.topics) {
-                                const existingTopicIndex = mergedTopics.findIndex(t => t.id === newTopic.id);
-
-                                if (existingTopicIndex === -1) {
-                                    mergedTopics.push(newTopic);
-                                } else {
-                                    const existingTopic = mergedTopics[existingTopicIndex];
-                                    const mergedQuestions = [...existingTopic.questions];
-
-                                    for (const newQuestion of newTopic.questions) {
-                                        const existingQuestionIndex = mergedQuestions.findIndex(q => q.id === newQuestion.id);
-
-                                        if (existingQuestionIndex === -1) {
-                                            mergedQuestions.push(newQuestion);
-                                        } else {
-                                            mergedQuestions[existingQuestionIndex] = newQuestion;
-                                        }
-                                    }
-
-                                    mergedTopics[existingTopicIndex] = {
-                                        ...existingTopic,
-                                        ...newTopic,
-                                        questions: mergedQuestions
-                                    };
-                                }
-                            }
-
-                            mergedSubjects[existingIndex] = {
-                                ...existingSubject,
-                                ...newSubject,
-                                topics: mergedTopics
-                            };
-                        }
-                    }
-
-                    // Merge progress: keep existing, overwrite with imported
-                    const mergedProgress = {...existingProfile.progress};
-                    for (const [subjectId, subjectProgress] of Object.entries(profile.progress)) {
-                        if (!mergedProgress[subjectId]) {
-                            mergedProgress[subjectId] = subjectProgress;
-                        } else {
-                            mergedProgress[subjectId] = {
-                                ...mergedProgress[subjectId],
-                                ...subjectProgress
-                            };
-                        }
-                    }
-
-                    return {
-                        profiles: {
-                            ...state.profiles,
-                            [profile.id]: {
-                                ...existingProfile,
-                                ...profile,
-                                subjects: mergedSubjects,
-                                progress: mergedProgress
-                            }
-                        },
-                        activeProfileId: profile.id
-                    };
-                });
-            },
-
-            resetAllData: () => {
-                // Clear IndexedDB store data
-                clearStoreData();
-                // Also clear localStorage (for legacy data and theme)
-                localStorage.removeItem('quiz-storage');
-                localStorage.removeItem('theme');
-                window.location.reload();
-            },
-
-            setConfirmSubjectDelete: (confirm) => set((state) => ({
-                settings: {...state.settings, confirmSubjectDelete: confirm}
-            })),
-
-            setConfirmProfileDelete: (confirm) => set((state) => ({
-                settings: {...state.settings, confirmProfileDelete: confirm}
-            }))
+            ...createProfileSettingsActions({
+                set,
+                get,
+                defaultProfileId: DEFAULT_PROFILE_ID,
+                defaultSettings: DEFAULT_SETTINGS,
+                createDefaultProfile,
+                mergeSubjectsIntoList,
+                reconcileProfileStateForSubjects,
+                removeLocalStorageItem,
+                createId: uuidv4,
+                defaultSessionState: DEFAULT_SESSION_STATE
+            })
         }),
         {
             name: 'quiz-storage',
             version: 1,
             // Use IndexedDB for storage instead of localStorage to avoid quota limits
             storage: createJSONStorage(() => indexedDBStorage),
-            // Migrate localStorage data to IndexedDB on first load
-            onRehydrateStorage: () => {
-                // Trigger migration from localStorage to IndexedDB
-                migrateFromLocalStorage('quiz-storage');
-                return undefined;
-            },
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            migrate: (persistedState: any, version: number) => {
+            migrate: (persistedState: unknown, version: number) => {
                 if (version === 0 || version === undefined) {
+                    const oldState = isRecord(persistedState) ? persistedState : {};
                     // Migrate from version 0 (flat state) to version 1 (profiles)
                     const defaultProfile: Profile = {
                         id: DEFAULT_PROFILE_ID,
                         name: 'Default',
-                        subjects: persistedState.subjects || [],
-                        progress: persistedState.progress || {},
+                        subjects: Array.isArray(oldState.subjects) ? oldState.subjects as Subject[] : [],
+                        progress: isRecord(oldState.progress) ? oldState.progress as Profile['progress'] : {},
                         session: {
-                            subjectId: null,
-                            selectedTopicIds: [],
-                            mode: 'random',
-                            includeMastered: false,
-                            queue: [],
-                            currentQuestionId: null,
-                            turnCounter: 0,
-                            ...(persistedState.session || {}),
+                            ...DEFAULT_SESSION_STATE,
+                            ...(isRecord(oldState.session) ? oldState.session : {}),
                         },
                         createdAt: Date.now()
                     };
 
                     return {
                         profiles: {[DEFAULT_PROFILE_ID]: defaultProfile},
-                        activeProfileId: DEFAULT_PROFILE_ID
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    } as any;
-                }
-
-                // Ensure all profiles have turnCounter in their session
-                if (persistedState.profiles) {
-                    for (const profileId of Object.keys(persistedState.profiles)) {
-                        const profile = persistedState.profiles[profileId];
-                        if (profile.session && typeof profile.session.turnCounter !== 'number') {
-                            profile.session.turnCounter = 0;
+                        activeProfileId: DEFAULT_PROFILE_ID,
+                        settings: {
+                            ...DEFAULT_SETTINGS,
+                            sampleDataSeeded: true
                         }
-                    }
+                    };
                 }
 
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                return persistedState as any as QuizState;
+                return persistedState;
+            },
+            merge: (persistedState, currentState) => {
+                const sanitized = sanitizePersistedQuizState(persistedState);
+                return {
+                    ...currentState,
+                    ...sanitized
+                };
             }
 
         }
     )
 );
-
-// Initialize: ensure migration from localStorage happens on app load
-migrateFromLocalStorage('quiz-storage');

@@ -13,7 +13,9 @@ const mockGetMedia = vi.fn();
 vi.mock('../utils/mediaStorage', () => ({
     getMedia: (...args: unknown[]) => mockGetMedia(...args),
     isIndexedDBMedia: (ref: string) => ref.startsWith('idb:'),
-    extractMediaId: (ref: string) => ref.replace('idb:', '')
+    extractMediaId: (ref: string) => ref.replace('idb:', ''),
+    createMediaObjectUrl: () => 'blob:mock-media',
+    revokeMediaObjectUrl: vi.fn()
 }));
 
 // Mock Latex component
@@ -23,16 +25,18 @@ vi.mock('./Latex', () => ({
 
 // Mock sub-components to simplify testing
 vi.mock('./inputs/MultipleChoiceInput', () => ({
-    MultipleChoiceInput: ({onAnswer}: {onAnswer: (answer: number) => void}) => (
-        <button onClick={() => onAnswer(0)}>Select Option A</button>
+    MultipleChoiceInput: ({onAnswer, disabled}: {onAnswer: (answer: number) => void; disabled?: boolean}) => (
+        <button onClick={() => onAnswer(0)} disabled={disabled}>
+            Select Option A
+        </button>
     )
 }));
 
 vi.mock('./inputs/TrueFalseInput', () => ({
-    TrueFalseInput: ({onAnswer}: {onAnswer: (answer: boolean) => void}) => (
+    TrueFalseInput: ({onAnswer, disabled}: {onAnswer: (answer: boolean) => void; disabled?: boolean}) => (
         <div>
-            <button onClick={() => onAnswer(true)}>Select True</button>
-            <button onClick={() => onAnswer(false)}>Select False</button>
+            <button onClick={() => onAnswer(true)} disabled={disabled}>Select True</button>
+            <button onClick={() => onAnswer(false)} disabled={disabled}>Select False</button>
         </div>
     )
 }));
@@ -73,11 +77,14 @@ describe('QuestionCard', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.stubGlobal('URL', {
+            ...URL,
+            createObjectURL: vi.fn(() => 'blob:mock-media'),
+            revokeObjectURL: vi.fn()
+        });
         (useQuizStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
             submitAnswer: mockSubmitAnswer,
-            skipQuestion: mockSkipQuestion
-        });
-        (useQuizStore as unknown as {getState: () => {nextQuestion: () => void}}).getState = () => ({
+            skipQuestion: mockSkipQuestion,
             nextQuestion: mockNextQuestion
         });
     });
@@ -292,6 +299,67 @@ describe('QuestionCard', () => {
 
             expect(mockSkipQuestion).toHaveBeenCalled();
         });
+
+        it('hides skip and disables input after submitting option index 0', () => {
+            const question = {
+                id: '1',
+                topicId: 't1',
+                type: 'multiple_choice' as const,
+                prompt: 'Q1',
+                choices: ['A', 'B'],
+                answerIndex: 0,
+                explanation: ''
+            };
+            mockSubmitAnswer.mockReturnValue({correct: true});
+
+            render(<QuestionCard question={question} />);
+            fireEvent.click(screen.getByText('Select Option A'));
+
+            expect(screen.queryByText('Skip')).not.toBeInTheDocument();
+            expect(screen.getByText('Select Option A')).toBeDisabled();
+        });
+
+        it('hides skip and disables inputs after submitting false', () => {
+            const question = {
+                id: '2',
+                topicId: 't1',
+                type: 'true_false' as const,
+                prompt: 'The sky is blue.',
+                answer: true,
+                explanation: ''
+            };
+            mockSubmitAnswer.mockReturnValue({correct: false});
+
+            render(<QuestionCard question={question} />);
+            fireEvent.click(screen.getByText('Select False'));
+
+            expect(screen.queryByText('Skip')).not.toBeInTheDocument();
+            expect(screen.getByText('Select True')).toBeDisabled();
+            expect(screen.getByText('Select False')).toBeDisabled();
+        });
+
+        it('resets submitted state when question changes', async () => {
+            const baseQuestion = {
+                topicId: 't1',
+                type: 'multiple_choice' as const,
+                choices: ['A', 'B'],
+                answerIndex: 0,
+                explanation: ''
+            };
+            mockSubmitAnswer.mockReturnValue({correct: true});
+
+            const {rerender} = render(
+                <QuestionCard question={{...baseQuestion, id: 'q1', prompt: 'Q1'}} />
+            );
+            fireEvent.click(screen.getByText('Select Option A'));
+            expect(screen.queryByText('Skip')).not.toBeInTheDocument();
+
+            rerender(<QuestionCard question={{...baseQuestion, id: 'q2', prompt: 'Q2'}} />);
+            await waitFor(() => {
+                expect(screen.queryByText('Correct!')).not.toBeInTheDocument();
+            });
+            expect(screen.getByText('Select Option A')).not.toBeDisabled();
+        });
     });
 
     describe('continue to next question', () => {
@@ -421,7 +489,7 @@ describe('QuestionCard', () => {
         it('should load media from IndexedDB when using idb: reference', async () => {
             mockGetMedia.mockResolvedValue({
                 id: 'media-123',
-                data: 'data:image/png;base64,test',
+                blob: new Blob(['test'], {type: 'image/png'}),
                 filename: 'test.png',
                 mimeType: 'image/png',
                 size: 100,
@@ -485,6 +553,47 @@ describe('QuestionCard', () => {
 
             expect(document.querySelector('img')).not.toBeInTheDocument();
             expect(document.querySelector('video')).not.toBeInTheDocument();
+        });
+
+        it('should update media state when switching from idb media to direct URL', async () => {
+            mockGetMedia.mockResolvedValue({
+                id: 'media-123',
+                blob: new Blob(['test'], {type: 'image/png'}),
+                filename: 'test.png',
+                mimeType: 'image/png',
+                size: 100,
+                createdAt: Date.now()
+            });
+
+            const baseQuestion = {
+                id: '8',
+                topicId: 't1',
+                type: 'multiple_choice' as const,
+                prompt: 'Q1',
+                choices: ['A', 'B'],
+                answerIndex: 0,
+                explanation: ''
+            };
+
+            const {rerender} = render(<QuestionCard question={{...baseQuestion, media: 'idb:media-123'}} />);
+
+            await waitFor(() => {
+                expect(mockGetMedia).toHaveBeenCalledWith('media-123');
+                const img = document.querySelector('img');
+                expect(img).toBeInTheDocument();
+                expect(img).toHaveAttribute('src', 'blob:mock-media');
+            });
+
+            rerender(<QuestionCard question={{...baseQuestion, media: 'https://example.com/new-image.png'}} />);
+
+            await waitFor(() => {
+                const img = document.querySelector('img');
+                expect(img).toBeInTheDocument();
+                expect(img).toHaveAttribute('src', 'https://example.com/new-image.png');
+            });
+
+            expect(screen.queryByText('Loading media...')).not.toBeInTheDocument();
+            expect(screen.queryByText('Failed to load media')).not.toBeInTheDocument();
         });
     });
 });
