@@ -3,6 +3,7 @@ import {ChevronLeft, ChevronRight, PanelLeft, PanelRight, Menu, X} from 'lucide-
 import {motion, AnimatePresence} from 'framer-motion';
 import {clsx} from 'clsx';
 import {Logo} from './Logo';
+import {AnimatedBackground} from './AnimatedBackground';
 import {useQuizStore} from '../store/useQuizStore';
 
 interface LayoutProps {
@@ -119,13 +120,7 @@ export const Layout: React.FC<LayoutProps> = ({leftSidebar, center, rightSidebar
 
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col overflow-hidden relative">
-            {animatedBackground && (
-                <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden" aria-hidden>
-                    <div className="absolute top-0 -left-4 w-72 h-72 bg-purple-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob dark:opacity-30"></div>
-                    <div className="absolute top-0 -right-4 w-72 h-72 bg-yellow-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-2000 dark:opacity-30"></div>
-                    <div className="absolute -bottom-8 left-20 w-72 h-72 bg-pink-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-4000 dark:opacity-30"></div>
-                </div>
-            )}
+            {animatedBackground && <AnimatedBackground />}
 
             {/* Mobile Header Bar */}
             <header className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-700">
@@ -176,29 +171,32 @@ export const Layout: React.FC<LayoutProps> = ({leftSidebar, center, rightSidebar
             </AnimatePresence>
 
             {/* Main Layout Container */}
-            <div className="flex flex-1 lg:flex-row pt-14 lg:pt-0">
+            <div className="flex flex-1 lg:flex-row pt-14 lg:pt-0 relative z-10">
                 {/* Left Sidebar */}
-                <AnimatePresence>
+                <AnimatePresence initial={false}>
                     {leftSidebarVisible && (
                         <motion.aside
                             ref={leftSidebarRef}
-                            initial={isMobile ? {x: '-100%'} : {x: -320, opacity: 0}}
-                            animate={isMobile ? {x: 0} : {x: 0, opacity: 1}}
-                            exit={isMobile ? {x: '-100%'} : {x: -320, opacity: 0}}
+                            initial={isMobile ? {x: '-100%'} : {width: 0, opacity: 0}}
+                            animate={isMobile ? {x: 0} : {width: 320, opacity: 1}}
+                            exit={isMobile ? {x: '-100%'} : {width: 0, opacity: 0}}
                             transition={{duration: 0.3, ease: 'easeInOut'}}
                             role={isMobile ? 'dialog' : undefined}
                             aria-modal={isMobile ? 'true' : undefined}
                             aria-label={isMobile ? 'Subjects panel' : undefined}
                             className={clsx(
-                                "bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-r border-slate-200 dark:border-slate-700 flex-shrink-0 overflow-y-auto",
+                                "bg-white/85 dark:bg-slate-900/85 backdrop-blur-md border-r border-slate-200 dark:border-slate-700 flex-shrink-0 overflow-hidden",
                                 // Mobile: fixed overlay drawer
                                 "fixed lg:relative z-30",
                                 "top-14 lg:top-0 left-0",
-                                "w-[85vw] max-w-[320px] lg:w-80",
+                                // Mobile width is a class; desktop width is animated inline by Framer
+                                "w-[85vw] max-w-[320px] lg:w-auto",
                                 "h-[calc(100vh-3.5rem)] lg:h-screen"
                             )}
                         >
-                            {leftSidebar}
+                            <div className="w-full lg:w-80 h-full overflow-y-auto">
+                                {leftSidebar}
+                            </div>
                         </motion.aside>
                     )}
                 </AnimatePresence>
@@ -213,27 +211,30 @@ export const Layout: React.FC<LayoutProps> = ({leftSidebar, center, rightSidebar
                 </main>
 
                 {/* Right Sidebar */}
-                <AnimatePresence>
+                <AnimatePresence initial={false}>
                     {rightSidebarVisible && (
                         <motion.aside
                             ref={rightSidebarRef}
-                            initial={isMobile ? {x: '100%'} : {x: 320, opacity: 0}}
-                            animate={isMobile ? {x: 0} : {x: 0, opacity: 1}}
-                            exit={isMobile ? {x: '100%'} : {x: 320, opacity: 0}}
+                            initial={isMobile ? {x: '100%'} : {width: 0, opacity: 0}}
+                            animate={isMobile ? {x: 0} : {width: 320, opacity: 1}}
+                            exit={isMobile ? {x: '100%'} : {width: 0, opacity: 0}}
                             transition={{duration: 0.3, ease: 'easeInOut'}}
                             role={isMobile ? 'dialog' : undefined}
                             aria-modal={isMobile ? 'true' : undefined}
                             aria-label={isMobile ? 'Tools panel' : undefined}
                             className={clsx(
-                                "bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-l border-slate-200 dark:border-slate-700 flex-shrink-0 overflow-y-auto",
+                                "bg-white/85 dark:bg-slate-900/85 backdrop-blur-md border-l border-slate-200 dark:border-slate-700 flex-shrink-0 overflow-hidden",
                                 // Mobile: fixed overlay drawer
                                 "fixed lg:relative z-30",
                                 "top-14 lg:top-0 right-0",
-                                "w-[85vw] max-w-[320px] lg:w-80",
+                                // Mobile width is a class; desktop width is animated inline by Framer
+                                "w-[85vw] max-w-[320px] lg:w-auto",
                                 "h-[calc(100vh-3.5rem)] lg:h-screen"
                             )}
                         >
-                            {rightSidebar}
+                            <div className="w-full lg:w-80 h-full overflow-y-auto">
+                                {rightSidebar}
+                            </div>
                         </motion.aside>
                     )}
                 </AnimatePresence>

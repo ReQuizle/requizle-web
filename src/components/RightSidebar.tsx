@@ -419,7 +419,6 @@ export const RightSidebar: React.FC = () => {
                             activeProfileId={activeProfileId}
                             editingProfileId={editingProfileId}
                             editingName={editingName}
-                            confirmProfileDelete={settings.confirmProfileDelete}
                             onSetEditingProfileId={setEditingProfileId}
                             onSetEditingName={setEditingName}
                             onRenameProfile={renameProfile}

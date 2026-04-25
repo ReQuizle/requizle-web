@@ -1,8 +1,8 @@
-import React, {useState, useEffect, useCallback, useRef} from 'react';
+import React, {useState, useCallback} from 'react';
 import {Link} from 'react-router-dom';
 import {useQuizStore, DEFAULT_SESSION_STATE} from '../store/useQuizStore';
 import {calculateMastery} from '../utils/quizLogic';
-import {CheckCircle2, Circle, Trash2, X, SquarePen, EllipsisVertical} from 'lucide-react';
+import {CheckCircle2, Circle, X, SquarePen, EllipsisVertical} from 'lucide-react';
 import {clsx} from 'clsx';
 import {Logo} from './Logo';
 import {SimpleConfirmModal, TypeToConfirmModal} from './AppModals';
@@ -19,6 +19,7 @@ import {
     type SubjectExportOptions
 } from './leftSidebar/SubjectExportModal';
 import {flattenProgress} from '../store/quizStoreHelpers';
+import {useLongPress} from '../utils/useLongPress';
 
 type SimpleConfirmState =
     | null
@@ -54,9 +55,6 @@ async function buildSubjectExportPayload(
     return {payload, mediaEntries};
 }
 
-const LONG_PRESS_MS = 480;
-const LONG_PRESS_MOVE_PX = 14;
-
 export const LeftSidebar: React.FC = () => {
     const {
         profiles,
@@ -81,121 +79,32 @@ export const LeftSidebar: React.FC = () => {
     } | null>(null);
 
     const closeContextMenu = useCallback(() => {
-        setContextMenu(prev => {
-            prev?.triggerEl?.focus();
-            return null;
-        });
+        setContextMenu(null);
     }, []);
 
-    const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const longPressOriginRef = useRef<{x: number; y: number} | null>(null);
-    const longPressCoordsRef = useRef<{x: number; y: number}>({x: 0, y: 0});
-    const longPressTargetRef = useRef<
+    const {
+        startLongPress,
+        onLongPressTouchMove,
+        onLongPressTouchEnd,
+        swallowSyntheticClickAfterLongPress
+    } = useLongPress<
         | {kind: 'subject'; subject: Subject}
         | {kind: 'topic'; subject: Subject; topic: Topic}
-        | null
-    >(null);
-    const suppressNextClickRef = useRef(false);
-
-    const killLongPressTimer = useCallback(() => {
-        if (longPressTimerRef.current) {
-            clearTimeout(longPressTimerRef.current);
-            longPressTimerRef.current = null;
-        }
-    }, []);
-
-    const resetLongPressTracking = useCallback(() => {
-        killLongPressTimer();
-        longPressOriginRef.current = null;
-        longPressTargetRef.current = null;
-    }, [killLongPressTimer]);
-
-    const startLongPress = useCallback(
-        (
-            target: {kind: 'subject'; subject: Subject} | {kind: 'topic'; subject: Subject; topic: Topic},
-            e: React.TouchEvent
-        ) => {
-            if (e.touches.length !== 1) {
-                resetLongPressTracking();
-                return;
+    >({
+        onLongPress: (target, coords) => {
+            if (target.kind === 'subject') {
+                setContextMenu({kind: 'subject', subject: target.subject, x: coords.x, y: coords.y});
+            } else {
+                setContextMenu({
+                    kind: 'topic',
+                    subject: target.subject,
+                    topic: target.topic,
+                    x: coords.x,
+                    y: coords.y
+                });
             }
-            resetLongPressTracking();
-            const t = e.touches[0];
-            longPressTargetRef.current = target;
-            longPressOriginRef.current = {x: t.clientX, y: t.clientY};
-            longPressCoordsRef.current = {x: t.clientX, y: t.clientY};
-            longPressTimerRef.current = setTimeout(() => {
-                longPressTimerRef.current = null;
-                const tgt = longPressTargetRef.current;
-                const coords = longPressCoordsRef.current;
-                longPressTargetRef.current = null;
-                longPressOriginRef.current = null;
-                if (!tgt) return;
-                suppressNextClickRef.current = true;
-                if (tgt.kind === 'subject') {
-                    setContextMenu({kind: 'subject', subject: tgt.subject, x: coords.x, y: coords.y});
-                } else {
-                    setContextMenu({kind: 'topic', subject: tgt.subject, topic: tgt.topic, x: coords.x, y: coords.y});
-                }
-                try {
-                    navigator.vibrate?.(20);
-                } catch {
-                    /* ignore */
-                }
-            }, LONG_PRESS_MS);
-        },
-        [resetLongPressTracking]
-    );
-
-    const onLongPressTouchMove = useCallback(
-        (e: React.TouchEvent) => {
-            if (!longPressTimerRef.current || !longPressOriginRef.current) return;
-            const t = e.touches[0];
-            if (!t) return;
-            longPressCoordsRef.current = {x: t.clientX, y: t.clientY};
-            const o = longPressOriginRef.current;
-            if (
-                Math.abs(t.clientX - o.x) > LONG_PRESS_MOVE_PX ||
-                Math.abs(t.clientY - o.y) > LONG_PRESS_MOVE_PX
-            ) {
-                resetLongPressTracking();
-            }
-        },
-        [resetLongPressTracking]
-    );
-
-    const onLongPressTouchEnd = useCallback(() => {
-        if (longPressTimerRef.current) {
-            resetLongPressTracking();
         }
-    }, [resetLongPressTracking]);
-
-    const swallowSyntheticClickAfterLongPress = useCallback((e: React.MouseEvent) => {
-        if (!suppressNextClickRef.current) return;
-        e.preventDefault();
-        e.stopPropagation();
-        suppressNextClickRef.current = false;
-    }, []);
-
-    useEffect(() => () => resetLongPressTracking(), [resetLongPressTracking]);
-
-    useEffect(() => {
-        if (!contextMenu) return;
-        const onPointerDown = (e: PointerEvent) => {
-            const target = e.target as HTMLElement;
-            if (target.closest('[data-context-menu]')) return;
-            closeContextMenu();
-        };
-        const onKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') closeContextMenu();
-        };
-        document.addEventListener('pointerdown', onPointerDown, true);
-        document.addEventListener('keydown', onKeyDown);
-        return () => {
-            document.removeEventListener('pointerdown', onPointerDown, true);
-            document.removeEventListener('keydown', onKeyDown);
-        };
-    }, [contextMenu, closeContextMenu]);
+    });
 
     const activeProfile = profiles[activeProfileId];
     const subjects = activeProfile?.subjects ?? [];
@@ -397,64 +306,45 @@ export const LeftSidebar: React.FC = () => {
                                 onTouchCancel={onLongPressTouchEnd}
                                 onClickCapture={swallowSyntheticClickAfterLongPress}
                                 className={clsx(
-                                    "w-full text-left p-3 rounded-xl transition-all duration-200 group relative [-webkit-touch-callout:none]",
+                                    "rounded-lg border transition-all duration-200 group relative [-webkit-touch-callout:none]",
                                     isActive
-                                        ? "bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 ring-1 ring-indigo-200 dark:ring-indigo-800"
-                                        : "hover:bg-slate-50 dark:hover:bg-slate-800/50 border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
+                                        ? "bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800"
+                                        : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-indigo-200 dark:hover:border-indigo-700"
                                 )}
-                                aria-haspopup="menu"
                             >
                                 <button
                                     type="button"
                                     onClick={() => !isActive && startSession(subject.id)}
-                                    className="w-full text-left"
+                                    className="w-full text-left p-3 pr-20 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
                                 >
-                                    <div className="flex justify-between items-start mb-1 gap-2">
-                                        <span className={clsx("font-medium", isActive ? "text-indigo-900 dark:text-indigo-300" : "text-slate-700 dark:text-slate-300")}>
-                                            {subject.name}
-                                        </span>
-                                        <div className="flex items-center gap-1 flex-shrink-0">
-                                            <span className={clsx("text-xs font-bold px-2 py-0.5 rounded-full",
-                                                masteryPct === 100 ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
-                                            )}>
-                                                {masteryPct}%
-                                            </span>
-                                        </div>
+                                    <div className={clsx("font-medium truncate mb-1", isActive ? "text-indigo-900 dark:text-indigo-300" : "text-slate-700 dark:text-slate-300")}>
+                                        {subject.name}
                                     </div>
                                     <div className="text-xs text-slate-500 flex gap-3">
                                         <span>{subject.topics.length} topics</span>
                                         <span>{allQuestions.length} questions</span>
                                     </div>
                                 </button>
-                                <button
-                                    type="button"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (settings.confirmSubjectDelete) {
-                                            setDeleteConfirm({id: subject.id, name: subject.name});
-                                        } else {
-                                            deleteSubject(subject.id);
-                                        }
-                                    }}
-                                    className="absolute bottom-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-red-400 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
-                                    title="Delete subject"
-                                    aria-label={`Delete ${subject.name}`}
-                                >
-                                    <Trash2 size={14} />
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={e => {
-                                        e.stopPropagation();
-                                        openSubjectMenuFromTrigger(subject, e.currentTarget);
-                                    }}
-                                    className="absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-indigo-400 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
-                                    aria-label={`Open actions for ${subject.name}`}
-                                    aria-haspopup="menu"
-                                    aria-expanded={contextMenu?.kind === 'subject' && contextMenu.subject.id === subject.id}
-                                >
-                                    <EllipsisVertical size={14} />
-                                </button>
+                                <div className="absolute top-2.5 right-2.5 flex items-center gap-1">
+                                    <span className={clsx("text-xs font-bold px-2 py-0.5 rounded-full",
+                                        masteryPct === 100 ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+                                    )}>
+                                        {masteryPct}%
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={e => {
+                                            e.stopPropagation();
+                                            openSubjectMenuFromTrigger(subject, e.currentTarget);
+                                        }}
+                                        className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
+                                        aria-label={`Open actions for ${subject.name}`}
+                                        aria-haspopup="menu"
+                                        aria-expanded={contextMenu?.kind === 'subject' && contextMenu.subject.id === subject.id}
+                                    >
+                                        <EllipsisVertical size={14} />
+                                    </button>
+                                </div>
                             </div>
                         );
                     })}
@@ -575,6 +465,7 @@ export const LeftSidebar: React.FC = () => {
                 showResetSubjectProgress={showResetSubjectProgress}
                 showMarkTopicMastered={showMarkTopicMastered}
                 showResetTopicProgress={showResetTopicProgress}
+                onClose={closeContextMenu}
                 onQuickExportSubject={handleQuickExportSubject}
                 onExportAsSubject={handleOpenSubjectExportAs}
                 onResetSubjectProgress={handleResetSubjectProgressFromContext}
