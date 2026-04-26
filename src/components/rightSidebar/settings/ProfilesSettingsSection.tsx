@@ -14,7 +14,8 @@ type ProfilesSettingsSectionProps = {
     onSetEditingName: (name: string) => void;
     onRenameProfile: (id: string, name: string) => void;
     onSwitchProfile: (id: string) => void;
-    onExportProfile: (profile: Profile) => void;
+    onQuickExportProfile: (profile: Profile) => void;
+    onOpenProfileExportAs: (profile: Profile) => void;
     onDeleteProfile: (profile: Profile) => void;
     onOpenNewProfileModal: () => void;
     onImportFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -36,7 +37,8 @@ export const ProfilesSettingsSection: React.FC<ProfilesSettingsSectionProps> = (
     onSetEditingName,
     onRenameProfile,
     onSwitchProfile,
-    onExportProfile,
+    onQuickExportProfile,
+    onOpenProfileExportAs,
     onDeleteProfile,
     onOpenNewProfileModal,
     onImportFileUpload
@@ -78,7 +80,16 @@ export const ProfilesSettingsSection: React.FC<ProfilesSettingsSectionProps> = (
                 label: 'Export',
                 icon: Download,
                 onSelect: () => {
-                    onExportProfile(menu.profile);
+                    onQuickExportProfile(menu.profile);
+                    closeMenu();
+                }
+            },
+            {
+                id: 'export-as',
+                label: 'Export as...',
+                icon: Download,
+                onSelect: () => {
+                    onOpenProfileExportAs(menu.profile);
                     closeMenu();
                 }
             },

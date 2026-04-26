@@ -14,10 +14,7 @@ import {
     SidebarContextMenu,
     type ContextMenuState
 } from './leftSidebar/SidebarContextMenu';
-import {
-    SubjectExportModal,
-    type SubjectExportOptions
-} from './leftSidebar/SubjectExportModal';
+import {ExportOptionsModal, type ExportOptions} from './ExportOptionsModal';
 import {flattenProgress} from '../store/quizStoreHelpers';
 import {useLongPress} from '../utils/useLongPress';
 
@@ -31,7 +28,7 @@ type SimpleConfirmState =
         topicName?: string;
     };
 
-const DEFAULT_SUBJECT_EXPORT_OPTIONS: SubjectExportOptions = {
+const DEFAULT_SUBJECT_EXPORT_OPTIONS: ExportOptions = {
     includeProgress: true,
     includeMedia: true,
     format: 'rqzl'
@@ -75,7 +72,7 @@ export const LeftSidebar: React.FC = () => {
     const [exportError, setExportError] = useState<string | null>(null);
     const [subjectExportModal, setSubjectExportModal] = useState<{
         subject: Subject;
-        options: SubjectExportOptions;
+        options: ExportOptions;
     } | null>(null);
 
     const closeContextMenu = useCallback(() => {
@@ -148,7 +145,7 @@ export const LeftSidebar: React.FC = () => {
         });
     };
 
-    const performSubjectExport = async (subject: Subject, options: SubjectExportOptions) => {
+    const performSubjectExport = async (subject: Subject, options: ExportOptions) => {
         const slice = progress[subject.id] || {};
         try {
             const {payload, mediaEntries} = await buildSubjectExportPayload(subject, slice, {
@@ -186,7 +183,7 @@ export const LeftSidebar: React.FC = () => {
         });
     };
 
-    const setSubjectExportOption = <K extends keyof SubjectExportOptions>(key: K, value: SubjectExportOptions[K]) => {
+    const setSubjectExportOption = <K extends keyof ExportOptions>(key: K, value: ExportOptions[K]) => {
         setSubjectExportModal(prev => (prev ? {...prev, options: {...prev.options, [key]: value}} : prev));
     };
 
@@ -531,11 +528,16 @@ export const LeftSidebar: React.FC = () => {
                 }}
             />
 
-            <SubjectExportModal
-                modalState={subjectExportModal}
+            <ExportOptionsModal
+                open={!!subjectExportModal}
+                title="Export Subject"
+                targetLabel={subjectExportModal?.subject.name ?? ''}
+                options={subjectExportModal?.options ?? DEFAULT_SUBJECT_EXPORT_OPTIONS}
                 setOption={setSubjectExportOption}
                 onClose={() => setSubjectExportModal(null)}
-                onExport={(subject, options) => {
+                onExport={() => {
+                    if (!subjectExportModal) return;
+                    const {subject, options} = subjectExportModal;
                     setSubjectExportModal(null);
                     void performSubjectExport(subject, options);
                 }}

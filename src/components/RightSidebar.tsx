@@ -5,9 +5,10 @@ import {
     getAllMediaIds,
     deleteMedia
 } from '../utils/mediaStorage';
-import {triggerBlobDownload} from '../utils/download';
+import {triggerBlobDownload, triggerJsonDownload} from '../utils/download';
 import {createRqzlArchiveBlob} from '../utils/rqzlArchive';
 import {getArchiveMediaEntriesForSubjects} from '../utils/archiveMedia';
+import {ExportOptionsModal, type ExportOptions} from './ExportOptionsModal';
 import {
     Upload,
     AlertCircle,
@@ -78,6 +79,10 @@ export const RightSidebar: React.FC = () => {
     const [cacheClearResult, setCacheClearResult] = useState<{removed: number; message: string} | null>(null);
     const [resetSubjectDataConfirm, setResetSubjectDataConfirm] = useState<{id: string; name: string} | null>(null);
     const [profileExportError, setProfileExportError] = useState<string | null>(null);
+    const [profileExportModal, setProfileExportModal] = useState<{
+        profile: Profile;
+        options: ExportOptions;
+    } | null>(null);
 
     const currentProfile = profiles[activeProfileId];
     const subjects = currentProfile?.subjects ?? [];
@@ -133,17 +138,49 @@ export const RightSidebar: React.FC = () => {
 
 
 
-    const handleExportProfile = async (profile: Profile) => {
+    const DEFAULT_PROFILE_EXPORT_OPTIONS: ExportOptions = {
+        includeProgress: true,
+        includeMedia: true,
+        format: 'rqzl'
+    };
+
+    const performProfileExport = async (profile: Profile, options: ExportOptions) => {
         try {
-            const archiveMediaEntries = await getArchiveMediaEntriesForSubjects(profile.subjects);
             const safeName = profile.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/gi, '') || 'profile';
-            const archive = await createRqzlArchiveBlob(profile, archiveMediaEntries);
-            triggerBlobDownload(archive, `quiz-profile-${safeName}.rqzl`);
+            const suffix = options.includeProgress ? '' : '-content';
+            const baseFilename = `quiz-profile-${safeName}${suffix}`;
+
+            const payload: Profile = options.includeProgress
+                ? profile
+                : {...profile, progress: {}};
+
+            if (options.format === 'json') {
+                triggerJsonDownload(payload, `${baseFilename}.json`);
+            } else {
+                const mediaEntries = options.includeMedia
+                    ? await getArchiveMediaEntriesForSubjects(profile.subjects)
+                    : [];
+                const archive = await createRqzlArchiveBlob(payload, mediaEntries);
+                const ext = options.format === 'zip' ? 'zip' : 'rqzl';
+                triggerBlobDownload(archive, `${baseFilename}.${ext}`);
+            }
             setProfileExportError(null);
         } catch (error) {
             console.error('Profile export failed:', error);
             setProfileExportError('Profile export failed. Try again.');
         }
+    };
+
+    const handleQuickExportProfile = (profile: Profile) => {
+        void performProfileExport(profile, DEFAULT_PROFILE_EXPORT_OPTIONS);
+    };
+
+    const handleOpenProfileExportAs = (profile: Profile) => {
+        setProfileExportModal({profile, options: {...DEFAULT_PROFILE_EXPORT_OPTIONS}});
+    };
+
+    const setProfileExportOption = <K extends keyof ExportOptions>(key: K, value: ExportOptions[K]) => {
+        setProfileExportModal(prev => (prev ? {...prev, options: {...prev.options, [key]: value}} : prev));
     };
 
     const handleDeleteProfileFromSettings = (profile: Profile) => {
@@ -423,9 +460,8 @@ export const RightSidebar: React.FC = () => {
                             onSetEditingName={setEditingName}
                             onRenameProfile={renameProfile}
                             onSwitchProfile={switchProfile}
-                            onExportProfile={profile => {
-                                void handleExportProfile(profile);
-                            }}
+                            onQuickExportProfile={handleQuickExportProfile}
+                            onOpenProfileExportAs={handleOpenProfileExportAs}
                             onDeleteProfile={handleDeleteProfileFromSettings}
                             onOpenNewProfileModal={() => setNewProfileModalOpen(true)}
                             onImportFileUpload={(e) => {
@@ -607,6 +643,21 @@ export const RightSidebar: React.FC = () => {
                 title="Export"
                 message={profileExportError ?? ''}
                 onClose={() => setProfileExportError(null)}
+            />
+
+            <ExportOptionsModal
+                open={!!profileExportModal}
+                title="Export Profile"
+                targetLabel={profileExportModal?.profile.name ?? ''}
+                options={profileExportModal?.options ?? {includeProgress: true, includeMedia: true, format: 'rqzl'}}
+                setOption={setProfileExportOption}
+                onClose={() => setProfileExportModal(null)}
+                onExport={() => {
+                    if (!profileExportModal) return;
+                    const {profile, options} = profileExportModal;
+                    setProfileExportModal(null);
+                    void performProfileExport(profile, options);
+                }}
             />
         </div>
     );
