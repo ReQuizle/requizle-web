@@ -25,6 +25,14 @@ import {
     sanitizeNumber
 } from './quizStoreHelpers';
 import {isRecord} from '../utils/typeGuards';
+import {
+    DEFAULT_COLOR_THEME,
+    DEFAULT_CUSTOM_ACCENT_HEX,
+    isColorThemeId,
+    LEGACY_COLOR_THEME_MAP,
+    sanitizeCustomAccentHex,
+    type ColorThemeId
+} from '../utils/colorThemes';
 
 interface Settings {
     confirmSubjectDelete: boolean;
@@ -43,6 +51,10 @@ interface Settings {
     quizRequeueGapMax: number;
     /** When false, hide the ambient animated background. */
     animatedBackground: boolean;
+    /** Active accent color theme (drives the entire `indigo-*` palette via CSS variables). */
+    colorTheme: ColorThemeId;
+    /** When `colorTheme` is `custom`, the 500-seed (and ramp) is derived from this hex. */
+    customAccentColor: string;
     /** Whether the starter sample deck has already been added for this install. */
     sampleDataSeeded: boolean;
 }
@@ -99,6 +111,8 @@ export interface QuizState {
     setQuizRequeueOnSkip: (value: boolean) => void;
     setQuizRequeueGaps: (minGap: number, maxGap: number) => void;
     setAnimatedBackground: (value: boolean) => void;
+    setColorTheme: (value: ColorThemeId) => void;
+    setCustomAccentColor: (value: string) => void;
     markSampleDataSeeded: () => void;
 }
 
@@ -138,6 +152,8 @@ export const DEFAULT_SETTINGS: Settings = {
     quizRequeueGapMin: 4,
     quizRequeueGapMax: 6,
     animatedBackground: true,
+    colorTheme: DEFAULT_COLOR_THEME,
+    customAccentColor: DEFAULT_CUSTOM_ACCENT_HEX,
     sampleDataSeeded: false
 };
 
@@ -164,6 +180,14 @@ function sanitizeSettings(input: unknown, sampleDataSeededFallback: boolean): Se
         quizRequeueGapMin: min,
         quizRequeueGapMax: max,
         animatedBackground: sanitizeBoolean(raw.animatedBackground, DEFAULT_SETTINGS.animatedBackground),
+        colorTheme: (() => {
+            const t = raw.colorTheme;
+            if (typeof t === 'string' && t in LEGACY_COLOR_THEME_MAP) {
+                return LEGACY_COLOR_THEME_MAP[t]!;
+            }
+            return isColorThemeId(t) ? t : DEFAULT_SETTINGS.colorTheme;
+        })(),
+        customAccentColor: sanitizeCustomAccentHex(raw.customAccentColor, DEFAULT_SETTINGS.customAccentColor),
         sampleDataSeeded: sanitizeBoolean(raw.sampleDataSeeded, sampleDataSeededFallback)
     };
 }

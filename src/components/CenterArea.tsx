@@ -16,7 +16,6 @@ export const CenterArea: React.FC = () => {
 
     const currentSubject = subjects.find(s => s.id === session.subjectId);
 
-    // Find current question object
     let currentQuestion = null;
     let currentTopic = null;
 
@@ -126,7 +125,7 @@ export const CenterArea: React.FC = () => {
                     <ErrorBoundary 
                         key={`eb-${currentQuestion.id}-${session.turnCounter}`}
                         fallbackMessage="This question contains invalid formatting or corrupted data."
-                        onSkip={() => useQuizStore.getState().skipQuestion()} // Skip safely
+                        onSkip={() => useQuizStore.getState().skipQuestion()}
                     >
                         {/* Key uses turnCounter from store to force remount when advancing to same question */}
                         <QuestionCard

@@ -19,12 +19,13 @@ ReQuizle is a modern web application designed to help users study efficiently th
   - Matching
   - Word Bank
 - **LaTeX Support**: Render mathematical equations using `\(...\)` (inline) and `\[...\]` (block) syntax.
+- **Rich Text & Code**: Question text and explanations support Markdown-style formatting, fenced code blocks with syntax highlighting, and error handling for bad content in the study UI.
 - **Media Support**: Add images or videos to questions via URL, base64, or local file upload.
 - **Data Persistence**: Progress automatically saved to IndexedDB for large datasets.
-- **Custom Content Import**: Import subjects, subject exports, or full profiles via `.json` or `.rqzl` with automatic type detection.
+- **Import & export**: Import or export subjects, subject exports, or full profiles via `.json` or `.rqzl` (ZIP-based); automatic type detection on import, configurable options when exporting.
 - **In-App Content Editor**: Create, rename, and delete subjects, topics, and questions (including media uploads) from a dedicated editor page.
 - **Profile Management**: Create, rename, and manage multiple study profiles.
-- **Dark Mode**: Built-in theme toggle for comfortable studying.
+- **Appearance**: Light/dark theme, accent color presets and custom color, and an optional animated background.
 - **Responsive Design**: Works seamlessly on desktop and mobile devices.
 - **Collapsible Sidebars**: Hide sidebars for a focused study experience.
 - **Installable**: Can be installed as a Progressive Web App (PWA) on desktop and mobile.
@@ -79,8 +80,8 @@ Production builds default to the GitHub Pages project path **`/requizle-web/`**.
    - View mastery percentage for each subject and topic
    - Toggle "Include Mastered" to review completed questions
 
-4. **Import Custom Content**:
-   - Use the Import tab in the right sidebar
+4. **Import or export**:
+   - Use the **Import** tab in the right sidebar; use **Export** from the same sidebar for subjects and profiles
    - Upload `.json` or `.rqzl` files with subjects, subject exports, or full profiles
    - Import type is automatically detected
    - Imported data merges by matching explicit IDs; imports without IDs create new copies
@@ -158,7 +159,10 @@ requizle-web/
 - [Tailwind CSS](https://tailwindcss.com/) - Styling
 - [Lucide](https://lucide.dev/) - Icons
 - [KaTeX](https://katex.org/) and [react-katex](https://github.com/MichaelDeBoey/react-katex) - Math rendering
-- [react-syntax-highlighter](https://github.com/react-syntax-highlighter/react-syntax-highlighter) - Code block highlighting
+- [react-syntax-highlighter](https://github.com/react-syntax-highlighter/react-syntax-highlighter) (Prism-based) - Code block highlighting
+- [JSZip](https://stuk.github.io/jszip/) - `.rqzl` archive (ZIP) read/write
+- [uuid](https://www.npmjs.com/package/uuid) - Media and entity identifiers
+- [clsx](https://github.com/lukeed/clsx) - Conditional class names
 - [canvas-confetti](https://www.npmjs.com/package/canvas-confetti) - Celebration effects
 - [Vite](https://vitejs.dev/) - Build tool and dev server
 - [vite-plugin-pwa](https://vite-pwa-org.netlify.app/) - Progressive Web App / offline support

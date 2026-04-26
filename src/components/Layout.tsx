@@ -138,7 +138,7 @@ export const Layout: React.FC<LayoutProps> = ({leftSidebar, center, rightSidebar
 
                     <div className="flex items-center gap-2">
                         <Logo size={28} />
-                        <span className="text-lg font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+                        <span className="text-lg font-semibold bg-gradient-to-r from-indigo-600 to-indigo-400 bg-clip-text text-transparent">
                             ReQuizle
                         </span>
                     </div>
@@ -248,7 +248,7 @@ export const Layout: React.FC<LayoutProps> = ({leftSidebar, center, rightSidebar
                     "hidden lg:flex fixed z-30 transition-all duration-300 shadow-lg",
                     leftSidebarVisible
                         ? "top-1/2 -translate-y-1/2 left-80 rounded-r-lg bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 border-y border-r border-slate-300 dark:border-slate-600 hover:bg-white dark:hover:bg-slate-800"
-                        : "top-1/2 -translate-y-1/2 left-0 rounded-r-lg bg-indigo-600 text-white hover:bg-indigo-700 border border-indigo-700 shadow-xl"
+                        : "top-1/2 -translate-y-1/2 left-0 rounded-r-lg bg-indigo-600 text-on-accent hover:bg-indigo-700 border border-indigo-700 shadow-xl"
                 )}
                 aria-label={leftSidebarVisible ? "Hide left sidebar" : "Show left sidebar"}
             >
@@ -268,7 +268,7 @@ export const Layout: React.FC<LayoutProps> = ({leftSidebar, center, rightSidebar
                     "hidden lg:flex fixed z-30 transition-all duration-300 shadow-lg",
                     rightSidebarVisible
                         ? "top-1/2 -translate-y-1/2 right-80 rounded-l-lg bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 border-y border-l border-slate-300 dark:border-slate-600 hover:bg-white dark:hover:bg-slate-800"
-                        : "top-1/2 -translate-y-1/2 right-0 rounded-l-lg bg-indigo-600 text-white hover:bg-indigo-700 border border-indigo-700 shadow-xl"
+                        : "top-1/2 -translate-y-1/2 right-0 rounded-l-lg bg-indigo-600 text-on-accent hover:bg-indigo-700 border border-indigo-700 shadow-xl"
                 )}
                 aria-label={rightSidebarVisible ? "Hide right sidebar" : "Show right sidebar"}
             >

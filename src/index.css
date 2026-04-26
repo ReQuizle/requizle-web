@@ -3,6 +3,35 @@
 @tailwind utilities;
 
 @layer base {
+  /* Default accent palette (indigo). The active color theme overrides these on <html>. */
+  :root {
+    /* For primary (indigo) buttons on light or colored accents; #171717 in mono + dark. */
+    --contrast-on-accent: 255 255 255;
+    --accent-50: 238 242 255;
+    --accent-100: 224 231 255;
+    --accent-200: 199 210 254;
+    --accent-300: 165 180 252;
+    --accent-400: 129 140 248;
+    --accent-500: 99 102 241;
+    --accent-600: 79 70 229;
+    --accent-700: 67 56 202;
+    --accent-800: 55 48 163;
+    --accent-900: 49 46 129;
+    --accent-950: 30 27 75;
+    /* Default surface (Tailwind slate). `slate-*` maps here; theme updates on load. */
+    --surface-50: 248 250 252;
+    --surface-100: 241 245 249;
+    --surface-200: 226 232 240;
+    --surface-300: 203 213 225;
+    --surface-400: 148 163 184;
+    --surface-500: 100 116 139;
+    --surface-600: 71 85 105;
+    --surface-700: 51 65 85;
+    --surface-800: 30 41 59;
+    --surface-900: 15 23 42;
+    --surface-950: 2 6 23;
+  }
+
   body {
     @apply bg-slate-50 text-slate-900 antialiased dark:bg-slate-900 dark:text-slate-100;
   }
@@ -70,7 +99,7 @@
   }
 
   .btn-icon-active {
-    @apply p-2 rounded-lg transition-all duration-200 bg-indigo-600 text-white shadow-lg shadow-indigo-200 dark:shadow-indigo-500/25;
+    @apply p-2 rounded-lg transition-all duration-200 bg-indigo-600 text-on-accent shadow-lg shadow-indigo-200 dark:shadow-indigo-500/25;
   }
 
   .toggle-switch-input {

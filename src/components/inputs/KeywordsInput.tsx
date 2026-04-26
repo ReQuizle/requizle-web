@@ -38,7 +38,7 @@ export const KeywordsInput: React.FC<Props> = ({onAnswer, disabled, submittedAns
                     type="submit"
                     disabled={disabled || !input.trim()}
                     aria-label="Submit answer"
-                    className="absolute right-2 top-2 bottom-2 aspect-square bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white rounded-lg flex items-center justify-center transition-colors"
+                    className="absolute right-2 top-2 bottom-2 aspect-square bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-on-accent rounded-lg flex items-center justify-center transition-colors"
                 >
                     <Send size={20} />
                 </button>

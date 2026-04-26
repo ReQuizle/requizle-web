@@ -71,7 +71,7 @@ export const MatchingInput: React.FC<Props> = ({question, onAnswer, disabled, su
                                 className={clsx(
                                     "w-full p-4 rounded-xl border-2 text-left text-sm font-medium transition-all",
                                     isMatched ? "bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300" :
-                                        isSelected ? "bg-indigo-600 dark:bg-indigo-600 border-indigo-600 dark:border-indigo-600 text-white shadow-lg scale-105" :
+                                        isSelected ? "bg-indigo-600 dark:bg-indigo-600 border-indigo-600 dark:border-indigo-600 text-on-accent shadow-lg scale-105" :
                                             "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500 text-slate-700 dark:text-slate-300"
                                 )}
                             >

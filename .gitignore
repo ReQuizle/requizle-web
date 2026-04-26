@@ -1,3 +1,6 @@
+# Local one-off log exports
+git-history.txt
+
 # Logs
 logs
 *.log

@@ -410,7 +410,7 @@ export const ContentEditor: React.FC = () => {
                 <button
                     type="button"
                     onClick={handleNewSubject}
-                    className="flex items-center justify-center gap-2 w-full py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors"
+                    className="flex items-center justify-center gap-2 w-full py-2.5 rounded-lg bg-indigo-600 text-on-accent text-sm font-medium hover:bg-indigo-700 transition-colors"
                 >
                     <Plus size={18} />
                     New subject
@@ -505,7 +505,7 @@ export const ContentEditor: React.FC = () => {
                                     className={clsx(
                                         'px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors',
                                         t.id === effectiveTopicId
-                                            ? 'bg-indigo-600 text-white border-indigo-600'
+                                            ? 'bg-indigo-600 text-on-accent border-indigo-600'
                                             : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-600 hover:border-indigo-300'
                                     )}
                                 >
@@ -653,7 +653,7 @@ export const ContentEditor: React.FC = () => {
                                         <button
                                             type="button"
                                             onClick={saveQuestion}
-                                            className="flex-1 inline-flex items-center justify-center gap-1 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700"
+                                            className="flex-1 inline-flex items-center justify-center gap-1 py-2 rounded-lg bg-indigo-600 text-on-accent text-sm font-medium hover:bg-indigo-700"
                                         >
                                             <Save size={16} />
                                             Save question

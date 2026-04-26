@@ -65,7 +65,9 @@ export const RightSidebar: React.FC = () => {
         setQuizRequeueOnIncorrect,
         setQuizRequeueOnSkip,
         setQuizRequeueGaps,
-        setAnimatedBackground
+        setAnimatedBackground,
+        setColorTheme,
+        setCustomAccentColor
     } = useQuizStore();
     const [activeTab, setActiveTab] = useState<RightSidebarTab>('mastery');
     const [settingsSection, setSettingsSection] = useState<SettingsSectionId>('profiles');
@@ -438,7 +440,7 @@ export const RightSidebar: React.FC = () => {
                                         className={clsx(
                                             'w-full flex items-center gap-3 min-h-[44px] px-3 py-2 rounded-lg text-sm font-medium text-left transition-colors border',
                                             selected
-                                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                                                ? 'bg-indigo-600 text-on-accent border-indigo-600 shadow-sm'
                                                 : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:border-indigo-300 dark:hover:border-indigo-600 hover:text-slate-900 dark:hover:text-white'
                                         )}
                                     >
@@ -474,6 +476,10 @@ export const RightSidebar: React.FC = () => {
                         <AppearanceSettingsSection
                             animatedBackground={settings.animatedBackground}
                             onSetAnimatedBackground={setAnimatedBackground}
+                            colorTheme={settings.colorTheme}
+                            customAccentColor={settings.customAccentColor}
+                            onSetColorTheme={setColorTheme}
+                            onSetCustomAccentColor={setCustomAccentColor}
                         />
                     )}
 

@@ -62,7 +62,7 @@ export const BehaviorSettingsSection: React.FC<BehaviorSettingsSectionProps> = (
                     className={clsx(
                         'flex items-center justify-center gap-2 min-h-[44px] px-2 rounded-lg text-xs font-semibold border transition-colors',
                         mode === 'random'
-                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                            ? 'bg-indigo-600 text-on-accent border-indigo-600 shadow-sm'
                             : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:border-indigo-300 dark:hover:border-indigo-600'
                     )}
                 >
@@ -75,7 +75,7 @@ export const BehaviorSettingsSection: React.FC<BehaviorSettingsSectionProps> = (
                     className={clsx(
                         'flex items-center justify-center gap-2 min-h-[44px] px-2 rounded-lg text-xs font-semibold border transition-colors',
                         mode === 'topic_order'
-                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                            ? 'bg-indigo-600 text-on-accent border-indigo-600 shadow-sm'
                             : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:border-indigo-300 dark:hover:border-indigo-600'
                     )}
                 >

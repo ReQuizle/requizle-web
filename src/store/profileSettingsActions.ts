@@ -5,6 +5,7 @@ import {getCanonicalAppLocationHref} from '../utils/appBaseUrl';
 import {clearStoreData} from '../utils/indexedDBStorage';
 import {clearAllMedia} from '../utils/mediaStorage';
 import type {QuizState} from './useQuizStore';
+import {sanitizeCustomAccentHex} from '../utils/colorThemes';
 import {extractMediaIdsFromSubject, cleanupOrphanedMedia} from './quizStoreHelpers';
 
 type SetState = (
@@ -54,6 +55,8 @@ export function createProfileSettingsActions({
     | 'setQuizRequeueOnSkip'
     | 'setQuizRequeueGaps'
     | 'setAnimatedBackground'
+    | 'setColorTheme'
+    | 'setCustomAccentColor'
     | 'markSampleDataSeeded'
 > {
     return {
@@ -261,6 +264,18 @@ export function createProfileSettingsActions({
 
         setAnimatedBackground: (value) => set((state) => ({
             settings: {...state.settings, animatedBackground: value}
+        })),
+
+        setColorTheme: (value) => set((state) => ({
+            settings: {...state.settings, colorTheme: value}
+        })),
+
+        setCustomAccentColor: (value) => set((state) => ({
+            settings: {
+                ...state.settings,
+                customAccentColor: sanitizeCustomAccentHex(value, state.settings.customAccentColor),
+                colorTheme: 'custom'
+            }
         })),
 
         markSampleDataSeeded: () => set((state) => ({

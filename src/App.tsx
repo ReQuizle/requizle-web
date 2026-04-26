@@ -15,6 +15,7 @@
 
 import {ThemeProvider} from './context/ThemeContext';
 import {AppRoutes} from './router';
+import {ColorThemeApplier} from './components/ColorThemeApplier';
 import type {Subject} from './types';
 
 // Sample data for initial load if empty
@@ -283,6 +284,7 @@ const SAMPLE_SUBJECTS: Subject[] = [
 function App() {
   return (
     <ThemeProvider>
+      <ColorThemeApplier />
       <AppRoutes sampleSubjects={SAMPLE_SUBJECTS} />
     </ThemeProvider>
   );
