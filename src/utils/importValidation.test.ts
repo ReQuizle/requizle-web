@@ -665,7 +665,7 @@ describe('importValidation', () => {
 
             const imageGroup = groups.find(g => g.filename === 'image.png');
             expect(imageGroup?.references).toHaveLength(2);
-            expect(imageGroup?.isConflict).toBe(true); // Different paths
+            expect(imageGroup?.isConflict).toBe(true);
         });
 
         it('should not mark as conflict if same path', () => {
@@ -696,7 +696,7 @@ describe('importValidation', () => {
 
             const result = replaceMediaByPath(data, mediaMap) as typeof data;
             expect(result.topics[0].questions[0].media).toBe('idb:new-id-123');
-            expect(result.topics[0].questions[1].media).toBe('images/other.png'); // Not replaced
+            expect(result.topics[0].questions[1].media).toBe('images/other.png');
         });
 
         it('should handle arrays', () => {

@@ -3,12 +3,10 @@ import {render, screen, fireEvent, waitFor} from '@testing-library/react';
 import {QuestionCard} from './QuestionCard';
 import {useQuizStore} from '../store/useQuizStore';
 
-// Mock the store
 vi.mock('../store/useQuizStore', () => ({
     useQuizStore: vi.fn()
 }));
 
-// Mock mediaStorage
 const mockGetMedia = vi.fn();
 vi.mock('../utils/mediaStorage', () => ({
     getMedia: (...args: unknown[]) => mockGetMedia(...args),
@@ -18,12 +16,10 @@ vi.mock('../utils/mediaStorage', () => ({
     revokeMediaObjectUrl: vi.fn()
 }));
 
-// Mock Latex component
 vi.mock('./Latex', () => ({
     Latex: ({children}: {children: string}) => <span>{children}</span>
 }));
 
-// Mock sub-components to simplify testing
 vi.mock('./inputs/MultipleChoiceInput', () => ({
     MultipleChoiceInput: ({onAnswer, disabled}: {onAnswer: (answer: number) => void; disabled?: boolean}) => (
         <button onClick={() => onAnswer(0)} disabled={disabled}>
@@ -65,7 +61,6 @@ vi.mock('./inputs/WordBankInput', () => ({
     )
 }));
 
-// Mock confetti
 vi.mock('canvas-confetti', () => ({
     default: vi.fn()
 }));
@@ -546,7 +541,6 @@ describe('QuestionCard', () => {
                 choices: ['A', 'B'],
                 answerIndex: 0,
                 explanation: ''
-                // No media field
             };
 
             render(<QuestionCard question={question} />);

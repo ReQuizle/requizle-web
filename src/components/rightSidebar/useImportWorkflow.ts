@@ -94,7 +94,7 @@ export function useImportWorkflow({
             const action = existingProfile ? 'merged with existing' : 'imported';
             return {type: 'profile', message: `Profile "${profile.name}" ${action} successfully!`};
         } catch {
-            // Not a profile import. Fall through to subjects import validation.
+            void 0;
         }
 
         const validatedSubjects = validateSubjects(parsed);

@@ -1,8 +1,3 @@
-/**
- * Media storage using IndexedDB for large files (images, videos).
- * This avoids localStorage quota limits.
- */
-
 const DB_NAME = 'requizle-media';
 const DB_VERSION = 1;
 const STORE_NAME = 'media';
@@ -63,10 +58,7 @@ export interface MediaEntry {
     createdAt: number;
 }
 
-/**
- * Store media in IndexedDB
- * @returns The media ID (use as `idb:${id}` in question.media)
- */
+/** Persists bytes in IndexedDB. Returned id is referenced as `idb:${id}` in `question.media`. */
 export async function storeMedia(blob: Blob, filename: string): Promise<string> {
     const db = await openDB();
     const id = `media-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -92,9 +84,6 @@ export async function storeMedia(blob: Blob, filename: string): Promise<string> 
     });
 }
 
-/**
- * Retrieve media from IndexedDB
- */
 export async function getMedia(id: string): Promise<MediaEntry | null> {
     const db = await openDB();
 
@@ -113,9 +102,6 @@ export async function getMedia(id: string): Promise<MediaEntry | null> {
     });
 }
 
-/**
- * Delete media from IndexedDB
- */
 export async function deleteMedia(id: string): Promise<void> {
     const db = await openDB();
 
@@ -128,9 +114,6 @@ export async function deleteMedia(id: string): Promise<void> {
     });
 }
 
-/**
- * Get all media IDs
- */
 export async function getAllMediaIds(): Promise<string[]> {
     const db = await openDB();
 
@@ -149,9 +132,6 @@ export async function getAllMediaIds(): Promise<string[]> {
     });
 }
 
-/**
- * Clear all media from IndexedDB
- */
 export async function clearAllMedia(): Promise<void> {
     const db = await openDB();
 
@@ -164,23 +144,14 @@ export async function clearAllMedia(): Promise<void> {
     });
 }
 
-/**
- * Check if a media reference points to IndexedDB
- */
 export function isIndexedDBMedia(mediaRef: string): boolean {
     return mediaRef.startsWith('idb:');
 }
 
-/**
- * Extract the media ID from an IndexedDB reference
- */
 export function extractMediaId(mediaRef: string): string {
     return mediaRef.replace('idb:', '');
 }
 
-/**
- * Create an IndexedDB media reference from an ID
- */
 export function createMediaRef(id: string): string {
     return `idb:${id}`;
 }

@@ -92,16 +92,17 @@ export interface SessionState {
     selectedTopicIds: string[];
     mode: StudyMode;
     includeMastered: boolean;
-    queue: string[]; // question IDs
+    /** Question ids in the study queue. */
+    queue: string[];
     currentQuestionId: string | null;
-    turnCounter: number; // Increments each time we advance to a new question
+    /** Count of navigations to a new current question in this session. */
+    turnCounter: number;
 }
 
-/** Single-subject backup for Import tab or left-sidebar export (optional progress + optional embedded media). */
+/** Single-subject export (`requizleSubjectExport: 1`). `progress` is optional. */
 export interface SubjectExportV1 {
     requizleSubjectExport: 1;
     subject: Subject;
-    /** topicId -> questionId -> progress. Omit or leave empty to share the question set only. */
     progress?: Record<string, Record<string, QuestionProgress>>;
 }
 

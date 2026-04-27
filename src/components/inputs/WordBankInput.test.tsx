@@ -101,13 +101,9 @@ describe('WordBankInput', () => {
             />
         );
 
-        // Click a word from the bank
         fireEvent.click(screen.getByText('sky'));
 
-        // Word should still appear but now in a slot
-        // Verify there are buttons present after interaction
         expect(screen.getAllByRole('button').length).toBeGreaterThan(0);
-        // The word should be in a slot now
         expect(screen.getByText('sky')).toBeInTheDocument();
     });
 
@@ -121,17 +117,13 @@ describe('WordBankInput', () => {
             />
         );
 
-        // Fill first blank with 'sky'
         fireEvent.click(screen.getByText('sky'));
 
-        // Fill second blank with 'blue'
         fireEvent.click(screen.getByText('blue'));
 
-        // Submit should now be enabled
         const submitButton = screen.getByText('Submit Answer');
         expect(submitButton).not.toBeDisabled();
 
-        // Submit
         fireEvent.click(submitButton);
         expect(mockOnAnswer).toHaveBeenCalledWith(['sky', 'blue']);
     });
@@ -146,15 +138,11 @@ describe('WordBankInput', () => {
             />
         );
 
-        // Fill first blank
         fireEvent.click(screen.getByText('sky'));
 
-        // Now click on the filled slot (which now contains 'sky')
-        // Find and click the button containing 'sky' (it's now a slot button)
         const skyButton = screen.getByText('sky');
         fireEvent.click(skyButton);
 
-        // Submit should be disabled again
         const submitButton = screen.getByText('Submit Answer');
         expect(submitButton).toBeDisabled();
     });
@@ -171,7 +159,6 @@ describe('WordBankInput', () => {
 
         fireEvent.click(screen.getByText('sky'));
 
-        // Submit should still be disabled
         const submitButton = screen.getByText('Submit Answer');
         expect(submitButton).toBeDisabled();
     });
@@ -186,7 +173,6 @@ describe('WordBankInput', () => {
             />
         );
 
-        // Words should be in slots
         expect(screen.getByText('sky')).toBeInTheDocument();
         expect(screen.getByText('blue')).toBeInTheDocument();
     });
@@ -205,12 +191,10 @@ describe('WordBankInput', () => {
             />
         );
 
-        // Fill all blanks
         fireEvent.click(screen.getByText('horse'));
         fireEvent.click(screen.getByText('zebra'));
         fireEvent.click(screen.getByText('fish'));
 
-        // Submit
         fireEvent.click(screen.getByText('Submit Answer'));
         expect(mockOnAnswer).toHaveBeenCalledWith(['horse', 'zebra', 'fish']);
     });

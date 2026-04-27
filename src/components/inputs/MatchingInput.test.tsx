@@ -48,7 +48,6 @@ describe('MatchingInput', () => {
             />
         );
 
-        // Items should still be present even if shuffled
         expect(screen.getByText('1')).toBeInTheDocument();
         expect(screen.getByText('2')).toBeInTheDocument();
         expect(screen.getByText('3')).toBeInTheDocument();
@@ -107,8 +106,6 @@ describe('MatchingInput', () => {
 
         fireEvent.click(screen.getByText('A'));
 
-        // The component should now have A selected (visual state changes)
-        // We can verify the component renders without error
         expect(container).toBeInTheDocument();
     });
 
@@ -122,23 +119,18 @@ describe('MatchingInput', () => {
             />
         );
 
-        // Select A, then click 1
         fireEvent.click(screen.getByText('A'));
         fireEvent.click(screen.getByText('1'));
 
-        // Select B, then click 2
         fireEvent.click(screen.getByText('B'));
         fireEvent.click(screen.getByText('2'));
 
-        // Select C, then click 3
         fireEvent.click(screen.getByText('C'));
         fireEvent.click(screen.getByText('3'));
 
-        // Now submit should be enabled
         const submitButton = screen.getByText('Submit Matches');
         expect(submitButton).not.toBeDisabled();
 
-        // Submit
         fireEvent.click(submitButton);
         expect(mockOnAnswer).toHaveBeenCalledWith({'A': '1', 'B': '2', 'C': '3'});
     });
@@ -153,14 +145,11 @@ describe('MatchingInput', () => {
             />
         );
 
-        // Select A and match to 1
         fireEvent.click(screen.getByText('A'));
         fireEvent.click(screen.getByText('1'));
 
-        // Click A again to unmatch
         fireEvent.click(screen.getByText('A'));
 
-        // Submit should still be disabled (only 0 matches now)
         const submitButton = screen.getByText('Submit Matches');
         expect(submitButton).toBeDisabled();
     });
@@ -178,7 +167,6 @@ describe('MatchingInput', () => {
         fireEvent.click(screen.getByText('A'));
         fireEvent.click(screen.getByText('1'));
 
-        // Submit should still be disabled
         const submitButton = screen.getByText('Submit Matches');
         expect(submitButton).toBeDisabled();
     });
@@ -193,10 +181,7 @@ describe('MatchingInput', () => {
             />
         );
 
-        // Component should render with matches shown
-        // Left items should be visible
         expect(screen.getByText('A')).toBeInTheDocument();
-        // Right items appear twice: once as the item, once as the match indicator badge
         expect(screen.getAllByText('1').length).toBeGreaterThanOrEqual(1);
     });
 });

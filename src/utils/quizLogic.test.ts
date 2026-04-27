@@ -9,7 +9,6 @@ import {
 } from './quizLogic';
 import type {Question, Subject, QuestionProgress, MultipleChoiceQuestion, MultipleAnswerQuestion, TrueFalseQuestion, KeywordsQuestion, MatchingQuestion, WordBankQuestion} from '../types';
 
-// Helper to create typed questions
 const createMultipleChoice = (overrides: Partial<MultipleChoiceQuestion> = {}): MultipleChoiceQuestion => ({
     id: 'mc1',
     type: 'multiple_choice',
@@ -121,7 +120,6 @@ describe('quizLogic', () => {
             ];
             const progress: Record<string, QuestionProgress> = {
                 'q1': {id: 'q1', attempts: 3, correctStreak: 3, mastered: true}
-                // q2 has no progress
             };
             expect(calculateMastery(questions, progress)).toBe(50);
         });
@@ -246,12 +244,10 @@ describe('quizLogic', () => {
         });
 
         it('should shuffle in random mode', () => {
-            // Run multiple times to ensure it's actually shuffling (statistical test)
             const results: string[][] = [];
             for (let i = 0; i < 10; i++) {
                 results.push(generateQueue(questions, {}, 'random', false));
             }
-            // At least one should be different from the original order
             const allSameAsOriginal = results.every(r => r.join(',') === 'q1,q2,q3,q4,q5');
             expect(allSameAsOriginal).toBe(false);
         });

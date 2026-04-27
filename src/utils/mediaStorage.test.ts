@@ -1,7 +1,3 @@
-/**
- * Tests for mediaStorage utility
- * Tests IndexedDB operations using fake-indexeddb
- */
 import {describe, it, expect, beforeEach} from 'vitest';
 import {
     storeMedia,
@@ -14,12 +10,10 @@ import {
     createMediaRef
 } from './mediaStorage';
 
-// Mock IndexedDB with fake-indexeddb
 import 'fake-indexeddb/auto';
 
 describe('mediaStorage', () => {
     beforeEach(async () => {
-        // Clear all data before each test
         await clearAllMedia();
     });
 

@@ -16,7 +16,6 @@ export const getActiveQuestions = (
 ): Question[] => {
     if (!subject) return [];
 
-    // If no topics selected, all are active
     const effectiveTopicIds = selectedTopicIds.length > 0
         ? selectedTopicIds
         : subject.topics.map(t => t.id);
@@ -40,21 +39,16 @@ export const generateQueue = (
 
     if (candidates.length === 0) return [];
 
-    // Create a shallow copy to sort/shuffle
     const queue = [...candidates];
 
     if (mode === 'random') {
         return shuffleArray(queue).map(q => q.id);
-    } else {
-        // Topic order is preserved by default if we just flatMap topics in order
-        // But we need to ensure 'questions' passed in is already in topic order
-        // The getActiveQuestions function preserves topic order
     }
 
     return queue.map(q => q.id);
 };
 
-/** Clamp and order requeue gap bounds for "N positions ahead" in the queue (0 = front). */
+/** Clamps re-queue gap bounds, swaps when min exceeds max, caps at 0-100. */
 export const normalizeRequeueGapRange = (minGap: number, maxGap: number): {min: number; max: number} => {
     let min = Number.isFinite(minGap) ? Math.round(minGap) : 4;
     let max = Number.isFinite(maxGap) ? Math.round(maxGap) : 6;
@@ -66,10 +60,7 @@ export const normalizeRequeueGapRange = (minGap: number, maxGap: number): {min: 
     return {min, max};
 };
 
-/**
- * Random insert index for re-queuing the current question after a wrong answer or skip.
- * Matches previous behavior: pick offset in [minGap, maxGap], then cap at queue length.
- */
+/** Insert offset for re-queuing after wrong/skip: random in [minGap, maxGap], capped to queue length. */
 export const randomRequeueInsertIndex = (queueLength: number, minGap: number, maxGap: number): number => {
     const {min, max} = normalizeRequeueGapRange(minGap, maxGap);
     const span = max - min + 1;
@@ -83,10 +74,7 @@ export const checkAnswer = (question: Question, userAnswer: unknown): boolean =>
             return userAnswer === question.answerIndex;
 
         case 'multiple_answer': {
-            // userAnswer is number[] (indices)
             if (!Array.isArray(userAnswer)) return false;
-            // Check if lengths match and all selected indices are correct
-            // Sort both to ensure order doesn't matter
             const sortedUser = [...userAnswer].sort((a, b) => a - b);
             const sortedCorrect = [...question.answerIndices].sort((a, b) => a - b);
             return sortedUser.length === sortedCorrect.length &&
@@ -108,14 +96,12 @@ export const checkAnswer = (question: Question, userAnswer: unknown): boolean =>
         }
 
         case 'matching': {
-            // userAnswer is Record<left, right>
             if (!userAnswer || typeof userAnswer !== 'object') return false;
             const answers = userAnswer as Record<string, string>;
             return question.pairs.every(pair => answers[pair.left] === pair.right);
         }
 
         case 'word_bank': {
-            // userAnswer is string[] (filled slots in order)
             if (!Array.isArray(userAnswer)) return false;
             if (userAnswer.length !== question.answers.length) return false;
             return userAnswer.every((word, index) => word === question.answers[index]);

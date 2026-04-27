@@ -1,11 +1,7 @@
-/**
- * Tests for ThemeToggle component
- */
 import {describe, it, expect, vi} from 'vitest';
 import {render, screen, fireEvent} from '@testing-library/react';
 import {ThemeToggle} from './ThemeToggle';
 
-// Mock the theme context
 const mockToggleTheme = vi.fn();
 vi.mock('../context/ThemeContext', () => ({
     useTheme: () => ({

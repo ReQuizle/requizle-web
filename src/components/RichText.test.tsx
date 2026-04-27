@@ -1,12 +1,7 @@
-/**
- * Tests for RichText component
- * Tests math delimiters parsing, code blocks, and inline code rendering
- */
 import {describe, it, expect, vi} from 'vitest';
 import {render, screen} from '@testing-library/react';
 import {RichText} from './RichText';
 
-// Mock react-katex to avoid actual KaTeX rendering in tests
 vi.mock('react-katex', () => ({
     InlineMath: ({math}: {math: string}) => <span data-testid="inline-math">{`[INLINE:${math}]`}</span>,
     BlockMath: ({math}: {math: string}) => <div data-testid="block-math">{`[BLOCK:${math}]`}</div>
@@ -131,7 +126,6 @@ describe('RichText', () => {
         it('should handle unclosed delimiters as plain text', () => {
             render(<RichText>{'Unclosed \\(math here'}</RichText>);
 
-            // Should render as plain text since delimiter is not closed
             expect(screen.queryByTestId('inline-math')).toBeNull();
             expect(screen.getByText(/Unclosed/)).toBeInTheDocument();
         });
@@ -139,7 +133,6 @@ describe('RichText', () => {
         it('should handle escaped backslashes', () => {
             render(<RichText>{'Normal text with \\\\ backslash'}</RichText>);
 
-            // Should not interpret as math
             expect(screen.queryByTestId('inline-math')).toBeNull();
         });
 
@@ -213,7 +206,6 @@ describe('RichText', () => {
 
             const block = screen.getByTestId('code-block');
             expect(block).toBeInTheDocument();
-            // Language label should be present
             expect(screen.getByText('python')).toBeInTheDocument();
             expect(block.querySelector('code')).toHaveTextContent('print("hello")');
         });
@@ -302,10 +294,8 @@ describe('RichText', () => {
         it('should not parse backticks inside code blocks as inline code', () => {
             render(<RichText>{'```\nuse `backticks` here\n```'}</RichText>);
 
-            // The backticks should be inside the code block, not parsed as inline code
             const block = screen.getByTestId('code-block');
             expect(block.querySelector('code')!.textContent).toContain('`backticks`');
-            // No inline code should be rendered
             expect(screen.queryByTestId('inline-code')).toBeNull();
         });
     });

@@ -11,7 +11,6 @@ interface Props {
     submittedAnswer: string[] | null;
 }
 
-// Helper to compute available words after slots are filled
 const computeAvailableWords = (wordBank: string[], filledSlots: (string | null)[]): string[] => {
     const used = filledSlots.filter(Boolean) as string[];
     const remaining = [...wordBank];
@@ -23,8 +22,6 @@ const computeAvailableWords = (wordBank: string[], filledSlots: (string | null)[
 };
 
 export const WordBankInput: React.FC<Props> = ({question, onAnswer, disabled, submittedAnswer}) => {
-    // Initialize from submittedAnswer if already submitted (e.g., re-render)
-    // submittedAnswer only transitions null -> value once per question lifecycle
     const initialSlots = submittedAnswer ?? new Array(question.sentence.split('_').length - 1).fill(null);
     const [filledSlots, setFilledSlots] = useState<(string | null)[]>(initialSlots);
     const [availableWords, setAvailableWords] = useState<string[]>(
@@ -34,7 +31,6 @@ export const WordBankInput: React.FC<Props> = ({question, onAnswer, disabled, su
     const handleWordClick = (word: string) => {
         if (disabled) return;
 
-        // Find first empty slot
         const emptyIndex = filledSlots.indexOf(null);
         if (emptyIndex === -1) return;
 
@@ -65,12 +61,10 @@ export const WordBankInput: React.FC<Props> = ({question, onAnswer, disabled, su
 
     const isComplete = filledSlots.every(s => s !== null);
 
-    // Split sentence by underscores to render slots
     const parts = question.sentence.split('_');
 
     return (
         <div className="space-y-8">
-            {/* Sentence Area */}
             <div className="p-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 leading-loose text-lg text-slate-800 dark:text-slate-200">
                 {parts.map((part, i) => (
                     <React.Fragment key={i}>
@@ -93,7 +87,6 @@ export const WordBankInput: React.FC<Props> = ({question, onAnswer, disabled, su
                 ))}
             </div>
 
-            {/* Word Bank */}
             <div>
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Word Bank</h3>
                 <div className="flex flex-wrap gap-2">

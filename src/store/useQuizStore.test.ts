@@ -10,7 +10,6 @@ import type {
     SubjectExportV1
 } from '../types';
 
-// Mock persistence to avoid localStorage issues in tests
 type ZustandSet<T> = (partial: T | Partial<T> | ((state: T) => T | Partial<T>), replace?: boolean) => void;
 type ZustandGet<T> = () => T;
 type ZustandApi<T> = {
@@ -25,7 +24,6 @@ vi.mock('zustand/middleware', () => ({
     createJSONStorage: () => ({})
 }));
 
-// Helper to create test questions
 const createTrueFalseQuestion = (id: string, topicId: string): TrueFalseQuestion => ({
     id,
     type: 'true_false',
@@ -43,7 +41,6 @@ const createMultipleChoiceQuestion = (id: string, topicId: string): MultipleChoi
     answerIndex: 0
 });
 
-// Helper to create test subjects
 const createTestSubject = (id: string = 's1', name: string = 'Test Subject'): Subject => ({
     id,
     name,
@@ -481,15 +478,12 @@ describe('useQuizStore', () => {
                 toggleTopic('t1');
             });
 
-            // Verify topic is selected
             expect(useQuizStore.getState().profiles['default'].session.selectedTopicIds).toContain('t1');
 
-            // Start session again
             act(() => {
                 startSession('s1');
             });
 
-            // Topics should be reset
             const state = useQuizStore.getState();
             expect(state.profiles['default'].session.selectedTopicIds).toHaveLength(0);
         });
@@ -538,7 +532,6 @@ describe('useQuizStore', () => {
                 toggleTopic('t2');
             });
 
-            // When all topics are manually selected, it resets to empty (meaning "all selected")
             const state = useQuizStore.getState();
             expect(state.profiles['default'].session.selectedTopicIds).toEqual([]);
         });
@@ -708,7 +701,6 @@ describe('useQuizStore', () => {
 
             const state = useQuizStore.getState();
             expect(state.profiles['default'].session.currentQuestionId).not.toBeNull();
-            // Queue should have questions
             expect(state.profiles['default'].session.queue.length + (state.profiles['default'].session.currentQuestionId ? 1 : 0)).toBeGreaterThan(0);
         });
 
@@ -738,7 +730,6 @@ describe('useQuizStore', () => {
             const state = useQuizStore.getState();
             const currentId = state.profiles['default'].session.currentQuestionId;
 
-            // Find the current question to know the correct answer
             const subject = state.profiles['default'].subjects[0];
             let correctAnswer: unknown = true;
             for (const topic of subject.topics) {
@@ -791,7 +782,6 @@ describe('useQuizStore', () => {
             });
 
             const stateAfter = useQuizStore.getState();
-            // The current question should be reinserted into the queue
             expect(stateAfter.profiles['default'].session.queue).toContain(currentId);
         });
 
@@ -847,7 +837,6 @@ describe('useQuizStore', () => {
         });
 
         it('should set currentQuestionId to null when queue is empty', () => {
-            // Empty the queue first
             act(() => {
                 useQuizStore.setState(state => ({
                     profiles: {
@@ -975,7 +964,6 @@ describe('useQuizStore', () => {
                 startSession('s1');
             });
 
-            // Create some progress
             act(() => {
                 submitAnswer(true);
             });
@@ -1219,7 +1207,6 @@ describe('useQuizStore', () => {
             });
 
             it('should reset to default when deleting last profile', () => {
-                // Delete the default profile (the only one)
                 const {deleteProfile} = useQuizStore.getState();
                 act(() => {
                     useQuizStore.getState().markSampleDataSeeded();

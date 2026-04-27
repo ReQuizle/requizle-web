@@ -1014,7 +1014,7 @@ function KeywordsAnswerField({
 }) {
     const textareaId = useId();
     const caseSensitiveId = useId();
-    // Raw local state preserves newlines while typing; the saved draft gets the normalized value.
+    // Textarea value keeps newlines; `draft.answer` is stored trimmed / split for keywords.
     const [raw, setRaw] = useState<string>(
         Array.isArray(draft.answer) ? draft.answer.join('\n') : draft.answer
     );

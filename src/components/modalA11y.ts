@@ -17,7 +17,7 @@ function getFocusableElements(container: HTMLElement): HTMLElement[] {
 }
 
 export function useModalA11y(containerRef: React.RefObject<HTMLElement | null>, onClose: () => void) {
-    // Ref keeps the effect stable so inline onClose closures don't retrigger focus restore on every parent render.
+    // Stabilize close handler: a new inline `onClose` each render would re-run the focus-trap effect.
     const onCloseRef = useRef(onClose);
     useEffect(() => {
         onCloseRef.current = onClose;

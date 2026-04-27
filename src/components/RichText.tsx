@@ -39,23 +39,6 @@ interface RichTextProps {
     inline?: boolean;
 }
 
-/**
- * Renders text with rich formatting support:
- * - Inline math: \(...\)
- * - Block math: \[...\]
- * - Code blocks: ```language\ncode\n``` (with optional language tag)
- * - Inline code: `code`
- * - Blockquotes: `> quote`
- * - Tables: `| col | col |`
- * - Links: `[text](url)`
- * - Spoilers: `||spoiler||`
- * - Bold: **text**
- * - Underline: __text__
- * - Strikethrough: ~~text~~
- * - Italic: *text*
- *
- * Parsing order: code blocks → tables → blockquotes → block math → inline code → inline math → links → spoilers → bold → underline → strikethrough → italic → plain text
- */
 export const RichText: React.FC<RichTextProps> = ({children, className, inline = false}) => {
     if (!children) return null;
 
@@ -68,18 +51,15 @@ export const RichText: React.FC<RichTextProps> = ({children, className, inline =
 };
 
 
-/** Top-level parser: splits on fenced code blocks first, then delegates */
 function parseContent(text: string): React.ReactNode[] {
     const parts: React.ReactNode[] = [];
     let key = 0;
 
-    // Match fenced code blocks with LF or CRLF line endings and an optional language tag.
     const codeBlockRegex = /```([^\s`]*)[^\S\r\n]*\r?\n([\s\S]*?)```/g;
     let lastIndex = 0;
     let match;
 
     while ((match = codeBlockRegex.exec(text)) !== null) {
-        // Process text before the code block (may contain block math, inline code, inline math)
         if (match.index > lastIndex) {
             const before = text.slice(lastIndex, match.index);
             parts.push(...parseTables(before, key));
@@ -110,7 +90,6 @@ function parseContent(text: string): React.ReactNode[] {
         lastIndex = match.index + match[0].length;
     }
 
-    // Process remaining text after last code block
     if (lastIndex < text.length) {
         parts.push(...parseTables(text.slice(lastIndex), key));
     }
@@ -118,7 +97,6 @@ function parseContent(text: string): React.ReactNode[] {
     return parts;
 }
 
-/** Parse markdown tables, delegating remaining to parseBlockquotes */
 function parseTables(text: string, startKey: number): React.ReactNode[] {
     const parts: React.ReactNode[] = [];
     const tableRegex = /(?:^|\n)((?:[ \t]*\|[^\n]+\|[ \t]*(?:\n|$)){2,})/g;
@@ -135,8 +113,7 @@ function parseTables(text: string, startKey: number): React.ReactNode[] {
 
         const tableText = match[1].trim();
         const lines = tableText.split('\n');
-        
-        // Ensure it has a separator line roughly matching |---|
+
         if (lines.length > 1 && /^\|?[\s-:]+\|/.test(lines[1])) {
             const headerRow = lines[0];
             const dataRows = lines.slice(2);
@@ -194,7 +171,6 @@ function parseTables(text: string, startKey: number): React.ReactNode[] {
     return parts;
 }
 
-/** Parse blockquotes > ..., delegating remaining to parseBlockMath */
 function parseBlockquotes(text: string, startKey: number): React.ReactNode[] {
     const parts: React.ReactNode[] = [];
     const bqRegex = /(?:^|\n)((?:>[^\n]*(?:\n|$))+)/g;
@@ -208,7 +184,6 @@ function parseBlockquotes(text: string, startKey: number): React.ReactNode[] {
             key += 1000;
         }
 
-        // remove leading '> ' or '>' from each line
         const innerText = match[1].replace(/(^|\n)>[ \t]?/g, '$1').trim();
         
         parts.push(
@@ -227,7 +202,6 @@ function parseBlockquotes(text: string, startKey: number): React.ReactNode[] {
     return parts;
 }
 
-/** Parse block math \[...\], delegating non-block-math text to parseInlineCode */
 function parseBlockMath(text: string, startKey: number): React.ReactNode[] {
     const parts: React.ReactNode[] = [];
     let key = startKey;
@@ -259,12 +233,10 @@ function parseBlockMath(text: string, startKey: number): React.ReactNode[] {
     return parts;
 }
 
-/** Parse inline code `...`, delegating remaining text to parseInlineMath */
 function parseInlineCode(text: string, startKey: number, allowLinks: boolean): React.ReactNode[] {
     const parts: React.ReactNode[] = [];
     let key = startKey;
 
-    // Match single backtick inline code (non-greedy, no nested backticks)
     const inlineCodeRegex = /`([^`]+)`/g;
     let lastIndex = 0;
     let match;
@@ -292,7 +264,6 @@ function parseInlineCode(text: string, startKey: number, allowLinks: boolean): R
     return parts;
 }
 
-/** Parse inline math \(...\), delegating remaining text to parseLinks */
 function parseInlineMath(text: string, startKey: number, allowLinks: boolean): React.ReactNode[] {
     const parts: React.ReactNode[] = [];
     const inlineRegex = /\\\(([\s\S]*?)\\\)/g;
@@ -320,7 +291,6 @@ function parseInlineMath(text: string, startKey: number, allowLinks: boolean): R
     return parts;
 }
 
-/** Parse masked links [text](url), delegating remaining to parseSpoilers */
 function parseLinks(text: string, startKey: number): React.ReactNode[] {
     const parts: React.ReactNode[] = [];
     const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
@@ -368,7 +338,6 @@ function getSafeLinkHref(rawHref: string): string | null {
     }
 }
 
-/** Parse spoilers ||...||, delegating remaining to parseBold */
 function parseSpoilers(text: string, startKey: number): React.ReactNode[] {
     const parts: React.ReactNode[] = [];
     const spoilerRegex = /\|\|(.*?)\|\|/g;
@@ -398,7 +367,6 @@ function parseSpoilers(text: string, startKey: number): React.ReactNode[] {
     return parts;
 }
 
-/** Parse bold text **...**, delegating remaining text to parseUnderline */
 function parseBold(text: string, startKey: number): React.ReactNode[] {
     const parts: React.ReactNode[] = [];
     const boldRegex = /\*\*([\s\S]+?)\*\*(?!\*)/g;
@@ -424,7 +392,6 @@ function parseBold(text: string, startKey: number): React.ReactNode[] {
     return parts;
 }
 
-/** Parse underline text __...__, delegating remaining text to parseStrikethrough */
 function parseUnderline(text: string, startKey: number): React.ReactNode[] {
     const parts: React.ReactNode[] = [];
     const underlineRegex = /__([^_]+)__/g;
@@ -450,7 +417,6 @@ function parseUnderline(text: string, startKey: number): React.ReactNode[] {
     return parts;
 }
 
-/** Parse strikethrough text ~~...~~, delegating remaining text to parseItalic */
 function parseStrikethrough(text: string, startKey: number): React.ReactNode[] {
     const parts: React.ReactNode[] = [];
     const strikeRegex = /~~([^~]+)~~/g;
@@ -476,10 +442,8 @@ function parseStrikethrough(text: string, startKey: number): React.ReactNode[] {
     return parts;
 }
 
-/** Parse italic text *...*, leaving remaining text as plain spans */
 function parseItalic(text: string, startKey: number): React.ReactNode[] {
     const parts: React.ReactNode[] = [];
-    // Match a single asterisk that is not adjacent to another asterisk
     const italicRegex = /\*([^*]+)\*/g;
     let lastIndex = 0;
     let match;

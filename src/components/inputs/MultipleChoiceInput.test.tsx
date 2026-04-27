@@ -107,9 +107,6 @@ describe('MultipleChoiceInput', () => {
             />
         );
 
-        // The correct answer (Option C, index 2) should have green styling
-        // The selected wrong answer (Option B, index 1) should have red styling
-        // We check that buttons exist - detailed styling is CSS-based
         const buttons = container.querySelectorAll('button');
         expect(buttons).toHaveLength(4);
     });

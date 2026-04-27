@@ -309,7 +309,7 @@ export const QuestionCard: React.FC<Props> = ({question, onFeedbackVisibilityCha
                                                                         <span className="px-2 py-1 bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300 rounded font-semibold">
                                                                             <RichText inline>{pair.left}</RichText>
                                                                         </span>
-                                                                        <span className="text-slate-400">→</span>
+                                                                        <span className="text-slate-400">{'->'}</span>
                                                                         <span className="px-2 py-1 bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300 rounded font-semibold">
                                                                             <RichText inline>{pair.right}</RichText>
                                                                         </span>

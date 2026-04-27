@@ -1,8 +1,3 @@
-/**
- * IndexedDB storage adapter for Zustand persist middleware.
- * Falls back to localStorage when IndexedDB is unavailable (e.g. private mode).
- */
-
 const DB_NAME = 'requizle-store';
 const DB_VERSION = 1;
 const STORE_NAME = 'zustand';
@@ -21,7 +16,7 @@ function safeSetLocalStorageItem(name: string, value: string): void {
     try {
         localStorage.setItem(name, value);
     } catch {
-        // Persistence is best-effort when both IndexedDB and localStorage are unavailable.
+        void 0; // setItem can throw in private mode; persistence is best-effort
     }
 }
 
@@ -29,7 +24,7 @@ function safeRemoveLocalStorageItem(name: string): void {
     try {
         localStorage.removeItem(name);
     } catch {
-        // Persistence is best-effort when both IndexedDB and localStorage are unavailable.
+        void 0; // removeItem can throw; persistence is best-effort
     }
 }
 
@@ -78,7 +73,6 @@ function openDB(): Promise<IDBDatabase> {
     return dbPromise;
 }
 
-/** Zustand-compatible storage adapter using IndexedDB. */
 export const indexedDBStorage = {
     getItem: async (name: string): Promise<string | null> => {
         try {
@@ -106,12 +100,11 @@ export const indexedDBStorage = {
                 await indexedDBStorage.setItem(name, localData);
                 safeRemoveLocalStorageItem(name);
             } catch {
-                // Keep localStorage data if migration fails; hydration can still use it.
+                void 0; // still read from localStorage on next get if copy to IDB failed
             }
 
             return localData;
         } catch {
-            // Fallback to localStorage if IndexedDB fails
             return safeGetLocalStorageItem(name);
         }
     },
@@ -127,7 +120,6 @@ export const indexedDBStorage = {
                 waitForTransaction(transaction, 'Failed to write to IndexedDB').then(resolve).catch(reject);
             });
         } catch {
-            // Fallback to localStorage if IndexedDB fails
             safeSetLocalStorageItem(name, value);
         }
     },
@@ -143,13 +135,11 @@ export const indexedDBStorage = {
                 waitForTransaction(transaction, 'Failed to delete from IndexedDB').then(resolve).catch(reject);
             });
         } catch {
-            // Fallback to localStorage if IndexedDB fails
             safeRemoveLocalStorageItem(name);
         }
     }
 };
 
-/** Clear all store data from IndexedDB. */
 export async function clearStoreData(): Promise<void> {
     try {
         const db = await openDB();

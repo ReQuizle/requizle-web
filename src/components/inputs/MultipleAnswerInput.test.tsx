@@ -59,13 +59,10 @@ describe('MultipleAnswerInput', () => {
             />
         );
 
-        // Click Apple to select
         fireEvent.click(screen.getByText('Apple'));
 
-        // Click Cherry to select
         fireEvent.click(screen.getByText('Cherry'));
 
-        // Submit
         fireEvent.click(screen.getByText('Submit Answer'));
 
         expect(mockOnAnswer).toHaveBeenCalledWith(expect.arrayContaining([0, 2]));
@@ -81,19 +78,15 @@ describe('MultipleAnswerInput', () => {
             />
         );
 
-        // Click Apple to select
         fireEvent.click(screen.getByText('Apple'));
 
-        // Click Apple again to deselect
         fireEvent.click(screen.getByText('Apple'));
 
-        // Click Banana to select
         fireEvent.click(screen.getByText('Banana'));
 
-        // Submit
         fireEvent.click(screen.getByText('Submit Answer'));
 
-        expect(mockOnAnswer).toHaveBeenCalledWith([1]); // Only Banana
+        expect(mockOnAnswer).toHaveBeenCalledWith([1]);
     });
 
     it('should disable submit button when nothing is selected', () => {
@@ -152,7 +145,6 @@ describe('MultipleAnswerInput', () => {
             />
         );
 
-        // Component should render with selections shown
         const buttons = container.querySelectorAll('button');
         expect(buttons.length).toBeGreaterThan(0);
     });

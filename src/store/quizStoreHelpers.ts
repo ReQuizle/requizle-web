@@ -240,6 +240,6 @@ export function removeLocalStorageItem(key: string): void {
     try {
         localStorage.removeItem(key);
     } catch {
-        // Some privacy modes deny storage access; reset should still complete in memory.
+        void 0; // e.g. private mode blocks localStorage; in-memory state still updates
     }
 }

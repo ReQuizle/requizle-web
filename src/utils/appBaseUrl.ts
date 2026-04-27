@@ -1,25 +1,16 @@
-/**
- * Vite `base` is always a root-relative path ending with `/` (e.g. `/` or `/requizle-web/`).
- * For subpath deployments, the directory URL without a trailing slash is a different resource
- * than the canonical app root; static servers and some dev setups only serve `index.html` on
- * the slash form. Normalize to the trailing-slash URL and use it for hard navigations.
- *
- * @see https://vitejs.dev/config/shared-options.html#base
- */
-
+// Vite `import.meta.env.BASE_URL` is root-relative and ends with `/`. For non-root hosts,
+// the URL without a trailing slash is a different path; many servers only serve the SPA on the slash form.
+// @see https://vitejs.dev/config/shared-options.html#base
 function getAppBasePath(): string {
     return import.meta.env.BASE_URL;
 }
 
-/** Full URL to the SPA root (always ends with `/` when base is not `/`). */
+/** Absolute URL of the app root; ends with `/` when `base` is not `/`. */
 export function getCanonicalAppLocationHref(): string {
     return new URL(getAppBasePath(), window.location.origin).href;
 }
 
-/**
- * If we are exactly on `/{base}` without the trailing slash, upgrade to `/{base}/`
- * so the URL matches Vite's directory base and hosting conventions.
- */
+/** If the location is `/{base}` without the final slash, rewrite to `/{base}/` (matches Vite + static hosting). */
 export function normalizeAppUrlTrailingSlash(): void {
     const base = getAppBasePath();
     if (base === '/') return;
@@ -31,11 +22,7 @@ export function normalizeAppUrlTrailingSlash(): void {
     window.history.replaceState(window.history.state, '', `${baseNoSlash}/${search}${hash}`);
 }
 
-/**
- * GitHub Pages SPA fallback support:
- * - `public/404.html` can redirect unknown client routes to `/{base}/?__rq_path=...&__rq_query=...`
- * - this function restores the original client-side URL before React Router mounts.
- */
+/** GitHub Pages: `public/404.html` redirects to `?__rq_path=...`; restore the real path before React Router. */
 export function restoreSpaPathFromFallbackQuery(): void {
     const searchParams = new URLSearchParams(window.location.search);
     const rawPath = searchParams.get('__rq_path');

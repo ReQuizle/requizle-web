@@ -51,7 +51,7 @@ type TypeToConfirmModalProps = {
     open: boolean;
     title: string;
     description: React.ReactNode;
-    /** User must type this string exactly (e.g. subject name). */
+    /** Exact string the user must type to enable confirm (e.g. subject name for delete). */
     phraseToMatch: string;
     inputPlaceholder?: string;
     cancelLabel?: string;
@@ -60,7 +60,7 @@ type TypeToConfirmModalProps = {
     onClose: () => void;
 };
 
-/** Renders nothing when closed so the inner form remounts with a fresh input each open. */
+/** Renders `null` when `open` is false so the form state resets on next open. */
 export function TypeToConfirmModal({open, ...rest}: TypeToConfirmModalProps) {
     if (!open) return null;
     return <TypeToConfirmModalMounted {...rest} />;
@@ -85,43 +85,43 @@ function TypeToConfirmModalMounted({
 
     return (
         <ModalShell titleId={titleId} onClose={onClose} dialogRef={dialogRef}>
-                <h3 id={titleId} className="text-lg font-bold text-slate-900 dark:text-white">
-                    {title}
-                </h3>
-                <div className="text-sm text-slate-600 dark:text-slate-400">{description}</div>
-                <div className="space-y-2">
-                    <label htmlFor={inputId} className="text-sm text-slate-600 dark:text-slate-400">
-                        Type <strong className="text-red-600 dark:text-red-400">{phraseToMatch}</strong> to confirm:
-                    </label>
-                    <input
-                        id={inputId}
-                        type="text"
-                        value={input}
-                        onChange={e => setInput(e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none"
-                        placeholder={inputPlaceholder}
-                        autoFocus
-                    />
-                </div>
-                <div className="flex gap-3 pt-2">
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="btn-secondary flex-1 text-sm"
-                    >
-                        {cancelLabel}
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => {
-                            if (canConfirm) onConfirm();
-                        }}
-                        disabled={!canConfirm}
-                        className="btn-danger flex-1 text-sm"
-                    >
-                        {confirmLabel}
-                    </button>
-                </div>
+            <h3 id={titleId} className="text-lg font-bold text-slate-900 dark:text-white">
+                {title}
+            </h3>
+            <div className="text-sm text-slate-600 dark:text-slate-400">{description}</div>
+            <div className="space-y-2">
+                <label htmlFor={inputId} className="text-sm text-slate-600 dark:text-slate-400">
+                    Type <strong className="text-red-600 dark:text-red-400">{phraseToMatch}</strong> to confirm:
+                </label>
+                <input
+                    id={inputId}
+                    type="text"
+                    value={input}
+                    onChange={e => setInput(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none"
+                    placeholder={inputPlaceholder}
+                    autoFocus
+                />
+            </div>
+            <div className="flex gap-3 pt-2">
+                <button
+                    type="button"
+                    onClick={onClose}
+                    className="btn-secondary flex-1 text-sm"
+                >
+                    {cancelLabel}
+                </button>
+                <button
+                    type="button"
+                    onClick={() => {
+                        if (canConfirm) onConfirm();
+                    }}
+                    disabled={!canConfirm}
+                    className="btn-danger flex-1 text-sm"
+                >
+                    {confirmLabel}
+                </button>
+            </div>
         </ModalShell>
     );
 }
@@ -132,7 +132,7 @@ type SimpleConfirmModalProps = {
     children: React.ReactNode;
     cancelLabel?: string;
     confirmLabel: string;
-    /** Tailwind classes for the confirm button (default: red destructive). */
+    /** For `className` on the primary button (e.g. danger vs neutral). */
     confirmClassName?: string;
     onConfirm: () => void;
     onClose: () => void;
@@ -161,22 +161,22 @@ function SimpleConfirmModalMounted({
 
     return (
         <ModalShell titleId={titleId} onClose={onClose} dialogRef={dialogRef}>
-                <h3 id={titleId} className="text-lg font-bold text-slate-900 dark:text-white">
-                    {title}
-                </h3>
-                <div className="text-sm text-slate-600 dark:text-slate-400">{children}</div>
-                <div className="flex gap-3 pt-2">
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="btn-secondary flex-1 text-sm"
-                    >
-                        {cancelLabel}
-                    </button>
-                    <button type="button" onClick={onConfirm} className={confirmClassName}>
-                        {confirmLabel}
-                    </button>
-                </div>
+            <h3 id={titleId} className="text-lg font-bold text-slate-900 dark:text-white">
+                {title}
+            </h3>
+            <div className="text-sm text-slate-600 dark:text-slate-400">{children}</div>
+            <div className="flex gap-3 pt-2">
+                <button
+                    type="button"
+                    onClick={onClose}
+                    className="btn-secondary flex-1 text-sm"
+                >
+                    {cancelLabel}
+                </button>
+                <button type="button" onClick={onConfirm} className={confirmClassName}>
+                    {confirmLabel}
+                </button>
+            </div>
         </ModalShell>
     );
 }
@@ -213,19 +213,19 @@ function MessageModalMounted({title, message, buttonLabel = 'OK', onClose}: Omit
             onClose={onClose}
             dialogRef={dialogRef}
         >
-                {title && (
-                    <h3 id={titleId} className="text-lg font-bold text-slate-900 dark:text-white">
-                        {title}
-                    </h3>
-                )}
-                <p className="text-sm text-slate-600 dark:text-slate-400 whitespace-pre-wrap">{message}</p>
-                <button
-                    type="button"
-                    onClick={onClose}
-                    className="btn-primary w-full text-sm"
-                >
-                    {buttonLabel}
-                </button>
+            {title && (
+                <h3 id={titleId} className="text-lg font-bold text-slate-900 dark:text-white">
+                    {title}
+                </h3>
+            )}
+            <p className="text-sm text-slate-600 dark:text-slate-400 whitespace-pre-wrap">{message}</p>
+            <button
+                type="button"
+                onClick={onClose}
+                className="btn-primary w-full text-sm"
+            >
+                {buttonLabel}
+            </button>
         </ModalShell>
     );
 }
@@ -266,49 +266,49 @@ function TextPromptModalMounted({
 
     return (
         <ModalShell titleId={titleId} onClose={onClose} dialogRef={dialogRef}>
-                <h3 id={titleId} className="text-lg font-bold text-slate-900 dark:text-white">
-                    {title}
-                </h3>
-                {label && (
-                    <label htmlFor={inputId} className="block text-sm text-slate-600 dark:text-slate-400">
-                        {label}
-                    </label>
-                )}
-                <input
-                    id={inputId}
-                    type="text"
-                    value={value}
-                    onChange={e => setValue(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
-                    placeholder={placeholder}
-                    autoFocus
-                    onKeyDown={e => {
-                        if (e.key === 'Enter' && trimmed) {
-                            onConfirm(trimmed);
-                            onClose();
-                        }
+            <h3 id={titleId} className="text-lg font-bold text-slate-900 dark:text-white">
+                {title}
+            </h3>
+            {label && (
+                <label htmlFor={inputId} className="block text-sm text-slate-600 dark:text-slate-400">
+                    {label}
+                </label>
+            )}
+            <input
+                id={inputId}
+                type="text"
+                value={value}
+                onChange={e => setValue(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                placeholder={placeholder}
+                autoFocus
+                onKeyDown={e => {
+                    if (e.key === 'Enter' && trimmed) {
+                        onConfirm(trimmed);
+                        onClose();
+                    }
+                }}
+            />
+            <div className="flex gap-3 pt-2">
+                <button
+                    type="button"
+                    onClick={onClose}
+                    className="btn-secondary flex-1 text-sm"
+                >
+                    {cancelLabel}
+                </button>
+                <button
+                    type="button"
+                    disabled={!trimmed}
+                    onClick={() => {
+                        onConfirm(trimmed);
+                        onClose();
                     }}
-                />
-                <div className="flex gap-3 pt-2">
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="btn-secondary flex-1 text-sm"
-                    >
-                        {cancelLabel}
-                    </button>
-                    <button
-                        type="button"
-                        disabled={!trimmed}
-                        onClick={() => {
-                            onConfirm(trimmed);
-                            onClose();
-                        }}
-                        className="btn-primary flex-1 text-sm"
-                    >
-                        {confirmLabel}
-                    </button>
-                </div>
+                    className="btn-primary flex-1 text-sm"
+                >
+                    {confirmLabel}
+                </button>
+            </div>
         </ModalShell>
     );
 }

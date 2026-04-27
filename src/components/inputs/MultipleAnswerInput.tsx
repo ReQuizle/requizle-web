@@ -13,8 +13,6 @@ interface Props {
 }
 
 export const MultipleAnswerInput: React.FC<Props> = ({question, onAnswer, disabled, submittedAnswer}) => {
-    // Initialize from submittedAnswer if already submitted (e.g., re-render)
-    // submittedAnswer only transitions null -> value once per question lifecycle
     const [selectedIndices, setSelectedIndices] = useState<number[]>(submittedAnswer ?? []);
 
     const toggleSelection = (index: number) => {

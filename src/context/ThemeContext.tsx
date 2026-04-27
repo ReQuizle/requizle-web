@@ -11,23 +11,20 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{children: React.ReactNode}> = ({children}) => {
     const [theme, setTheme] = useState<Theme>(() => {
-        // First check if user has a saved preference
         try {
             const savedTheme = localStorage.getItem('theme');
             if (savedTheme === 'light' || savedTheme === 'dark') {
                 return savedTheme;
             }
         } catch {
-            // Storage can be unavailable in restricted browser contexts.
+            // ignore
         }
 
-        // Otherwise, detect system preference
         if (typeof window !== 'undefined' && window.matchMedia) {
             const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
             return prefersDark ? 'dark' : 'light';
         }
 
-        // Default to light if nothing else works
         return 'light';
     });
 
@@ -38,7 +35,7 @@ export const ThemeProvider: React.FC<{children: React.ReactNode}> = ({children})
         try {
             localStorage.setItem('theme', theme);
         } catch {
-            // Theme still applies for this session even if persistence is blocked.
+            // ignore
         }
     }, [theme]);
 

@@ -13,13 +13,9 @@ interface Props {
 }
 
 export const MatchingInput: React.FC<Props> = ({question, onAnswer, disabled, submittedAnswer}) => {
-    // Initialize from submittedAnswer if already submitted (e.g., re-render)
-    // submittedAnswer only transitions null -> value once per question lifecycle
     const [matches, setMatches] = useState<Record<string, string>>(submittedAnswer ?? {});
     const [selectedLeft, setSelectedLeft] = useState<string | null>(null);
 
-    // Shuffle the right side items for display (computed once on mount)
-    // Parent uses key prop to force remount on question change, so this resets automatically
     const [shuffledRightItems] = useState<string[]>(() => {
         const rightItems = question.pairs.map(pair => pair.right);
         return shuffleArray(rightItems);
@@ -28,7 +24,6 @@ export const MatchingInput: React.FC<Props> = ({question, onAnswer, disabled, su
     const handleLeftClick = (leftId: string) => {
         if (disabled) return;
         if (matches[leftId]) {
-            // Unmatch
             const newMatches = {...matches};
             delete newMatches[leftId];
             setMatches(newMatches);
@@ -40,7 +35,6 @@ export const MatchingInput: React.FC<Props> = ({question, onAnswer, disabled, su
     const handleRightClick = (rightId: string) => {
         if (disabled || !selectedLeft) return;
 
-        // Check if this right item is already matched
         const isAlreadyMatched = Object.values(matches).includes(rightId);
         if (isAlreadyMatched) return;
 
@@ -56,7 +50,6 @@ export const MatchingInput: React.FC<Props> = ({question, onAnswer, disabled, su
     return (
         <div className="space-y-6">
             <div className="grid grid-cols-2 gap-8">
-                {/* Left Column */}
                 <div className="space-y-3">
                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Items</h3>
                     {question.pairs.map((pair) => {
@@ -81,11 +74,9 @@ export const MatchingInput: React.FC<Props> = ({question, onAnswer, disabled, su
                     })}
                 </div>
 
-                {/* Right Column */}
                 <div className="space-y-3">
                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Matches</h3>
                     {shuffledRightItems.map((rightItem) => {
-                        // Find which left item is matched to this right item
                         const matchedLeft = Object.keys(matches).find(key => matches[key] === rightItem);
                         const isMatched = !!matchedLeft;
 

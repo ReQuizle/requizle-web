@@ -1,14 +1,9 @@
-/**
- * Tests for indexedDBStorage utility
- * Tests the Zustand persist storage adapter
- */
 import {describe, it, expect, beforeEach} from 'vitest';
 import {
     indexedDBStorage,
     clearStoreData
 } from './indexedDBStorage';
 
-// Mock IndexedDB with fake-indexeddb
 import 'fake-indexeddb/auto';
 
 describe('indexedDBStorage', () => {
@@ -41,7 +36,6 @@ describe('indexedDBStorage', () => {
         });
 
         it('should handle large data', async () => {
-            // Create a large string (~1MB)
             const largeData = 'x'.repeat(1024 * 1024);
             await indexedDBStorage.setItem('large-key', largeData);
             const result = await indexedDBStorage.getItem('large-key');

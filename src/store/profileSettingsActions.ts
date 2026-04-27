@@ -194,7 +194,7 @@ export function createProfileSettingsActions({
                             ...validatedProfile,
                             subjects: mergedSubjects,
                             progress: reconciled.progress,
-                            // Keep the active in-app session when merging; validate against merged graph.
+                            // `session` stays consistent with merged subjects + progress
                             session: reconciled.session
                         }
                     },

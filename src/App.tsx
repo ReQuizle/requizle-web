@@ -18,7 +18,7 @@ import {AppRoutes} from './router';
 import {ColorThemeApplier} from './components/ColorThemeApplier';
 import type {Subject} from './types';
 
-// Sample data for initial load if empty
+/** Seeded on first run when the store has no user subjects (see `sampleDataSeeded`). */
 const SAMPLE_SUBJECTS: Subject[] = [
   {
     id: 'feature-showcase',

@@ -13,7 +13,6 @@ interface LayoutProps {
 }
 
 export const Layout: React.FC<LayoutProps> = ({leftSidebar, center, rightSidebar}) => {
-    // Initialize based on current viewport
     const getInitialMobile = () => typeof window !== 'undefined' && window.innerWidth < 1024;
     const animatedBackground = useQuizStore(s => s.settings.animatedBackground);
 
@@ -33,13 +32,11 @@ export const Layout: React.FC<LayoutProps> = ({leftSidebar, center, rightSidebar
         }
     }, [isMobile]);
 
-    // Handle viewport changes
     useEffect(() => {
         const handleResize = () => {
             const mobile = window.innerWidth < 1024;
             const wasMobile = prevIsMobileRef.current;
 
-            // Only update sidebar visibility when crossing the breakpoint
             if (mobile !== wasMobile) {
                 prevIsMobileRef.current = mobile;
                 setIsMobile(mobile);
@@ -122,7 +119,6 @@ export const Layout: React.FC<LayoutProps> = ({leftSidebar, center, rightSidebar
         <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col overflow-hidden relative">
             {animatedBackground && <AnimatedBackground />}
 
-            {/* Mobile Header Bar */}
             <header className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-700">
                 <div className="flex items-center justify-between px-4 py-3">
                     <button
@@ -156,7 +152,6 @@ export const Layout: React.FC<LayoutProps> = ({leftSidebar, center, rightSidebar
                 </div>
             </header>
 
-            {/* Mobile Backdrop Overlay */}
             <AnimatePresence>
                 {isMobile && (leftSidebarVisible || rightSidebarVisible) && (
                     <motion.div
@@ -170,9 +165,7 @@ export const Layout: React.FC<LayoutProps> = ({leftSidebar, center, rightSidebar
                 )}
             </AnimatePresence>
 
-            {/* Main Layout Container */}
-            <div className="flex flex-1 lg:flex-row pt-14 lg:pt-0 relative z-10">
-                {/* Left Sidebar */}
+            <div className="flex flex-1 lg:flex-row pt-14 lg:pt-0 relative">
                 <AnimatePresence initial={false}>
                     {leftSidebarVisible && (
                         <motion.aside
@@ -186,10 +179,8 @@ export const Layout: React.FC<LayoutProps> = ({leftSidebar, center, rightSidebar
                             aria-label={isMobile ? 'Subjects panel' : undefined}
                             className={clsx(
                                 "bg-white/85 dark:bg-slate-900/85 backdrop-blur-md border-r border-slate-200 dark:border-slate-700 flex-shrink-0 overflow-hidden",
-                                // Mobile: fixed overlay drawer
-                                "fixed lg:relative z-30",
+                                "fixed lg:relative z-[35]",
                                 "top-14 lg:top-0 left-0",
-                                // Mobile width is a class; desktop width is animated inline by Framer
                                 "w-[85vw] max-w-[320px] lg:w-auto",
                                 "h-[calc(100vh-3.5rem)] lg:h-screen"
                             )}
@@ -201,16 +192,14 @@ export const Layout: React.FC<LayoutProps> = ({leftSidebar, center, rightSidebar
                     )}
                 </AnimatePresence>
 
-                {/* Center Area */}
                 <main
                     ref={mainContentRef}
-                    className="flex-1 relative z-10 flex flex-col min-h-[calc(100vh-3.5rem)] lg:min-h-screen lg:h-screen overflow-hidden"
+                    className="flex-1 relative z-0 lg:z-10 flex flex-col min-h-[calc(100vh-3.5rem)] lg:min-h-screen lg:h-screen overflow-hidden"
                     aria-hidden={mobileDrawerOpen}
                 >
                     {center}
                 </main>
 
-                {/* Right Sidebar */}
                 <AnimatePresence initial={false}>
                     {rightSidebarVisible && (
                         <motion.aside
@@ -224,10 +213,8 @@ export const Layout: React.FC<LayoutProps> = ({leftSidebar, center, rightSidebar
                             aria-label={isMobile ? 'Tools panel' : undefined}
                             className={clsx(
                                 "bg-white/85 dark:bg-slate-900/85 backdrop-blur-md border-l border-slate-200 dark:border-slate-700 flex-shrink-0 overflow-hidden",
-                                // Mobile: fixed overlay drawer
-                                "fixed lg:relative z-30",
+                                "fixed lg:relative z-[35]",
                                 "top-14 lg:top-0 right-0",
-                                // Mobile width is a class; desktop width is animated inline by Framer
                                 "w-[85vw] max-w-[320px] lg:w-auto",
                                 "h-[calc(100vh-3.5rem)] lg:h-screen"
                             )}
@@ -240,8 +227,6 @@ export const Layout: React.FC<LayoutProps> = ({leftSidebar, center, rightSidebar
                 </AnimatePresence>
             </div>
 
-            {/* Desktop Toggle Buttons - Hidden on Mobile */}
-            {/* Left Sidebar Toggle */}
             <button
                 onClick={() => setLeftSidebarVisible(!leftSidebarVisible)}
                 className={clsx(
@@ -261,7 +246,6 @@ export const Layout: React.FC<LayoutProps> = ({leftSidebar, center, rightSidebar
                 </div>
             </button>
 
-            {/* Right Sidebar Toggle */}
             <button
                 onClick={() => setRightSidebarVisible(!rightSidebarVisible)}
                 className={clsx(

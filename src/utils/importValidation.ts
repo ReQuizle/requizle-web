@@ -1,7 +1,3 @@
-/**
- * Import validation utilities for parsing and validating JSON quiz data.
- */
-
 import type {
     Subject,
     Question,
@@ -17,25 +13,22 @@ import type {
 import {hasDuplicateStrings, hasEnoughWordBankEntries} from './validationHelpers';
 import {isRecord} from './typeGuards';
 
-/** Media reference with context about where it's used */
 export interface MediaReference {
-    path: string;           // Full path from JSON (e.g., "images/image.png")
-    filename: string;       // Just the filename
+    path: string;
+    filename: string;
     subjectName: string;
     topicName: string;
 }
 
-/** Grouped media by filename for display */
 export interface MediaGroup {
     filename: string;
     references: MediaReference[];
-    isConflict: boolean;    // Same filename, different paths
+    isConflict: boolean;
     uploaded: boolean;
     uploadedFile?: File;
     uploadedPerRef?: Map<string, File>;
 }
 
-/** Check if a media reference is a remote URL, data URI, or IndexedDB reference */
 export const isRemoteOrStoredMedia = (media: string): boolean => {
     return media.startsWith('http://') ||
         media.startsWith('https://') ||
@@ -43,7 +36,6 @@ export const isRemoteOrStoredMedia = (media: string): boolean => {
         media.startsWith('idb:');
 };
 
-/** Extract filename from path (handles both / and \ separators) */
 export const getFilename = (path: string): string => {
     const parts = path.split(/[/\\]/);
     return parts[parts.length - 1];
@@ -234,7 +226,6 @@ export const validateProfileImport = (data: unknown): Profile => {
     };
 };
 
-/** Validate and parse imported subject data */
 export const validateSubjects = (data: unknown): Subject[] => {
     if (!Array.isArray(data) && (typeof data !== 'object' || data === null)) {
         throw new Error('Invalid format: Expected an object or array of subjects');
@@ -253,7 +244,6 @@ export const validateSubjects = (data: unknown): Subject[] => {
         'word_bank'
     ];
 
-    // Auto-generate unique IDs (random, no auto-merge - users must provide matching IDs for merging)
     let idCounter = 0;
     const generateId = (prefix: string) => {
         if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -269,13 +259,10 @@ export const validateSubjects = (data: unknown): Subject[] => {
 
         const question = q as Record<string, unknown>;
 
-        // Auto-generate id if not provided
         const id = typeof question.id === 'string' && question.id.trim() ? question.id.trim() : generateId('q');
 
-        // Accept both "question" and "prompt" for the question text
         const prompt = question.prompt || question.question;
 
-        // Validate base fields
         if (typeof question.type !== 'string' || !validQuestionTypes.includes(question.type as QuestionType)) {
             throw new Error(`Invalid question ${questionIndex + 1} in topic "${topicName}": Missing or invalid "type" (must be one of: ${validQuestionTypes.join(', ')})`);
         }
@@ -293,7 +280,6 @@ export const validateSubjects = (data: unknown): Subject[] => {
             ...(optionalTrimmedString(question.media) ? {media: optionalTrimmedString(question.media)} : {})
         };
 
-        // Validate type-specific fields
         switch (type) {
             case 'multiple_choice': {
                 if (!isStringArray(question.choices) || question.choices.length < 2 || question.choices.some(choice => !choice.trim())) {
@@ -438,7 +424,6 @@ export const validateSubjects = (data: unknown): Subject[] => {
             throw new Error(`Invalid topic ${topicIndex + 1} in subject "${subjectName}": Missing or invalid "name"`);
         }
 
-        // Use provided ID, or generate unique random ID
         const id = typeof topic.id === 'string' && topic.id.trim() ? topic.id.trim() : generateId('topic');
 
         if (!Array.isArray(topic.questions)) {
@@ -474,7 +459,6 @@ export const validateSubjects = (data: unknown): Subject[] => {
             throw new Error(`Invalid subject ${subjectIndex + 1}: Missing or invalid "name"`);
         }
 
-        // Use provided ID, or generate unique random ID
         const id = typeof subject.id === 'string' && subject.id.trim() ? subject.id.trim() : generateId('subject');
 
         if (!Array.isArray(subject.topics)) {
@@ -519,7 +503,6 @@ export const validateSubjects = (data: unknown): Subject[] => {
     return validatedSubjects;
 };
 
-/** Check whether a payload can be imported without mutating the original data. */
 export const isImportableQuizPayload = (data: unknown): boolean => {
     if (isSubjectExportV1(data)) return true;
 
@@ -527,7 +510,7 @@ export const isImportableQuizPayload = (data: unknown): boolean => {
         validateProfileImport(data);
         return true;
     } catch {
-        // Try raw subject/subject-array import next.
+        void 0;
     }
 
     try {
@@ -538,7 +521,6 @@ export const isImportableQuizPayload = (data: unknown): boolean => {
     }
 };
 
-/** Extract all media references with context (subject/topic names) */
 export const extractMediaReferencesWithContext = (data: unknown): MediaReference[] => {
     const mediaRefs: MediaReference[] = [];
 
@@ -584,10 +566,8 @@ export const extractMediaReferencesWithContext = (data: unknown): MediaReference
         if (obj.requizleSubjectExport === 1 && typeof obj.subject === 'object' && obj.subject !== null) {
             processSubjects([obj.subject]);
         } else if (Array.isArray(obj.subjects)) {
-            // It's a profile
             processSubjects(obj.subjects);
         } else if (obj.topics) {
-            // It's a single subject
             processSubjects([obj]);
         }
     }
@@ -595,12 +575,10 @@ export const extractMediaReferencesWithContext = (data: unknown): MediaReference
     return mediaRefs;
 };
 
-/** Get local media references (filter out remote URLs and stored media) */
 export const getLocalMediaRefs = (refs: MediaReference[]): MediaReference[] => {
     return refs.filter(r => !isRemoteOrStoredMedia(r.path));
 };
 
-/** Group media by filename and detect conflicts */
 export const groupMediaByFilename = (refs: MediaReference[]): MediaGroup[] => {
     const groups = new Map<string, MediaReference[]>();
 
@@ -611,7 +589,6 @@ export const groupMediaByFilename = (refs: MediaReference[]): MediaGroup[] => {
     }
 
     return Array.from(groups.entries()).map(([filename, references]) => {
-        // Check if this is a conflict: same filename but different paths
         const uniquePaths = new Set(references.map(r => r.path));
         const isConflict = uniquePaths.size > 1;
 
@@ -625,7 +602,6 @@ export const groupMediaByFilename = (refs: MediaReference[]): MediaGroup[] => {
     });
 };
 
-/** Replace media paths with new references (for conflict-aware replacement) */
 export const replaceMediaByPath = (data: unknown, mediaMap: Map<string, string>): unknown => {
     if (Array.isArray(data)) {
         return data.map(item => replaceMediaByPath(item, mediaMap));
@@ -634,7 +610,6 @@ export const replaceMediaByPath = (data: unknown, mediaMap: Map<string, string>)
         const result: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
             if (key === 'media' && typeof value === 'string') {
-                // Try full path first, then filename
                 result[key] = mediaMap.get(value) || mediaMap.get(getFilename(value)) || value;
             } else {
                 result[key] = replaceMediaByPath(value, mediaMap);

@@ -1,10 +1,3 @@
-/**
- * Presets: indigo, red, orange, yellow, green, blue, purple, pink, monochrome, plus custom hex.
- * Accent: Tailwind's `indigo` slot is `--accent-*` (see tailwind.config.js). Neutrals: `slate` → `--surface-*`.
- * Monochrome: no chroma; light theme uses dark “accent”, dark theme uses light “accent” (see `MONOCHROME_*`).
- * Custom: any #RRGGBB; other presets are one seed + `generateAccentFromSeedHex` + `generateSurfaceFromAccent500Triple`.
- */
-
 export type PresetColorThemeId =
     | 'indigo'
     | 'red'
@@ -20,7 +13,6 @@ export type ColorThemeId = PresetColorThemeId | 'custom';
 
 export const DEFAULT_COLOR_THEME: PresetColorThemeId = 'indigo';
 
-/** Maps removed preset ids from older builds to a close replacement. */
 export const LEGACY_COLOR_THEME_MAP: Record<string, PresetColorThemeId> = {
     violet: 'purple',
     cyan: 'blue',
@@ -47,7 +39,6 @@ type ColorPalette = {
     950: string;
 };
 
-/** Tailwind v3.4 "slate" (reference for lightness; hue is replaced per theme). */
 const SLATE_TEMPL_RGB: ColorPalette = {
     50: '248 250 252',
     100: '241 245 249',
@@ -73,11 +64,9 @@ const PRESET_SEEDS: {id: PresetColorThemeId; label: string; seed: string}[] = [
     {id: 'blue', label: 'Blue', seed: '#3b82f6'},
     {id: 'purple', label: 'Purple', seed: '#a855f7'},
     {id: 'pink', label: 'Pink', seed: '#ec4899'},
-    /** Used for the swatch only; `applyDocumentTheme` uses neutral ramps (see `MONOCHROME_*`). */
     {id: 'monochrome', label: 'Monochrome', seed: '#737373'}
 ];
 
-/** True neutral for light UI; dark text “accent” in light. */
 const MONOCHROME_LIGHT_ACCENT: ColorPalette = {
     50: '250 250 250',
     100: '240 240 240',
@@ -92,10 +81,6 @@ const MONOCHROME_LIGHT_ACCENT: ColorPalette = {
     950: '8 8 8'
 };
 
-/**
- * Grayscale with light primary in dark (50 = palest, 950 = darkest; 600/700 = buttons).
- * `hover:bg-indigo-700` is slightly darker than 600.
- */
 const MONOCHROME_DARK_ACCENT: ColorPalette = {
     50: '250 250 250',
     100: '245 245 245',
@@ -206,7 +191,6 @@ function toTriple(c: {r: number; g: number; b: number}): string {
     return `${clampByte(c.r)} ${clampByte(c.g)} ${clampByte(c.b)}`;
 }
 
-/** One seed color produces a full accent ramp (50–950). */
 export function generateAccentFromSeedHex(hex: string): ColorPalette {
     const parsed = parseHex(hex) ?? parseHex(DEFAULT_CUSTOM_ACCENT_HEX)!;
     const {r, g, b} = parsed;
@@ -269,12 +253,10 @@ function hslToRgb(h: number, s: number, l: number): {r: number; g: number; b: nu
     return {r: (r1 + m) * 255, g: (g1 + m) * 255, b: (b1 + m) * 255};
 }
 
-/** UI neutrals: same L curve as default slate, H from accent, subtle saturation. */
 function generateSurfaceFromAccent500Triple(accent500: string): ColorPalette {
     const tri = accent500.split(/\s+/).map(Number) as [number, number, number];
     const [r, g, b] = tri;
     const {h, s} = rgbToHsl(r, g, b);
-    // Grays and near-grays: keep neutral chrome (default slate is ~210°) instead of hue 0.
     const hue = s < 0.1 ? 220 : h;
     const out: Partial<ColorPalette> = {};
     for (const shade of PALETTE_SHADES) {
@@ -317,7 +299,6 @@ function resolveAccentPalette(colorTheme: ColorThemeId, customAccentColor: strin
 export function applyDocumentTheme(args: {
     colorTheme: ColorThemeId;
     customAccentColor: string;
-    /** `useTheme()` value; for monochrome, avoids a stale `document.documentElement` class when child effects run before the provider. */
     appearanceMode?: 'light' | 'dark';
 }): void {
     if (typeof document === 'undefined') return;

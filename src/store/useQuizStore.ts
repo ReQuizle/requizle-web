@@ -37,25 +37,22 @@ import {
 interface Settings {
     confirmSubjectDelete: boolean;
     confirmProfileDelete: boolean;
-    /** When false, reset subject progress immediately (sidebar, context menu, data settings). */
+    /** If false, subject progress reset runs without a confirm dialog. */
     confirmResetSubjectProgress: boolean;
-    /** When false, reset topic progress immediately from the context menu. */
+    /** If false, topic progress reset runs without a confirm dialog. */
     confirmResetTopicProgress: boolean;
-    /** When false, wrong answers do not put the question back in the queue (advance-only for this pass). */
+    /** If false, incorrect answers advance only; question is not re-queued. */
     quizRequeueOnIncorrect: boolean;
-    /** When false, skipped questions are not reinserted. */
+    /** If false, skipped questions are not re-queued. */
     quizRequeueOnSkip: boolean;
-    /** Minimum positions ahead to reinsert (inclusive). Default 4 matches previous app behavior. */
+    /** Min positions ahead to reinsert a re-queued question (inclusive, 0 = front). */
     quizRequeueGapMin: number;
-    /** Maximum positions ahead to reinsert (inclusive). */
+    /** Max positions ahead to reinsert (inclusive). */
     quizRequeueGapMax: number;
-    /** When false, hide the ambient animated background. */
     animatedBackground: boolean;
-    /** Active accent color theme (drives the entire `indigo-*` palette via CSS variables). */
     colorTheme: ColorThemeId;
-    /** When `colorTheme` is `custom`, the 500-seed (and ramp) is derived from this hex. */
     customAccentColor: string;
-    /** Whether the starter sample deck has already been added for this install. */
+    /** Set after bundled sample content is added on first run. */
     sampleDataSeeded: boolean;
 }
 
@@ -131,7 +128,7 @@ function createDefaultProfile(): Profile {
     };
 }
 
-/** Fresh study session before a subject is chosen. Exported for UI fallbacks. */
+/** Default `session` when no study subject is active. */
 export const DEFAULT_SESSION_STATE: SessionState = {
     subjectId: null,
     selectedTopicIds: [],
@@ -206,7 +203,7 @@ export function sanitizePersistedQuizState(persistedState: unknown): PersistedQu
                 const validated = validateProfileImport(profileInput);
                 profiles[validated.id] = validated;
             } catch {
-                // Drop corrupt persisted profiles instead of letting one bad record break startup.
+                // Skips invalid profile JSON so the rest of persisted state can load.
                 console.warn(`Dropping corrupt persisted profile "${profileId}" during hydration.`);
             }
         }
@@ -267,12 +264,12 @@ export const useQuizStore = create<QuizState>()(
         {
             name: 'quiz-storage',
             version: 1,
-            // Use IndexedDB for storage instead of localStorage to avoid quota limits
+            // IndexedDB avoids localStorage size limits for large state JSON.
             storage: createJSONStorage(() => indexedDBStorage),
             migrate: (persistedState: unknown, version: number) => {
                 if (version === 0 || version === undefined) {
                     const oldState = isRecord(persistedState) ? persistedState : {};
-                    // Migrate from version 0 (flat state) to version 1 (profiles)
+                    // v0: flat { subjects, progress, session } -> v1: profiles + activeProfileId
                     const defaultProfile: Profile = {
                         id: DEFAULT_PROFILE_ID,
                         name: 'Default',
