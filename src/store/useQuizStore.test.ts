@@ -118,6 +118,16 @@ describe('useQuizStore', () => {
             expect(useQuizStore.getState().settings.animatedBackground).toBe(false);
         });
 
+        it('can toggle sound effects', () => {
+            expect(useQuizStore.getState().settings.soundEnabled).toBe(true);
+
+            act(() => {
+                useQuizStore.getState().setSoundEnabled(false);
+            });
+
+            expect(useQuizStore.getState().settings.soundEnabled).toBe(false);
+        });
+
         it('sanitizes persisted state before hydration', () => {
             const sanitized = sanitizePersistedQuizState({
                 activeProfileId: 'missing',
@@ -184,6 +194,7 @@ describe('useQuizStore', () => {
             expect(sanitized.settings.quizRequeueGapMin).toBe(3);
             expect(sanitized.settings.quizRequeueGapMax).toBe(9);
             expect(sanitized.settings.animatedBackground).toBe(DEFAULT_SETTINGS.animatedBackground);
+            expect(sanitized.settings.soundEnabled).toBe(DEFAULT_SETTINGS.soundEnabled);
             expect(sanitized.settings.sampleDataSeeded).toBe(true);
         });
 

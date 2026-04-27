@@ -9,18 +9,22 @@ import {
     type PresetColorThemeId
 } from '../../../utils/colorThemes';
 
-type AppearanceSettingsSectionProps = {
+type PersonalizationSettingsSectionProps = {
     animatedBackground: boolean;
     onSetAnimatedBackground: (value: boolean) => void;
+    soundEnabled: boolean;
+    onSetSoundEnabled: (value: boolean) => void;
     colorTheme: ColorThemeId;
     customAccentColor: string;
     onSetColorTheme: (value: ColorThemeId) => void;
     onSetCustomAccentColor: (value: string) => void;
 };
 
-export const AppearanceSettingsSection: React.FC<AppearanceSettingsSectionProps> = ({
+export const PersonalizationSettingsSection: React.FC<PersonalizationSettingsSectionProps> = ({
     animatedBackground,
     onSetAnimatedBackground,
+    soundEnabled,
+    onSetSoundEnabled,
     colorTheme,
     customAccentColor,
     onSetColorTheme,
@@ -33,12 +37,12 @@ export const AppearanceSettingsSection: React.FC<AppearanceSettingsSectionProps>
 
     return (
         <div
-            id="settings-panel-appearance"
+            id="settings-panel-personalization"
             role="tabpanel"
-            aria-labelledby="settings-tab-appearance"
+            aria-labelledby="settings-tab-personalization"
             className="space-y-3"
         >
-            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Appearance</h3>
+            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Personalization</h3>
             <div className="flex items-center justify-between p-3 min-h-[52px] bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
                 <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Theme</span>
                 <ThemeToggle />
@@ -112,6 +116,12 @@ export const AppearanceSettingsSection: React.FC<AppearanceSettingsSectionProps>
                 title="Animated background"
                 checked={animatedBackground}
                 onChange={onSetAnimatedBackground}
+            />
+            <SettingsSwitchRow
+                title="Sound effects"
+                description="Feedback when you answer, skip, or continue"
+                checked={soundEnabled}
+                onChange={onSetSoundEnabled}
             />
         </div>
     );

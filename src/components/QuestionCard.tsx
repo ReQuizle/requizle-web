@@ -14,6 +14,7 @@ import {motion, AnimatePresence} from 'framer-motion';
 import confetti from 'canvas-confetti';
 import {ArrowRight, SkipForward, AlertCircle, CheckCircle2} from 'lucide-react';
 import {useResolvedMediaUrl} from '../utils/useResolvedMediaUrl';
+import {playQuizSound} from '../utils/soundEffects';
 
 const CONFETTI_COOLDOWN_MS = 700;
 let lastConfettiAt = 0;
@@ -52,6 +53,7 @@ type AnswerType = number | number[] | boolean | string | Record<string, string> 
 
 export const QuestionCard: React.FC<Props> = ({question, onFeedbackVisibilityChange}) => {
     const {submitAnswer, skipQuestion, nextQuestion} = useQuizStore();
+    const soundEnabled = useQuizStore(s => s.settings.soundEnabled);
     const [submittedAnswerState, setSubmittedAnswerState] = useState<{questionId: string; answer: AnswerType} | null>(null);
     const [resultState, setResultState] = useState<{questionId: string; result: {correct: boolean; explanation?: string}} | null>(null);
     const continueButtonRef = useRef<HTMLButtonElement>(null);
@@ -75,6 +77,8 @@ export const QuestionCard: React.FC<Props> = ({question, onFeedbackVisibilityCha
         const res = submitAnswer(answer);
         setResultState({questionId: question.id, result: res});
 
+        playQuizSound(res.correct ? 'correct' : 'incorrect', soundEnabled);
+
         if (res.correct && shouldPlayConfetti()) {
             confetti({
                 particleCount: 65,
@@ -86,6 +90,7 @@ export const QuestionCard: React.FC<Props> = ({question, onFeedbackVisibilityCha
     };
 
     const handleSkip = () => {
+        playQuizSound('skip', soundEnabled);
         skipQuestion();
     };
 
@@ -335,7 +340,10 @@ export const QuestionCard: React.FC<Props> = ({question, onFeedbackVisibilityCha
                                     <div className="mt-6 flex justify-end">
                                         <button
                                             ref={continueButtonRef}
-                                            onClick={nextQuestion}
+                                            onClick={() => {
+                                                playQuizSound('continue', soundEnabled);
+                                                nextQuestion();
+                                            }}
                                             className={`${result.correct ? 'btn-success' : 'btn-danger'} flex items-center gap-2`}
                                         >
                                             Continue <ArrowRight size={18} />

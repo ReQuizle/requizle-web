@@ -23,7 +23,7 @@ import {MessageModal, SimpleConfirmModal, TextPromptModal, TypeToConfirmModal} f
 import {clsx} from 'clsx';
 import {SidebarTabs, type RightSidebarTab} from './rightSidebar/SidebarTabs';
 import {PendingMediaImportModal} from './rightSidebar/PendingMediaImportModal';
-import {AppearanceSettingsSection} from './rightSidebar/settings/AppearanceSettingsSection';
+import {PersonalizationSettingsSection} from './rightSidebar/settings/PersonalizationSettingsSection';
 import {BehaviorSettingsSection} from './rightSidebar/settings/BehaviorSettingsSection';
 import {DataSettingsSection} from './rightSidebar/settings/DataSettingsSection';
 import {LinksSettingsSection} from './rightSidebar/settings/LinksSettingsSection';
@@ -32,11 +32,11 @@ import {useImportWorkflow} from './rightSidebar/useImportWorkflow';
 import type {Profile} from '../types';
 import {extractAllMediaIds, flattenProgress} from '../store/quizStoreHelpers';
 
-type SettingsSectionId = 'profiles' | 'appearance' | 'behavior' | 'data' | 'links';
+type SettingsSectionId = 'profiles' | 'personalization' | 'behavior' | 'data' | 'links';
 
 const SETTINGS_SECTIONS: {id: SettingsSectionId; label: string; icon: typeof Users}[] = [
     {id: 'profiles', label: 'Profiles', icon: Users},
-    {id: 'appearance', label: 'Appearance', icon: Palette},
+    {id: 'personalization', label: 'Personalization', icon: Palette},
     {id: 'behavior', label: 'Behavior', icon: SlidersHorizontal},
     {id: 'data', label: 'Data', icon: Database},
     {id: 'links', label: 'Links & help', icon: Link2}
@@ -67,7 +67,8 @@ export const RightSidebar: React.FC = () => {
         setQuizRequeueGaps,
         setAnimatedBackground,
         setColorTheme,
-        setCustomAccentColor
+        setCustomAccentColor,
+        setSoundEnabled
     } = useQuizStore();
     const [activeTab, setActiveTab] = useState<RightSidebarTab>('mastery');
     const [settingsSection, setSettingsSection] = useState<SettingsSectionId>('profiles');
@@ -472,10 +473,12 @@ export const RightSidebar: React.FC = () => {
                         />
                     )}
 
-                    {settingsSection === 'appearance' && (
-                        <AppearanceSettingsSection
+                    {settingsSection === 'personalization' && (
+                        <PersonalizationSettingsSection
                             animatedBackground={settings.animatedBackground}
                             onSetAnimatedBackground={setAnimatedBackground}
+                            soundEnabled={settings.soundEnabled}
+                            onSetSoundEnabled={setSoundEnabled}
                             colorTheme={settings.colorTheme}
                             customAccentColor={settings.customAccentColor}
                             onSetColorTheme={setColorTheme}

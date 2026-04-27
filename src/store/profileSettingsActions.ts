@@ -58,6 +58,7 @@ export function createProfileSettingsActions({
     | 'setColorTheme'
     | 'setCustomAccentColor'
     | 'markSampleDataSeeded'
+    | 'setSoundEnabled'
 > {
     return {
         createProfile: (name) => {
@@ -280,6 +281,10 @@ export function createProfileSettingsActions({
 
         markSampleDataSeeded: () => set((state) => ({
             settings: {...state.settings, sampleDataSeeded: true}
+        })),
+
+        setSoundEnabled: (value) => set((state) => ({
+            settings: {...state.settings, soundEnabled: value}
         }))
     };
 }

@@ -54,6 +54,8 @@ interface Settings {
     customAccentColor: string;
     /** Set after bundled sample content is added on first run. */
     sampleDataSeeded: boolean;
+    /** Quiz feedback tones (correct / wrong / skip / continue). */
+    soundEnabled: boolean;
 }
 
 export interface QuizState {
@@ -111,6 +113,7 @@ export interface QuizState {
     setColorTheme: (value: ColorThemeId) => void;
     setCustomAccentColor: (value: string) => void;
     markSampleDataSeeded: () => void;
+    setSoundEnabled: (value: boolean) => void;
 }
 
 type PersistedQuizSlice = Pick<QuizState, 'profiles' | 'activeProfileId' | 'settings'>;
@@ -151,7 +154,8 @@ export const DEFAULT_SETTINGS: Settings = {
     animatedBackground: true,
     colorTheme: DEFAULT_COLOR_THEME,
     customAccentColor: DEFAULT_CUSTOM_ACCENT_HEX,
-    sampleDataSeeded: false
+    sampleDataSeeded: false,
+    soundEnabled: true
 };
 
 function sanitizeSettings(input: unknown, sampleDataSeededFallback: boolean): Settings {
@@ -185,7 +189,8 @@ function sanitizeSettings(input: unknown, sampleDataSeededFallback: boolean): Se
             return isColorThemeId(t) ? t : DEFAULT_SETTINGS.colorTheme;
         })(),
         customAccentColor: sanitizeCustomAccentHex(raw.customAccentColor, DEFAULT_SETTINGS.customAccentColor),
-        sampleDataSeeded: sanitizeBoolean(raw.sampleDataSeeded, sampleDataSeededFallback)
+        sampleDataSeeded: sanitizeBoolean(raw.sampleDataSeeded, sampleDataSeededFallback),
+        soundEnabled: sanitizeBoolean(raw.soundEnabled, DEFAULT_SETTINGS.soundEnabled)
     };
 }
 

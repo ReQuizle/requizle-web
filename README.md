@@ -25,7 +25,7 @@ ReQuizle is a modern web application designed to help users study efficiently th
 - **Import & export**: Import or export subjects, subject exports, or full profiles via `.json` or `.rqzl` (ZIP-based); automatic type detection on import, configurable options when exporting.
 - **In-App Content Editor**: Create, rename, and delete subjects, topics, and questions (including media uploads) from a dedicated editor page.
 - **Profile Management**: Create, rename, and manage multiple study profiles.
-- **Appearance**: Light/dark theme, accent color presets and custom color, and an optional animated background.
+- **Personalization**: Light/dark theme, accent color presets and custom color, optional animated background, and optional quiz **sound effects** (correct, incorrect, skip, continue).
 - **Responsive Design**: Works seamlessly on desktop and mobile devices.
 - **Collapsible Sidebars**: Hide sidebars for a focused study experience.
 - **Installable**: Can be installed as a Progressive Web App (PWA) on desktop and mobile.
@@ -131,7 +131,7 @@ requizle-web/
 │   ├── pages/            # Full-page routes (e.g. EditorPage)
 │   ├── store/            # Zustand store composition (useQuizStore + action/helper modules)
 │   ├── test/             # Vitest setup
-│   ├── utils/            # quizLogic, importValidation, mediaStorage, rqzlArchive, archiveMedia, appBaseUrl, ...
+│   ├── utils/            # quizLogic, importValidation, mediaStorage, soundEffects, rqzlArchive, archiveMedia, appBaseUrl, ...
 │   ├── App.tsx           # Root component (theme + routes)
 │   ├── main.tsx          # Entry (URL normalization, then React mount)
 │   ├── router.tsx        # React Router: study layout vs. /edit
