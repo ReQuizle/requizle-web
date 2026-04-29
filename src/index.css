@@ -76,7 +76,7 @@
   }
 
   .btn-primary {
-    @apply btn bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-indigo-500/25;
+    @apply btn bg-indigo-600 text-on-accent hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-indigo-500/25;
   }
 
   .btn-success {
