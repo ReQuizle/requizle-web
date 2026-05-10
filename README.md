@@ -158,7 +158,7 @@ requizle-web/
 - [Framer Motion](https://www.framer.com/motion/) - Animations
 - [Tailwind CSS](https://tailwindcss.com/) - Styling
 - [Lucide](https://lucide.dev/) - Icons
-- [KaTeX](https://katex.org/) and [react-katex](https://github.com/MichaelDeBoey/react-katex) - Math rendering
+- [KaTeX](https://katex.org/) and [react-katex](https://github.com/talyssonoc/react-katex) - Math rendering (KaTeX engine + React components)
 - [react-syntax-highlighter](https://github.com/react-syntax-highlighter/react-syntax-highlighter) (Prism-based) - Code block highlighting
 - [JSZip](https://stuk.github.io/jszip/) - `.rqzl` archive (ZIP) read/write
 - [uuid](https://www.npmjs.com/package/uuid) - Media and entity identifiers
