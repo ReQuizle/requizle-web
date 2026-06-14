@@ -92,11 +92,11 @@ export default defineConfig({
             ? 'assets/prism/[name]-[hash].js'
             : 'assets/[name]-[hash].js'
         },
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom'],
-          'vendor-motion': ['framer-motion'],
-          'vendor-katex': ['katex', 'react-katex'],
-          'vendor-utils': ['zustand', 'clsx', 'canvas-confetti', 'lucide-react'],
+        manualChunks(id) {
+          if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/')) return 'vendor-react';
+          if (id.includes('node_modules/framer-motion/')) return 'vendor-motion';
+          if (id.includes('node_modules/katex/') || id.includes('node_modules/react-katex/')) return 'vendor-katex';
+          if (id.includes('node_modules/zustand/') || id.includes('node_modules/clsx/') || id.includes('node_modules/canvas-confetti/') || id.includes('node_modules/lucide-react/')) return 'vendor-utils';
         }
       }
     }
