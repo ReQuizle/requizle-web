@@ -41,7 +41,7 @@ For full guides, file formats, and development instructions, please visit the **
 
 ## Prerequisites
 
-- Node.js 18.x or higher
+- Node.js 24.x LTS or higher
 - npm (Node Package Manager)
 - A modern web browser
 
