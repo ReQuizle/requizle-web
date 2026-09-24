@@ -4,7 +4,7 @@
 
 <img src="public/icon.svg" alt="ReQuizle Logo" width="250">
 
-ReQuizle is a modern web application designed to help users study efficiently through spaced repetition and active recall.
+ReQuizle is a browser-based study application built around active recall and repeated review.
 
 ## Features
 
@@ -26,7 +26,7 @@ ReQuizle is a modern web application designed to help users study efficiently th
 - **In-App Content Editor**: Create, rename, and delete subjects, topics, and questions (including media uploads) from a dedicated editor page.
 - **Profile Management**: Create, rename, and manage multiple study profiles.
 - **Personalization**: Light/dark theme, accent color presets and custom color, optional animated background, and optional quiz **sound effects** (correct, incorrect, skip, continue).
-- **Responsive Design**: Works seamlessly on desktop and mobile devices.
+- **Responsive Design**: Supports desktop and mobile layouts.
 - **Collapsible Sidebars**: Hide sidebars for a focused study experience.
 - **Installable**: Can be installed as a Progressive Web App (PWA) on desktop and mobile.
 - **Privacy-Focused**: All data is stored locally in your browser - no server required.
@@ -41,7 +41,7 @@ For full guides, file formats, and development instructions, please visit the **
 
 ## Prerequisites
 
-- Node.js 18.x or higher
+- Node.js 20.19+ or 22.12+
 - npm (Node Package Manager)
 - A modern web browser
 

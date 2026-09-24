@@ -58,7 +58,13 @@ export function useImportWorkflow({
     useEffect(() => {
         if (activeTab !== 'import') {
             importDndDepth.current = 0;
-            setImportDndActive(false);
+            let cancelled = false;
+            queueMicrotask(() => {
+                if (!cancelled) setImportDndActive(false);
+            });
+            return () => {
+                cancelled = true;
+            };
         }
     }, [activeTab]);
 
