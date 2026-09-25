@@ -8,9 +8,9 @@ ReQuizle is a browser-based study application built around active recall and rep
 
 ## Features
 
-- **Focused Study Experience**: Clean, distraction-free UI with smooth animations.
+- **Focused Study Experience**: A study view centred on the current question.
 - **Mastery Tracking**: Track progress and mastery percentage for each subject and topic.
-- **Spaced Repetition**: Smart queueing for missed/skipped cards, plus an option to include or exclude mastered questions.
+- **Spaced Repetition**: Queueing for missed or skipped cards, with an option to include or exclude mastered questions.
 - **Multiple Question Types**: Support for various question formats:
   - Multiple Choice
   - Multiple Answer
