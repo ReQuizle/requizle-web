@@ -8,8 +8,11 @@ on:
     branches-ignore:
       - gh-pages
 
+permissions:
+  contents: read
+
 env:
-  NODE_VERSION: '20.x'
+  NODE_VERSION: '24.x'
 
 jobs:
   lint:
@@ -23,9 +26,12 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          cache: npm
+
       - run: npm ci
       - run: npm run lint
+      - run: npm run format:check
+      - run: npm run type-check
 
   test:
     name: Test with Coverage
@@ -38,10 +44,10 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          cache: npm
+
       - run: npm ci
-      - name: Run Tests
-        run: npm run test:coverage
+      - run: npm run test:coverage
 
       - name: Upload Coverage Report
         uses: actions/upload-artifact@v7
@@ -64,8 +70,6 @@ jobs:
           echo "| Branches | ${BRANCHES}% |" >> $GITHUB_STEP_SUMMARY
           echo "| Functions | ${FUNCTIONS}% |" >> $GITHUB_STEP_SUMMARY
           echo "| Lines | ${LINES}% |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Full report available as artifact: coverage-report" >> $GITHUB_STEP_SUMMARY
 
   build:
     name: Build
@@ -79,6 +83,7 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          cache: npm
+
       - run: npm ci
       - run: npm run build

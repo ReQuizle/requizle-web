@@ -1,28 +1,34 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-node_modules
-.vite
-.gh-pages-cache
-dist
-dist-ssr
-coverage
-*.local
-
-# Editor directories and files
-test-data/
-.vscode/*
-!.vscode/extensions.json
-.idea
+# OS
 .DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editors
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+.vs/
+*.user
 *.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+
+# Local environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+
+# Node.js
+node_modules/
+dist/
+coverage/
+
+# Cache left by earlier gh-pages deploys
+.gh-pages-cache/
+
+# Local test files, kept out of the repository
+test-data/

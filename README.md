@@ -2,170 +2,85 @@
 
 [![CI](https://github.com/ReQuizle/requizle-web/actions/workflows/ci.yml/badge.svg)](https://github.com/ReQuizle/requizle-web/actions/workflows/ci.yml)
 
-<img src="public/icon.svg" alt="ReQuizle Logo" width="250">
+<img src="public/icon.svg" alt="ReQuizle logo" width="250">
 
-ReQuizle is a browser-based study application built around active recall and repeated review.
+ReQuizle is a browser-based study app built around active recall and repeated review.
+
+**Live app:** [requizle.github.io/requizle-web](https://requizle.github.io/requizle-web/)
 
 ## Features
 
-- **Focused Study Experience**: A study view centred on the current question.
-- **Mastery Tracking**: Track progress and mastery percentage for each subject and topic.
-- **Spaced Repetition**: Queueing for missed or skipped cards, with an option to include or exclude mastered questions.
-- **Multiple Question Types**: Support for various question formats:
-  - Multiple Choice
-  - Multiple Answer
-  - True/False
-  - Keywords
-  - Matching
-  - Word Bank
-- **LaTeX Support**: Render mathematical equations using `\(...\)` (inline) and `\[...\]` (block) syntax.
-- **Rich Text & Code**: Question text and explanations support Markdown-style formatting, fenced code blocks with syntax highlighting, and error handling for bad content in the study UI.
-- **Media Support**: Add images or videos to questions via URL, base64, or local file upload.
-- **Data Persistence**: Progress automatically saved to IndexedDB for large datasets.
-- **Import & export**: Import or export subjects, subject exports, or full profiles via `.json` or `.rqzl` (ZIP-based); automatic type detection on import, configurable options when exporting.
-- **In-App Content Editor**: Create, rename, and delete subjects, topics, and questions (including media uploads) from a dedicated editor page.
-- **Profile Management**: Create, rename, and manage multiple study profiles.
-- **Personalization**: Light/dark theme, accent color presets and custom color, optional animated background, and optional quiz **sound effects** (correct, incorrect, skip, continue).
-- **Responsive Design**: Supports desktop and mobile layouts.
-- **Collapsible Sidebars**: Hide sidebars for a focused study experience.
-- **Installable**: Can be installed as a Progressive Web App (PWA) on desktop and mobile.
-- **Privacy-Focused**: All data is stored locally in your browser - no server required.
+- Six question types: multiple choice, multiple answer, true or false, keywords (typed answers), matching, and word bank
+- Missed and skipped questions return a few questions later in the session, with an option to include or skip mastered questions
+- Mastery tracking for each subject and topic
+- Question text with Markdown-style formatting, tables, code blocks with syntax highlighting, and LaTeX math (`\(...\)` inline, `\[...\]` block)
+- Images and videos from a URL or an uploaded file
+- An editor for creating subjects, topics, and questions in the app
+- Import and export of subjects and full profiles as `.json` or `.rqzl` (a ZIP archive that includes media)
+- Multiple study profiles, light and dark themes, accent colors, and optional sound effects
+- Installable as a Progressive Web App
+- All data is stored locally in the browser with IndexedDB; there is no server
 
 ## Documentation
 
-For full guides, file formats, and development instructions, please visit the **[Official Documentation](https://requizle.github.io/requizle-wiki/)**.
+The [ReQuizle documentation](https://requizle.github.io/requizle-wiki/) covers the app in detail:
 
-- [User Guide](https://requizle.github.io/requizle-wiki/guide)
-- [Import/Export & File Formats](https://requizle.github.io/requizle-wiki/import-export)
-- [Development Guide](https://requizle.github.io/requizle-wiki/development)
+- [User guide](https://requizle.github.io/requizle-wiki/guide)
+- [Import, export, and file formats](https://requizle.github.io/requizle-wiki/import-export)
+- [Development guide](https://requizle.github.io/requizle-wiki/development)
 
-## Prerequisites
+## Development
 
-- Node.js 20.19+ or 22.12+
-- npm (Node Package Manager)
-- A modern web browser
-
-## Installation
+Requires Node.js 20.19+ or 22.12+.
 
 ```bash
 git clone https://github.com/ReQuizle/requizle-web.git
 cd requizle-web
-npm install
-```
-
-## Usage
-
-```bash
+npm ci
 npm run dev
 ```
 
-Development uses a root **`/`** [Vite `base`](https://vitejs.dev/config/shared-options.html#base). Open:
+The study view runs at `http://localhost:5173/` and the content editor at `http://localhost:5173/edit`.
 
-**http://localhost:5173/**
+Production builds use the GitHub Pages path `/requizle-web/`. To deploy somewhere else, set `VITE_APP_BASE` before building, for example `/` for a domain root.
 
-The study UI is at that URL; the **content editor** is at **http://localhost:5173/edit** (or use **Edit content** in the left sidebar).
-
-Production builds default to the GitHub Pages project path **`/requizle-web/`**. For another deployment target, set `VITE_APP_BASE` before building, for example `/` for a domain-root deployment or `/your-subpath/` for a different subdirectory.
-
-1. **Select a Subject**:
-   - Choose a subject from the left sidebar
-   - Select specific topics or study all
-
-2. **Answer Questions**:
-   - Questions appear one at a time in the center
-   - Submit your answer or skip to come back later
-   - Incorrect questions are automatically re-queued
-
-3. **Track Progress**:
-   - View mastery percentage for each subject and topic
-   - Toggle "Include Mastered" to review completed questions
-
-4. **Import or export**:
-   - Use the **Import** tab in the right sidebar; use **Export** from the same sidebar for subjects and profiles
-   - Upload `.json` or `.rqzl` files with subjects, subject exports, or full profiles
-   - Import type is automatically detected
-   - Imported data merges by matching explicit IDs; imports without IDs create new copies
-
-## Development
-
-### Setup
-
-```bash
-npm install
-```
-
-### Testing
-
-```bash
-npm test
-```
-
-Run tests with coverage report:
-
-```bash
-npm run test:coverage
-```
-
-### Linting
-
-```bash
-npm run lint
-```
-
-## Building
-
-```bash
-npm run build
-```
-
-The build files will be created in the `dist` directory.
+| Command | Purpose |
+| :--- | :--- |
+| `npm test` | Run the tests once |
+| `npm run test:watch` | Run the tests in watch mode |
+| `npm run test:coverage` | Run the tests with a coverage report |
+| `npm run lint` | Check the code with ESLint |
+| `npm run format` | Format the code with Prettier |
+| `npm run type-check` | Check types with TypeScript |
+| `npm run build` | Build the production site into `dist/` |
+| `npm run deploy` | Build and publish to GitHub Pages |
 
 ## Project Structure
 
+```text
+src/
++-- components/   React components; inputs/ holds one component per question type
++-- context/      Theme context
++-- pages/        Full-page routes such as the content editor
++-- store/        Zustand store and its action modules
++-- utils/        Quiz logic, import validation, media storage, .rqzl archives, and helpers
++-- test/         Test setup
++-- App.tsx       Root component
++-- router.tsx    Routes for the study view and the editor
++-- types.ts      Shared types
 ```
-requizle-web/
-├── src/
-│   ├── components/       # React components (Layout, sidebars, QuestionCard, AppModals, ...)
-│   │   └── inputs/       # Question-type inputs used during study
-│   ├── context/          # React context (e.g. theme)
-│   ├── pages/            # Full-page routes (e.g. EditorPage)
-│   ├── store/            # Zustand store composition (useQuizStore + action/helper modules)
-│   ├── test/             # Vitest setup
-│   ├── utils/            # quizLogic, importValidation, mediaStorage, soundEffects, rqzlArchive, archiveMedia, appBaseUrl, ...
-│   ├── App.tsx           # Root component (theme + routes)
-│   ├── main.tsx          # Entry (URL normalization, then React mount)
-│   ├── router.tsx        # React Router: study layout vs. /edit
-│   ├── types.ts          # Shared TypeScript types
-│   └── index.css         # Global styles
-├── public/               # Static assets: icon.svg, PWA icon-192.png / icon-512.png, sample media
-├── .github/workflows/    # CI: lint, test:coverage, build
-└── dist/                 # Production build output (generated)
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
 
 ## Credits
 
-- [React](https://react.dev/) - UI framework
-- [React Router](https://reactrouter.com/) - Client-side routing
-- [Zustand](https://github.com/pmndrs/zustand) - State management
-- [Framer Motion](https://www.framer.com/motion/) - Animations
-- [Tailwind CSS](https://tailwindcss.com/) - Styling
-- [Lucide](https://lucide.dev/) - Icons
-- [KaTeX](https://katex.org/) and [react-katex](https://github.com/talyssonoc/react-katex) - Math rendering (KaTeX engine + React components)
-- [react-syntax-highlighter](https://github.com/react-syntax-highlighter/react-syntax-highlighter) (Prism-based) - Code block highlighting
-- [JSZip](https://stuk.github.io/jszip/) - `.rqzl` archive (ZIP) read/write
-- [uuid](https://www.npmjs.com/package/uuid) - Media and entity identifiers
-- [clsx](https://github.com/lukeed/clsx) - Conditional class names
-- [canvas-confetti](https://www.npmjs.com/package/canvas-confetti) - Celebration effects
-- [Vite](https://vitejs.dev/) - Build tool and dev server
-- [vite-plugin-pwa](https://vite-pwa-org.netlify.app/) - Progressive Web App / offline support
+- [React](https://react.dev/) and [React Router](https://reactrouter.com/)
+- [Zustand](https://github.com/pmndrs/zustand) for state management
+- [Tailwind CSS](https://tailwindcss.com/) and [Framer Motion](https://motion.dev/) for styling and animation
+- [Lucide](https://lucide.dev/) for icons
+- [KaTeX](https://katex.org/) for math rendering
+- [react-syntax-highlighter](https://github.com/react-syntax-highlighter/react-syntax-highlighter) for code blocks
+- [JSZip](https://stuk.github.io/jszip/) for `.rqzl` archives
+- [canvas-confetti](https://www.npmjs.com/package/canvas-confetti) for celebration effects
+- [Vite](https://vite.dev/) and [vite-plugin-pwa](https://vite-pwa-org.netlify.app/) for building and offline support
 
 ## License
 
