@@ -10,10 +10,11 @@ import type {
     SessionState,
     StudyMode
 } from '../types';
+import {v4 as uuidv4} from 'uuid';
 import {hasDuplicateStrings, hasEnoughWordBankEntries} from './validationHelpers';
 import {isRecord} from './typeGuards';
 
-export interface MediaReference {
+interface MediaReference {
     path: string;
     filename: string;
     subjectName: string;
@@ -29,90 +30,95 @@ export interface MediaGroup {
     uploadedPerRef?: Map<string, File>;
 }
 
-export const isRemoteOrStoredMedia = (media: string): boolean => {
-    return media.startsWith('http://') ||
-        media.startsWith('https://') ||
-        media.startsWith('data:') ||
-        media.startsWith('idb:');
-};
+const QUESTION_TYPES: QuestionType[] = [
+    'multiple_choice',
+    'multiple_answer',
+    'keywords',
+    'true_false',
+    'matching',
+    'word_bank'
+];
 
-export const getFilename = (path: string): string => {
-    const parts = path.split(/[/\\]/);
-    return parts[parts.length - 1];
-};
+export const isRemoteOrStoredMedia = (media: string): boolean =>
+    ['http://', 'https://', 'data:', 'idb:'].some((prefix) => media.startsWith(prefix));
+
+export const getFilename = (path: string): string => path.split(/[/\\]/).pop() ?? path;
 
 function cloneJsonValue(value: unknown): unknown {
     return JSON.parse(JSON.stringify(value));
 }
 
-function isStringArray(value: unknown): value is string[] {
-    return Array.isArray(value) && value.length > 0 && value.every(item => typeof item === 'string');
+function isFilledString(value: unknown): value is string {
+    return typeof value === 'string' && value.trim() !== '';
+}
+
+/** At least one string, none of them blank */
+function isFilledStringList(value: unknown): value is string[] {
+    return Array.isArray(value) && value.length > 0 && value.every(isFilledString);
+}
+
+/** A whole number of zero or more */
+function isCount(value: unknown): value is number {
+    return Number.isInteger(value) && (value as number) >= 0;
+}
+
+function isQuestionType(value: unknown): value is QuestionType {
+    return QUESTION_TYPES.includes(value as QuestionType);
 }
 
 function optionalTrimmedString(value: unknown): string | undefined {
-    if (typeof value !== 'string') return undefined;
-    const trimmed = value.trim();
-    return trimmed ? trimmed : undefined;
+    return isFilledString(value) ? value.trim() : undefined;
 }
 
-export const isQuestionProgress = (data: unknown): data is QuestionProgress => {
-    if (!isRecord(data)) return false;
-    return (
-        typeof data.id === 'string' &&
-        typeof data.attempts === 'number' &&
-        Number.isInteger(data.attempts) &&
-        data.attempts >= 0 &&
-        typeof data.correctStreak === 'number' &&
-        Number.isInteger(data.correctStreak) &&
-        data.correctStreak >= 0 &&
-        typeof data.mastered === 'boolean'
-    );
-};
+const isQuestionProgress = (data: unknown): data is QuestionProgress =>
+    isRecord(data) &&
+    typeof data.id === 'string' &&
+    isCount(data.attempts) &&
+    isCount(data.correctStreak) &&
+    typeof data.mastered === 'boolean';
 
 function getSubjectQuestionIds(subject: Subject): Map<string, Set<string>> {
     const topicQuestionIds = new Map<string, Set<string>>();
     for (const topic of subject.topics) {
-        topicQuestionIds.set(topic.id, new Set(topic.questions.map(q => q.id)));
+        topicQuestionIds.set(topic.id, new Set(topic.questions.map((q) => q.id)));
     }
     return topicQuestionIds;
 }
 
-export const isValidSubjectProgressPayload = (progress: unknown, subject?: Subject): boolean => {
+/** Whether `progress` is valid progress for `subject`, naming only its topics and questions */
+const isValidSubjectProgressPayload = (progress: unknown, subject: Subject): boolean => {
     if (!isRecord(progress)) return false;
-    const topicQuestionIds = subject ? getSubjectQuestionIds(subject) : undefined;
+    const topicQuestionIds = getSubjectQuestionIds(subject);
 
     for (const [topicId, qMap] of Object.entries(progress)) {
-        if (!isRecord(qMap)) return false;
-        const allowedQuestionIds = topicQuestionIds?.get(topicId);
-        if (topicQuestionIds && !allowedQuestionIds) return false;
+        const allowedQuestionIds = topicQuestionIds.get(topicId);
+        if (!isRecord(qMap) || !allowedQuestionIds) return false;
 
         for (const [questionId, qProgress] of Object.entries(qMap)) {
-            if (allowedQuestionIds && !allowedQuestionIds.has(questionId)) return false;
-            if (!isQuestionProgress(qProgress)) return false;
+            if (!allowedQuestionIds.has(questionId) || !isQuestionProgress(qProgress)) return false;
         }
     }
 
     return true;
 };
 
+/** The valid entries of `progress` for the topics and questions `subject` has */
 export const sanitizeSubjectProgress = (
     progress: unknown,
-    subject?: Subject
+    subject: Subject
 ): Record<string, Record<string, QuestionProgress>> => {
     const sanitized: Record<string, Record<string, QuestionProgress>> = {};
     if (!isRecord(progress)) return sanitized;
 
-    const topicQuestionIds = subject ? getSubjectQuestionIds(subject) : undefined;
+    const topicQuestionIds = getSubjectQuestionIds(subject);
 
     for (const [topicId, qMap] of Object.entries(progress)) {
-        if (!isRecord(qMap)) continue;
-        const allowedQuestionIds = topicQuestionIds?.get(topicId);
-        if (topicQuestionIds && !allowedQuestionIds) continue;
+        const allowedQuestionIds = topicQuestionIds.get(topicId);
+        if (!isRecord(qMap) || !allowedQuestionIds) continue;
 
         const topicSlice: Record<string, QuestionProgress> = {};
         for (const [questionId, qProgress] of Object.entries(qMap)) {
-            if (allowedQuestionIds && !allowedQuestionIds.has(questionId)) continue;
-            if (!isQuestionProgress(qProgress)) continue;
+            if (!allowedQuestionIds.has(questionId) || !isQuestionProgress(qProgress)) continue;
             topicSlice[questionId] = {
                 id: questionId,
                 attempts: qProgress.attempts,
@@ -130,21 +136,14 @@ export const sanitizeSubjectProgress = (
 };
 
 export const isSubjectExportV1 = (data: unknown): data is SubjectExportV1 => {
-    if (typeof data !== 'object' || data === null) return false;
-    const o = data as Record<string, unknown>;
+    if (!isRecord(data) || data.requizleSubjectExport !== 1 || !isRecord(data.subject)) return false;
     let subject: Subject;
     try {
-        subject = validateSubjects([cloneJsonValue(o.subject)])[0];
+        [subject] = validateSubjects([data.subject]);
     } catch {
         return false;
     }
-    const progressOk = o.progress === undefined || isValidSubjectProgressPayload(o.progress, subject);
-    return (
-        o.requizleSubjectExport === 1 &&
-        typeof o.subject === 'object' &&
-        o.subject !== null &&
-        progressOk
-    );
+    return data.progress === undefined || isValidSubjectProgressPayload(data.progress, subject);
 };
 
 function isStudyMode(value: unknown): value is StudyMode {
@@ -153,38 +152,23 @@ function isStudyMode(value: unknown): value is StudyMode {
 
 function sanitizeSessionState(session: unknown, subjects: Subject[]): SessionState {
     const input = isRecord(session) ? session : {};
-    const subjectId = typeof input.subjectId === 'string' &&
-        subjects.some(subject => subject.id === input.subjectId)
-        ? input.subjectId
-        : null;
-    const subject = subjectId ? subjects.find(s => s.id === subjectId) : undefined;
-    const topicIds = new Set(subject?.topics.map(t => t.id) ?? []);
-    const questionIds = new Set(subject?.topics.flatMap(t => t.questions.map(q => q.id)) ?? []);
-
-    const selectedTopicIds = Array.isArray(input.selectedTopicIds)
-        ? input.selectedTopicIds.filter((id): id is string => typeof id === 'string' && topicIds.has(id))
-        : [];
-    const queue = Array.isArray(input.queue)
-        ? input.queue.filter((id): id is string => typeof id === 'string' && questionIds.has(id))
-        : [];
-    const currentQuestionId = typeof input.currentQuestionId === 'string' &&
-        questionIds.has(input.currentQuestionId)
-        ? input.currentQuestionId
-        : null;
-    const turnCounter = typeof input.turnCounter === 'number' &&
-        Number.isInteger(input.turnCounter) &&
-        input.turnCounter >= 0
-        ? input.turnCounter
-        : 0;
+    const subject = subjects.find((s) => s.id === input.subjectId);
+    const topicIds = new Set(subject?.topics.map((t) => t.id) ?? []);
+    const questionIds = new Set(subject?.topics.flatMap((t) => t.questions.map((q) => q.id)) ?? []);
+    const knownIds = (value: unknown, known: Set<string>) =>
+        Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string' && known.has(id)) : [];
 
     return {
-        subjectId,
-        selectedTopicIds,
+        subjectId: subject?.id ?? null,
+        selectedTopicIds: knownIds(input.selectedTopicIds, topicIds),
         mode: isStudyMode(input.mode) ? input.mode : 'topic_order',
         includeMastered: typeof input.includeMastered === 'boolean' ? input.includeMastered : false,
-        queue,
-        currentQuestionId,
-        turnCounter
+        queue: knownIds(input.queue, questionIds),
+        currentQuestionId:
+            typeof input.currentQuestionId === 'string' && questionIds.has(input.currentQuestionId)
+                ? input.currentQuestionId
+                : null,
+        turnCounter: isCount(input.turnCounter) ? input.turnCounter : 0
     };
 }
 
@@ -192,17 +176,17 @@ export const validateProfileImport = (data: unknown): Profile => {
     if (!isRecord(data)) {
         throw new Error('Invalid profile: expected an object');
     }
-    if (typeof data.id !== 'string' || !data.id.trim()) {
+    if (!isFilledString(data.id)) {
         throw new Error('Invalid profile: missing or invalid "id"');
     }
-    if (typeof data.name !== 'string' || !data.name.trim()) {
+    if (!isFilledString(data.name)) {
         throw new Error('Invalid profile: missing or invalid "name"');
     }
     if (!Array.isArray(data.subjects)) {
         throw new Error('Invalid profile: missing or invalid "subjects" array');
     }
 
-    const subjects = validateSubjects(cloneJsonValue(data.subjects));
+    const subjects = validateSubjects(data.subjects);
     const progressInput = isRecord(data.progress) ? data.progress : {};
     const progress: ProgressMap = {};
     for (const subject of subjects) {
@@ -212,363 +196,285 @@ export const validateProfileImport = (data: unknown): Profile => {
         }
     }
 
-    const createdAt = typeof data.createdAt === 'number' && Number.isFinite(data.createdAt)
-        ? data.createdAt
-        : Date.now();
-
     return {
         id: data.id.trim(),
         name: data.name.trim(),
         subjects,
         progress,
         session: sanitizeSessionState(data.session, subjects),
-        createdAt
+        createdAt: typeof data.createdAt === 'number' && Number.isFinite(data.createdAt) ? data.createdAt : Date.now()
     };
 };
 
+/** The trimmed id, or a new one when it is missing or blank. */
+function idOrNew(value: unknown, prefix: string): string {
+    return isFilledString(value) ? value.trim() : `${prefix}-${uuidv4()}`;
+}
+
+/** The first id that appears more than once, if any. */
+function findDuplicateId(items: {id: string}[]): string | undefined {
+    const seen = new Set<string>();
+    for (const {id} of items) {
+        if (seen.has(id)) return id;
+        seen.add(id);
+    }
+    return undefined;
+}
+
+/** At least two choices, none of them blank */
+function isChoiceList(value: unknown): value is string[] {
+    return isFilledStringList(value) && value.length >= 2;
+}
+
+const trimAll = (values: string[]) => values.map((value) => value.trim());
+
+function validateQuestion(input: unknown, index: number, topicName: string, topicId: string): Question {
+    const position = `question ${index + 1} in topic "${topicName}"`;
+    if (!isRecord(input)) {
+        throw new Error(`Invalid ${position}: must be an object`);
+    }
+    const {type} = input;
+    if (!isQuestionType(type)) {
+        throw new Error(
+            `Invalid ${position}: missing or invalid "type" (must be one of: ${QUESTION_TYPES.join(', ')})`
+        );
+    }
+    const prompt = input.prompt || input.question;
+    if (!isFilledString(prompt)) {
+        throw new Error(`Invalid ${position}: missing or invalid "question" or "prompt"`);
+    }
+
+    const invalid = (problem: string) => new Error(`Invalid ${type} ${position}: ${problem}`);
+    const explanation = optionalTrimmedString(input.explanation);
+    const media = optionalTrimmedString(input.media);
+    const base = {
+        id: idOrNew(input.id, 'q'),
+        type,
+        prompt: prompt.trim(),
+        topicId,
+        ...(explanation ? {explanation} : {}),
+        ...(media ? {media} : {})
+    };
+
+    switch (type) {
+        case 'multiple_choice': {
+            const {choices, answerIndex} = input;
+            if (!isChoiceList(choices)) {
+                throw invalid('missing or invalid "choices" (at least two, none blank)');
+            }
+            if (!isCount(answerIndex) || answerIndex >= choices.length) {
+                throw invalid('missing or invalid "answerIndex"');
+            }
+            return {...base, type, choices: trimAll(choices), answerIndex};
+        }
+
+        case 'multiple_answer': {
+            const {choices, answerIndices} = input;
+            if (!isChoiceList(choices)) {
+                throw invalid('missing or invalid "choices" (at least two, none blank)');
+            }
+            if (!Array.isArray(answerIndices) || answerIndices.length === 0) {
+                throw invalid('missing or invalid "answerIndices" array');
+            }
+            if (!answerIndices.every((i) => isCount(i) && i < choices.length)) {
+                throw invalid('"answerIndices" contains invalid values');
+            }
+            if (new Set(answerIndices).size !== answerIndices.length) {
+                throw invalid('"answerIndices" contains duplicate values');
+            }
+            return {
+                ...base,
+                type,
+                choices: trimAll(choices),
+                answerIndices: [...(answerIndices as number[])].sort((a, b) => a - b)
+            };
+        }
+
+        case 'true_false': {
+            const {answer} = input;
+            if (typeof answer !== 'boolean') {
+                throw invalid('missing or invalid "answer" (must be true or false)');
+            }
+            return {...base, type, answer};
+        }
+
+        case 'keywords': {
+            const {answer, caseSensitive} = input;
+            if (typeof answer !== 'string' && !Array.isArray(answer)) {
+                throw invalid('missing or invalid "answer" (must be a string or an array of strings)');
+            }
+            if (Array.isArray(answer) && !answer.every((item) => typeof item === 'string')) {
+                throw invalid('"answer" array must contain strings');
+            }
+            const answers: string[] = Array.isArray(answer) ? answer : [answer];
+            if (answers.length === 0 || !answers.every(isFilledString)) {
+                throw invalid('"answer" cannot be empty');
+            }
+            return {
+                ...base,
+                type,
+                answer: Array.isArray(answer) ? trimAll(answers) : answer.trim(),
+                ...(typeof caseSensitive === 'boolean' ? {caseSensitive} : {})
+            };
+        }
+
+        case 'matching': {
+            const {pairs} = input;
+            if (!Array.isArray(pairs) || pairs.length === 0) {
+                throw invalid('missing or invalid "pairs" array');
+            }
+            if (!pairs.every((pair) => isRecord(pair) && isFilledString(pair.left) && isFilledString(pair.right))) {
+                throw invalid('"pairs" must be an array of objects with "left" and "right" strings');
+            }
+            const validPairs = pairs as {left: string; right: string}[];
+            if (
+                hasDuplicateStrings(validPairs.map((pair) => pair.left)) ||
+                hasDuplicateStrings(validPairs.map((pair) => pair.right))
+            ) {
+                throw invalid('"pairs" must have unique left and right values');
+            }
+            return {
+                ...base,
+                type,
+                pairs: validPairs.map(({left, right}) => ({left: left.trim(), right: right.trim()}))
+            };
+        }
+
+        case 'word_bank': {
+            const {sentence, wordBank, answers} = input;
+            if (!isFilledString(sentence)) {
+                throw invalid('missing or invalid "sentence"');
+            }
+            if (!isFilledStringList(wordBank)) {
+                throw invalid('missing or invalid "wordBank" string array');
+            }
+            if (!isFilledStringList(answers)) {
+                throw invalid('missing or invalid "answers" string array');
+            }
+            const blankCount = sentence.split('_').length - 1;
+            if (blankCount === 0) {
+                throw invalid('"sentence" must contain at least one blank');
+            }
+            if (answers.length !== blankCount) {
+                throw invalid(`"answers" has ${answers.length} entries but "sentence" has ${blankCount} blanks`);
+            }
+            if (!hasEnoughWordBankEntries(wordBank, answers)) {
+                throw invalid('each answer must appear in "wordBank" as many times as it is used');
+            }
+            return {...base, type, sentence: sentence.trim(), wordBank: trimAll(wordBank), answers: trimAll(answers)};
+        }
+    }
+}
+
+function validateTopic(input: unknown, index: number, subjectName: string): Topic {
+    const position = `topic ${index + 1} in subject "${subjectName}"`;
+    if (!isRecord(input)) {
+        throw new Error(`Invalid ${position}: must be an object`);
+    }
+    const {name, questions} = input;
+    if (!isFilledString(name)) {
+        throw new Error(`Invalid ${position}: missing or invalid "name"`);
+    }
+    const id = idOrNew(input.id, 'topic');
+    if (!Array.isArray(questions)) {
+        throw new Error(`Invalid topic "${name}": missing or invalid "questions" array`);
+    }
+
+    const validQuestions = questions.map((question, i) => validateQuestion(question, i, name, id));
+    const duplicateId = findDuplicateId(validQuestions);
+    if (duplicateId) {
+        throw new Error(`Invalid topic "${name}": duplicate question id "${duplicateId}" found`);
+    }
+    return {id, name: name.trim(), questions: validQuestions};
+}
+
+function validateSubject(input: unknown, index: number): Subject {
+    if (!isRecord(input)) {
+        throw new Error(`Invalid subject ${index + 1}: must be an object`);
+    }
+    const {name, topics} = input;
+    if (!isFilledString(name)) {
+        throw new Error(`Invalid subject ${index + 1}: missing or invalid "name"`);
+    }
+    const id = idOrNew(input.id, 'subject');
+    if (!Array.isArray(topics)) {
+        throw new Error(`Invalid subject "${name}": missing or invalid "topics" array`);
+    }
+
+    const validTopics = topics.map((topic, i) => validateTopic(topic, i, name));
+    const duplicateTopicId = findDuplicateId(validTopics);
+    if (duplicateTopicId) {
+        throw new Error(`Invalid subject "${name}": duplicate topic id "${duplicateTopicId}" found`);
+    }
+    const duplicateQuestionId = findDuplicateId(validTopics.flatMap((topic) => topic.questions));
+    if (duplicateQuestionId) {
+        throw new Error(
+            `Invalid subject "${name}": duplicate question id "${duplicateQuestionId}" found across topics`
+        );
+    }
+    return {id, name: name.trim(), topics: validTopics};
+}
+
+/**
+ * Check a subject, or an array of subjects, and return clean copies. Missing ids are generated
+ * and text is trimmed. Throws an Error that names the first problem found.
+ */
 export const validateSubjects = (data: unknown): Subject[] => {
-    if (!Array.isArray(data) && (typeof data !== 'object' || data === null)) {
-        throw new Error('Invalid format: Expected an object or array of subjects');
+    if (typeof data !== 'object' || data === null) {
+        throw new Error('Invalid format: expected an object or array of subjects');
     }
 
-    const subjectsToValidate = Array.isArray(data)
-        ? cloneJsonValue(data) as unknown[]
-        : [cloneJsonValue(data)];
-
-    const validQuestionTypes: QuestionType[] = [
-        'multiple_choice',
-        'multiple_answer',
-        'keywords',
-        'true_false',
-        'matching',
-        'word_bank'
-    ];
-
-    let idCounter = 0;
-    const generateId = (prefix: string) => {
-        if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-            return `${prefix}-${crypto.randomUUID()}`;
-        }
-        return `${prefix}-${Date.now()}-${idCounter++}`;
-    };
-
-    const validateQuestion = (q: unknown, questionIndex: number, topicName: string, topicId: string): Question => {
-        if (typeof q !== 'object' || q === null) {
-            throw new Error(`Invalid question ${questionIndex + 1} in topic "${topicName}": Must be an object`);
-        }
-
-        const question = q as Record<string, unknown>;
-
-        const id = typeof question.id === 'string' && question.id.trim() ? question.id.trim() : generateId('q');
-
-        const prompt = question.prompt || question.question;
-
-        if (typeof question.type !== 'string' || !validQuestionTypes.includes(question.type as QuestionType)) {
-            throw new Error(`Invalid question ${questionIndex + 1} in topic "${topicName}": Missing or invalid "type" (must be one of: ${validQuestionTypes.join(', ')})`);
-        }
-        if (typeof prompt !== 'string' || !prompt.trim()) {
-            throw new Error(`Invalid question ${questionIndex + 1} in topic "${topicName}": Missing or invalid "question" or "prompt"`);
-        }
-
-        const type = question.type as QuestionType;
-        const baseQuestion = {
-            id,
-            type,
-            prompt: prompt.trim(),
-            topicId,
-            ...(optionalTrimmedString(question.explanation) ? {explanation: optionalTrimmedString(question.explanation)} : {}),
-            ...(optionalTrimmedString(question.media) ? {media: optionalTrimmedString(question.media)} : {})
-        };
-
-        switch (type) {
-            case 'multiple_choice': {
-                if (!isStringArray(question.choices) || question.choices.length < 2 || question.choices.some(choice => !choice.trim())) {
-                    throw new Error(`Invalid multiple_choice question "${question.id}": Missing or invalid "choices" string array`);
-                }
-                if (typeof question.answerIndex !== 'number' || !Number.isInteger(question.answerIndex) || question.answerIndex < 0 || question.answerIndex >= question.choices.length) {
-                    throw new Error(`Invalid multiple_choice question "${question.id}": Missing or invalid "answerIndex"`);
-                }
-                return {
-                    ...baseQuestion,
-                    type: 'multiple_choice',
-                    choices: question.choices.map(choice => choice.trim()),
-                    answerIndex: question.answerIndex
-                };
-            }
-
-            case 'multiple_answer': {
-                if (!isStringArray(question.choices) || question.choices.length < 2 || question.choices.some(choice => !choice.trim())) {
-                    throw new Error(`Invalid multiple_answer question "${question.id}": Missing or invalid "choices" string array`);
-                }
-                if (!Array.isArray(question.answerIndices) || question.answerIndices.length === 0) {
-                    throw new Error(`Invalid multiple_answer question "${question.id}": Missing or invalid "answerIndices" array`);
-                }
-                if (!question.answerIndices.every((idx: unknown) => typeof idx === 'number' && Number.isInteger(idx) && idx >= 0 && idx < (question.choices as unknown[]).length)) {
-                    throw new Error(`Invalid multiple_answer question "${question.id}": "answerIndices" contains invalid values`);
-                }
-                if (new Set(question.answerIndices).size !== question.answerIndices.length) {
-                    throw new Error(`Invalid multiple_answer question "${question.id}": "answerIndices" contains duplicate values`);
-                }
-                const answerIndices = question.answerIndices as number[];
-                return {
-                    ...baseQuestion,
-                    type: 'multiple_answer',
-                    choices: question.choices.map(choice => choice.trim()),
-                    answerIndices: [...answerIndices].sort((a, b) => a - b)
-                };
-            }
-
-            case 'true_false': {
-                if (typeof question.answer !== 'boolean') {
-                    throw new Error(`Invalid true_false question "${question.id}": Missing or invalid "answer"(must be boolean)`);
-                }
-                return {
-                    ...baseQuestion,
-                    type: 'true_false',
-                    answer: question.answer
-                };
-            }
-
-            case 'keywords': {
-                if (typeof question.answer !== 'string' && !Array.isArray(question.answer)) {
-                    throw new Error(`Invalid keywords question "${question.id}": Missing or invalid "answer"(must be string or array of strings)`);
-                }
-                if (Array.isArray(question.answer) && !question.answer.every(item => typeof item === 'string')) {
-                    throw new Error(`Invalid keywords question "${question.id}": "answer" array must contain strings`);
-                }
-                const answers = Array.isArray(question.answer) ? question.answer : [question.answer];
-                if (answers.length === 0 || answers.some(answer => !answer.trim())) {
-                    throw new Error(`Invalid keywords question "${question.id}": "answer" cannot be empty`);
-                }
-                return {
-                    ...baseQuestion,
-                    type: 'keywords',
-                    answer: Array.isArray(question.answer)
-                        ? question.answer.map(answer => answer.trim())
-                        : question.answer.trim(),
-                    ...(typeof question.caseSensitive === 'boolean' ? {caseSensitive: question.caseSensitive} : {})
-                };
-            }
-
-            case 'matching': {
-                if (!Array.isArray(question.pairs) || question.pairs.length === 0) {
-                    throw new Error(`Invalid matching question "${question.id}": Missing or invalid "pairs" array`);
-                }
-                if (!question.pairs.every((pair: unknown) =>
-                    typeof pair === 'object' &&
-                    pair !== null &&
-                    typeof (pair as Record<string, unknown>).left === 'string' &&
-                    typeof (pair as Record<string, unknown>).right === 'string' &&
-                    !!((pair as Record<string, unknown>).left as string).trim() &&
-                    !!((pair as Record<string, unknown>).right as string).trim()
-                )) {
-                    throw new Error(`Invalid matching question "${question.id}": "pairs" must be an array of objects with "left" and "right" strings`);
-                }
-                const pairs = question.pairs as Array<{left: string; right: string}>;
-                const leftValues = pairs.map(pair => pair.left);
-                const rightValues = pairs.map(pair => pair.right);
-                if (
-                    hasDuplicateStrings(leftValues, {trim: true}) ||
-                    hasDuplicateStrings(rightValues, {trim: true})
-                ) {
-                    throw new Error(`Invalid matching question "${question.id}": "pairs" must have unique left and right values`);
-                }
-                return {
-                    ...baseQuestion,
-                    type: 'matching',
-                    pairs: pairs.map(pair => ({left: pair.left.trim(), right: pair.right.trim()}))
-                };
-            }
-
-            case 'word_bank': {
-                if (typeof question.sentence !== 'string' || !question.sentence) {
-                    throw new Error(`Invalid word_bank question "${question.id}": Missing or invalid "sentence"`);
-                }
-                if (!isStringArray(question.wordBank) || question.wordBank.some(word => !word.trim())) {
-                    throw new Error(`Invalid word_bank question "${question.id}": Missing or invalid "wordBank" string array`);
-                }
-                if (!isStringArray(question.answers) || question.answers.some(answer => !answer.trim())) {
-                    throw new Error(`Invalid word_bank question "${question.id}": Missing or invalid "answers" string array`);
-                }
-                const blankCount = (question.sentence as string).split('_').length - 1;
-                if (blankCount === 0) {
-                    throw new Error(`Invalid word_bank question "${question.id}": "sentence" must contain at least one blank`);
-                }
-                if (question.answers.length !== blankCount) {
-                    throw new Error(`Invalid word_bank question "${question.id}": "answers" array length(${question.answers.length}) doesn't match number of blanks in sentence (${blankCount})`);
-                }
-                if (
-                    !hasEnoughWordBankEntries(question.wordBank as string[], question.answers as string[], {trim: true})
-                ) {
-                    throw new Error(`Invalid word_bank question "${question.id}": each answer must exist in "wordBank"`);
-                }
-                return {
-                    ...baseQuestion,
-                    type: 'word_bank',
-                    sentence: question.sentence.trim(),
-                    wordBank: question.wordBank.map(word => word.trim()),
-                    answers: question.answers.map(answer => answer.trim())
-                };
-            }
-        }
-    };
-
-    const validateTopic = (t: unknown, topicIndex: number, subjectName: string): Topic => {
-        if (typeof t !== 'object' || t === null) {
-            throw new Error(`Invalid topic ${topicIndex + 1} in subject "${subjectName}": Must be an object`);
-        }
-
-        const topic = t as Record<string, unknown>;
-
-        if (typeof topic.name !== 'string' || !topic.name.trim()) {
-            throw new Error(`Invalid topic ${topicIndex + 1} in subject "${subjectName}": Missing or invalid "name"`);
-        }
-
-        const id = typeof topic.id === 'string' && topic.id.trim() ? topic.id.trim() : generateId('topic');
-
-        if (!Array.isArray(topic.questions)) {
-            throw new Error(`Invalid topic "${topic.name}": Missing or invalid "questions" array`);
-        }
-
-        const questions = topic.questions.map((q, idx) => validateQuestion(q, idx, topic.name as string, id));
-        const questionIds = new Set<string>();
-        for (const question of questions) {
-            if (questionIds.has(question.id)) {
-                throw new Error(
-                    `Invalid topic "${topic.name}": duplicate question id "${question.id}" found`
-                );
-            }
-            questionIds.add(question.id);
-        }
-
-        return {
-            id,
-            name: (topic.name as string).trim(),
-            questions
-        };
-    };
-
-    const validateSubject = (s: unknown, subjectIndex: number): Subject => {
-        if (typeof s !== 'object' || s === null) {
-            throw new Error(`Invalid subject ${subjectIndex + 1}: Must be an object`);
-        }
-
-        const subject = s as Record<string, unknown>;
-
-        if (typeof subject.name !== 'string' || !subject.name.trim()) {
-            throw new Error(`Invalid subject ${subjectIndex + 1}: Missing or invalid "name"`);
-        }
-
-        const id = typeof subject.id === 'string' && subject.id.trim() ? subject.id.trim() : generateId('subject');
-
-        if (!Array.isArray(subject.topics)) {
-            throw new Error(`Invalid subject "${subject.name}": Missing or invalid "topics" array`);
-        }
-
-        const topics = subject.topics.map((t, idx) => validateTopic(t, idx, subject.name as string));
-        const topicIds = new Set<string>();
-        const subjectQuestionIds = new Set<string>();
-        for (const topic of topics) {
-            if (topicIds.has(topic.id)) {
-                throw new Error(
-                    `Invalid subject "${subject.name}": duplicate topic id "${topic.id}" found`
-                );
-            }
-            topicIds.add(topic.id);
-            for (const question of topic.questions) {
-                if (subjectQuestionIds.has(question.id)) {
-                    throw new Error(
-                        `Invalid subject "${subject.name}": duplicate question id "${question.id}" found across topics`
-                    );
-                }
-                subjectQuestionIds.add(question.id);
-            }
-        }
-
-        return {
-            id,
-            name: (subject.name as string).trim(),
-            topics
-        };
-    };
-
-    const validatedSubjects = subjectsToValidate.map((s, idx) => validateSubject(s, idx));
-    const subjectIds = new Set<string>();
-    for (const subject of validatedSubjects) {
-        if (subjectIds.has(subject.id)) {
-            throw new Error(`Invalid import: duplicate subject id "${subject.id}" found`);
-        }
-        subjectIds.add(subject.id);
+    const copy = cloneJsonValue(data);
+    const subjects = (Array.isArray(copy) ? copy : [copy]).map((subject, i) => validateSubject(subject, i));
+    const duplicateId = findDuplicateId(subjects);
+    if (duplicateId) {
+        throw new Error(`Invalid import: duplicate subject id "${duplicateId}" found`);
     }
-    return validatedSubjects;
+    return subjects;
 };
 
-export const isImportableQuizPayload = (data: unknown): boolean => {
-    if (isSubjectExportV1(data)) return true;
-
+function passes(validate: () => unknown): boolean {
     try {
-        validateProfileImport(data);
-        return true;
-    } catch {
-        void 0;
-    }
-
-    try {
-        validateSubjects(cloneJsonValue(data));
+        validate();
         return true;
     } catch {
         return false;
     }
-};
+}
+
+export const isImportableQuizPayload = (data: unknown): boolean =>
+    isSubjectExportV1(data) || passes(() => validateProfileImport(data)) || passes(() => validateSubjects(data));
+
+/** The subjects in an import payload, whichever of the accepted shapes it has. */
+function subjectsInPayload(data: unknown): unknown[] {
+    if (Array.isArray(data)) return data;
+    if (!isRecord(data)) return [];
+    if (data.requizleSubjectExport === 1 && isRecord(data.subject)) return [data.subject];
+    if (Array.isArray(data.subjects)) return data.subjects;
+    return data.topics ? [data] : [];
+}
 
 export const extractMediaReferencesWithContext = (data: unknown): MediaReference[] => {
     const mediaRefs: MediaReference[] = [];
 
-    const processQuestion = (q: Record<string, unknown>, subjectName: string, topicName: string) => {
-        if (typeof q.media === 'string' && q.media) {
-            mediaRefs.push({
-                path: q.media,
-                filename: getFilename(q.media),
-                subjectName,
-                topicName
-            });
-        }
-    };
+    for (const subject of subjectsInPayload(data)) {
+        if (!isRecord(subject) || !Array.isArray(subject.topics)) continue;
+        const subjectName = typeof subject.name === 'string' ? subject.name : 'Unknown subject';
 
-    const processSubjects = (subjects: unknown[]) => {
-        for (const subject of subjects) {
-            if (typeof subject === 'object' && subject !== null) {
-                const s = subject as Record<string, unknown>;
-                const subjectName = typeof s.name === 'string' ? s.name : 'Unknown Subject';
-                if (Array.isArray(s.topics)) {
-                    for (const topic of s.topics) {
-                        if (typeof topic === 'object' && topic !== null) {
-                            const t = topic as Record<string, unknown>;
-                            const topicName = typeof t.name === 'string' ? t.name : 'Unknown Topic';
-                            if (Array.isArray(t.questions)) {
-                                for (const q of t.questions) {
-                                    if (typeof q === 'object' && q !== null) {
-                                        processQuestion(q as Record<string, unknown>, subjectName, topicName);
-                                    }
-                                }
-                            }
-                        }
-                    }
+        for (const topic of subject.topics) {
+            if (!isRecord(topic) || !Array.isArray(topic.questions)) continue;
+            const topicName = typeof topic.name === 'string' ? topic.name : 'Unknown topic';
+
+            for (const question of topic.questions) {
+                if (isRecord(question) && typeof question.media === 'string' && question.media) {
+                    mediaRefs.push({
+                        path: question.media,
+                        filename: getFilename(question.media),
+                        subjectName,
+                        topicName
+                    });
                 }
             }
-        }
-    };
-
-    if (Array.isArray(data)) {
-        processSubjects(data);
-    } else if (typeof data === 'object' && data !== null) {
-        const obj = data as Record<string, unknown>;
-        if (obj.requizleSubjectExport === 1 && typeof obj.subject === 'object' && obj.subject !== null) {
-            processSubjects([obj.subject]);
-        } else if (Array.isArray(obj.subjects)) {
-            processSubjects(obj.subjects);
-        } else if (obj.topics) {
-            processSubjects([obj]);
         }
     }
 
@@ -576,46 +482,38 @@ export const extractMediaReferencesWithContext = (data: unknown): MediaReference
 };
 
 export const getLocalMediaRefs = (refs: MediaReference[]): MediaReference[] => {
-    return refs.filter(r => !isRemoteOrStoredMedia(r.path));
+    return refs.filter((r) => !isRemoteOrStoredMedia(r.path));
 };
 
 export const groupMediaByFilename = (refs: MediaReference[]): MediaGroup[] => {
     const groups = new Map<string, MediaReference[]>();
 
     for (const ref of refs) {
-        const existing = groups.get(ref.filename) || [];
-        existing.push(ref);
-        groups.set(ref.filename, existing);
+        groups.set(ref.filename, [...(groups.get(ref.filename) ?? []), ref]);
     }
 
-    return Array.from(groups.entries()).map(([filename, references]) => {
-        const uniquePaths = new Set(references.map(r => r.path));
-        const isConflict = uniquePaths.size > 1;
-
-        return {
-            filename,
-            references,
-            isConflict,
-            uploaded: false,
-            uploadedFile: undefined
-        };
-    });
+    return Array.from(groups, ([filename, references]) => ({
+        filename,
+        references,
+        // The same file name at different paths may be different files, so each is uploaded on its own
+        isConflict: new Set(references.map((r) => r.path)).size > 1,
+        uploaded: false
+    }));
 };
 
 export const replaceMediaByPath = (data: unknown, mediaMap: Map<string, string>): unknown => {
     if (Array.isArray(data)) {
-        return data.map(item => replaceMediaByPath(item, mediaMap));
+        return data.map((item) => replaceMediaByPath(item, mediaMap));
     }
-    if (typeof data === 'object' && data !== null) {
-        const result: Record<string, unknown> = {};
-        for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
-            if (key === 'media' && typeof value === 'string') {
-                result[key] = mediaMap.get(value) || mediaMap.get(getFilename(value)) || value;
-            } else {
-                result[key] = replaceMediaByPath(value, mediaMap);
-            }
-        }
-        return result;
+    if (isRecord(data)) {
+        return Object.fromEntries(
+            Object.entries(data).map(([key, value]) => [
+                key,
+                key === 'media' && typeof value === 'string'
+                    ? (mediaMap.get(value) ?? mediaMap.get(getFilename(value)) ?? value)
+                    : replaceMediaByPath(value, mediaMap)
+            ])
+        );
     }
     return data;
 };

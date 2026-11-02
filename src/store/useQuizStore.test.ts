@@ -1,5 +1,6 @@
 import {describe, it, expect, beforeEach, vi} from 'vitest';
-import {useQuizStore, DEFAULT_SETTINGS, DEFAULT_SESSION_STATE, sanitizePersistedQuizState} from './useQuizStore';
+import {useQuizStore, sanitizePersistedQuizState} from './useQuizStore';
+import {DEFAULT_SETTINGS, DEFAULT_SESSION_STATE} from './defaults';
 import {act} from 'react';
 import type {
     Subject,
@@ -19,8 +20,10 @@ type ZustandApi<T> = {
 };
 
 vi.mock('zustand/middleware', () => ({
-    persist: <T,>(config: (set: ZustandSet<T>, get: ZustandGet<T>, api: ZustandApi<T>) => T) =>
-        (set: ZustandSet<T>, get: ZustandGet<T>, api: ZustandApi<T>) => config(set, get, api),
+    persist:
+        <T>(config: (set: ZustandSet<T>, get: ZustandGet<T>, api: ZustandApi<T>) => T) =>
+        (set: ZustandSet<T>, get: ZustandGet<T>, api: ZustandApi<T>) =>
+            config(set, get, api),
     createJSONStorage: () => ({})
 }));
 
@@ -48,18 +51,12 @@ const createTestSubject = (id: string = 's1', name: string = 'Test Subject'): Su
         {
             id: 't1',
             name: 'Topic 1',
-            questions: [
-                createTrueFalseQuestion('q1', 't1'),
-                createTrueFalseQuestion('q2', 't1')
-            ]
+            questions: [createTrueFalseQuestion('q1', 't1'), createTrueFalseQuestion('q2', 't1')]
         },
         {
             id: 't2',
             name: 'Topic 2',
-            questions: [
-                createMultipleChoiceQuestion('q3', 't2'),
-                createMultipleChoiceQuestion('q4', 't2')
-            ]
+            questions: [createMultipleChoiceQuestion('q3', 't2'), createMultipleChoiceQuestion('q4', 't2')]
         }
     ]
 });
@@ -68,7 +65,7 @@ const resetStore = () => {
     act(() => {
         useQuizStore.setState({
             profiles: {
-                'default': {
+                default: {
                     id: 'default',
                     name: 'Default',
                     subjects: [],
@@ -260,7 +257,7 @@ describe('useQuizStore', () => {
             act(() => {
                 setSubjects([createTestSubject('s1', 'First')]);
                 startSession('s1');
-                useQuizStore.setState(state => {
+                useQuizStore.setState((state) => {
                     const profile = state.profiles['default'];
                     return {
                         profiles: {
@@ -315,7 +312,7 @@ describe('useQuizStore', () => {
             act(() => {
                 setSubjects([createTestSubject('s1', 'First')]);
                 startSession('s1');
-                useQuizStore.setState(state => {
+                useQuizStore.setState((state) => {
                     const profile = state.profiles['default'];
                     return {
                         profiles: {
@@ -364,7 +361,7 @@ describe('useQuizStore', () => {
                 id = createSubject('Algebra');
             });
             const state = useQuizStore.getState();
-            const s = state.profiles['default'].subjects.find(x => x.id === id);
+            const s = state.profiles['default'].subjects.find((x) => x.id === id);
             expect(s?.name).toBe('Algebra');
             expect(s?.topics).toHaveLength(1);
             expect(s?.topics[0].name).toBe('Topic 1');
@@ -392,7 +389,7 @@ describe('useQuizStore', () => {
                 tid = addTopic('s1', 'Extra');
             });
             const subj = useQuizStore.getState().profiles['default'].subjects[0];
-            expect(subj.topics.some(t => t.id === tid && t.name === 'Extra')).toBe(true);
+            expect(subj.topics.some((t) => t.id === tid && t.name === 'Extra')).toBe(true);
         });
 
         it('addQuestion and deleteQuestion update the topic', () => {
@@ -411,13 +408,13 @@ describe('useQuizStore', () => {
                 addQuestion('s1', 't1', q);
             });
             let topic = useQuizStore.getState().profiles['default'].subjects[0].topics[0];
-            expect(topic.questions.some(x => x.id === 'new-q')).toBe(true);
+            expect(topic.questions.some((x) => x.id === 'new-q')).toBe(true);
 
             act(() => {
                 deleteQuestion('s1', 't1', 'new-q');
             });
             topic = useQuizStore.getState().profiles['default'].subjects[0].topics[0];
-            expect(topic.questions.some(x => x.id === 'new-q')).toBe(false);
+            expect(topic.questions.some((x) => x.id === 'new-q')).toBe(false);
         });
 
         it('updateQuestion replaces question data', () => {
@@ -439,11 +436,81 @@ describe('useQuizStore', () => {
             act(() => {
                 updateQuestion('s1', 't1', updated);
             });
-            const found = useQuizStore.getState().profiles['default'].subjects[0].topics[0].questions.find(
-                x => x.id === 'uq'
-            ) as TrueFalseQuestion | undefined;
+            const found = useQuizStore
+                .getState()
+                .profiles['default'].subjects[0].topics[0].questions.find((x) => x.id === 'uq') as
+                TrueFalseQuestion | undefined;
             expect(found?.prompt).toBe('New');
             expect(found?.answer).toBe(false);
+        });
+
+        it('renameTopic updates the name and ignores a blank one', () => {
+            const {setSubjects, renameTopic} = useQuizStore.getState();
+            act(() => {
+                setSubjects([createTestSubject()]);
+            });
+            act(() => {
+                renameTopic('s1', 't2', 'Geometry');
+                renameTopic('s1', 't1', '   ');
+            });
+            const topics = useQuizStore.getState().profiles['default'].subjects[0].topics;
+            expect(topics.map((t) => t.name)).toEqual(['Topic 1', 'Geometry']);
+        });
+
+        it('deleteTopic removes the topic with its progress and selection, and requeues the rest', () => {
+            const {setSubjects, startSession, markTopicMastered, toggleTopic, deleteTopic} = useQuizStore.getState();
+            act(() => {
+                setSubjects([createTestSubject()]);
+                startSession('s1');
+                markTopicMastered('s1', 't1');
+                toggleTopic('t1');
+            });
+            act(() => {
+                deleteTopic('s1', 't1');
+            });
+            const profile = useQuizStore.getState().profiles['default'];
+            expect(profile.subjects[0].topics.map((t) => t.id)).toEqual(['t2']);
+            expect(profile.progress.s1).toBeUndefined();
+            expect(profile.session.selectedTopicIds).toEqual([]);
+            expect([profile.session.currentQuestionId, ...profile.session.queue].sort()).toEqual(['q3', 'q4']);
+        });
+
+        it('deleteQuestion removes its progress and drops maps left empty', () => {
+            const {setSubjects, markTopicMastered, deleteQuestion} = useQuizStore.getState();
+            act(() => {
+                setSubjects([createTestSubject()]);
+                markTopicMastered('s1', 't1');
+            });
+            act(() => {
+                deleteQuestion('s1', 't1', 'q1');
+            });
+            expect(Object.keys(useQuizStore.getState().profiles['default'].progress.s1?.t1 ?? {})).toEqual(['q2']);
+
+            act(() => {
+                deleteQuestion('s1', 't1', 'q2');
+            });
+            expect(useQuizStore.getState().profiles['default'].progress.s1).toBeUndefined();
+        });
+
+        it('deleteSubject removes the subject and its progress and closes its session', () => {
+            const {setSubjects, startSession, markTopicMastered, deleteSubject} = useQuizStore.getState();
+            act(() => {
+                setSubjects([createTestSubject('s1'), createTestSubject('s2', 'Other')]);
+                startSession('s1');
+                markTopicMastered('s1', 't1');
+            });
+            act(() => {
+                deleteSubject('s1');
+            });
+            const profile = useQuizStore.getState().profiles['default'];
+            expect(profile.subjects.map((s) => s.id)).toEqual(['s2']);
+            expect(profile.progress.s1).toBeUndefined();
+            expect(profile.session).toMatchObject({
+                subjectId: null,
+                selectedTopicIds: [],
+                queue: [],
+                currentQuestionId: null
+            });
         });
     });
 
@@ -558,6 +625,21 @@ describe('useQuizStore', () => {
             const state = useQuizStore.getState();
             expect(state.profiles['default'].session.selectedTopicIds).toHaveLength(0);
         });
+
+        it('selectAllTopics clears the selection and queues every topic again', () => {
+            const {toggleTopic, selectAllTopics} = useQuizStore.getState();
+
+            act(() => {
+                toggleTopic('t1');
+            });
+            act(() => {
+                selectAllTopics();
+            });
+
+            const {session} = useQuizStore.getState().profiles['default'];
+            expect(session.selectedTopicIds).toEqual([]);
+            expect([session.currentQuestionId, ...session.queue].sort()).toEqual(['q1', 'q2', 'q3', 'q4']);
+        });
     });
 
     describe('setMode', () => {
@@ -644,10 +726,10 @@ describe('useQuizStore', () => {
             });
 
             act(() => {
-                useQuizStore.setState(s => {
+                useQuizStore.setState((s) => {
                     const profile = s.profiles['default'];
                     const subjectId = 's1';
-                    const subject = profile.subjects.find(x => x.id === subjectId)!;
+                    const subject = profile.subjects.find((x) => x.id === subjectId)!;
                     const topicProgress: Record<string, Record<string, QuestionProgress>> = {};
                     for (const topic of subject.topics) {
                         topicProgress[topic.id] = {};
@@ -712,7 +794,10 @@ describe('useQuizStore', () => {
 
             const state = useQuizStore.getState();
             expect(state.profiles['default'].session.currentQuestionId).not.toBeNull();
-            expect(state.profiles['default'].session.queue.length + (state.profiles['default'].session.currentQuestionId ? 1 : 0)).toBeGreaterThan(0);
+            expect(
+                state.profiles['default'].session.queue.length +
+                    (state.profiles['default'].session.currentQuestionId ? 1 : 0)
+            ).toBeGreaterThan(0);
         });
 
         it('should do nothing if no subject is selected', () => {
@@ -744,7 +829,7 @@ describe('useQuizStore', () => {
             const subject = state.profiles['default'].subjects[0];
             let correctAnswer: unknown = true;
             for (const topic of subject.topics) {
-                const q = topic.questions.find(q => q.id === currentId);
+                const q = topic.questions.find((q) => q.id === currentId);
                 if (q) {
                     if (q.type === 'true_false') {
                         correctAnswer = q.answer;
@@ -849,10 +934,10 @@ describe('useQuizStore', () => {
 
         it('should set currentQuestionId to null when queue is empty', () => {
             act(() => {
-                useQuizStore.setState(state => ({
+                useQuizStore.setState((state) => ({
                     profiles: {
                         ...state.profiles,
-                        'default': {
+                        default: {
                             ...state.profiles['default'],
                             session: {
                                 ...state.profiles['default'].session,
@@ -926,7 +1011,7 @@ describe('useQuizStore', () => {
         it('increments turnCounter even when the same question is reselected', () => {
             act(() => {
                 useQuizStore.getState().setQuizRequeueGaps(0, 0);
-                useQuizStore.setState(state => {
+                useQuizStore.setState((state) => {
                     const profile = state.profiles['default'];
                     return {
                         profiles: {
@@ -1249,7 +1334,7 @@ describe('useQuizStore', () => {
                         includeMastered: false,
                         queue: [],
                         currentQuestionId: null,
-                        turnCounter: 0,
+                        turnCounter: 0
                     },
                     createdAt: Date.now()
                 };
@@ -1343,7 +1428,7 @@ describe('useQuizStore', () => {
                 const {setSubjects, importProfile} = useQuizStore.getState();
                 act(() => {
                     setSubjects([createTestSubject()]);
-                    useQuizStore.setState(state => {
+                    useQuizStore.setState((state) => {
                         const profile = state.profiles['default'];
                         return {
                             profiles: {
@@ -1405,7 +1490,7 @@ describe('useQuizStore', () => {
                 act(() => {
                     setSubjects([createTestSubject()]);
                     startSession('s1');
-                    useQuizStore.setState(state => {
+                    useQuizStore.setState((state) => {
                         const profile = state.profiles.default;
                         return {
                             profiles: {

@@ -1,51 +1,27 @@
 import {create} from 'zustand';
 import {persist, createJSONStorage} from 'zustand/middleware';
-import type {Subject, SessionState, StudyMode, Profile, SubjectExportV1, Question} from '../types';
+import type {Subject, StudyMode, Profile, SubjectExportV1, Question} from '../types';
 import {validateProfileImport} from '../utils/importValidation';
-import {
-    normalizeRequeueGapRange
-} from '../utils/quizLogic';
+import {normalizeRequeueGapRange} from '../utils/quizLogic';
 import {indexedDBStorage} from '../utils/indexedDBStorage';
-import {v4 as uuidv4} from 'uuid';
 import {createProfileSettingsActions} from './profileSettingsActions';
 import {createQuizCoreActions} from './quizCoreActions';
-import {
-    cleanupOrphanedMedia,
-    extractMediaIdsFromQuestion,
-    extractMediaIdsFromSubject,
-    extractMediaIdsFromTopic,
-    flattenProgress,
-    getCurrentProfile,
-    getCurrentSubject,
-    mergeSubjectsIntoList,
-    reconcileProfileStateForSubjects,
-    rebuildSessionForSubjectIfActive,
-    removeLocalStorageItem,
-    sanitizeBoolean,
-    sanitizeNumber
-} from './quizStoreHelpers';
+import {createDefaultProfile, DEFAULT_PROFILE_ID, DEFAULT_SESSION_STATE, DEFAULT_SETTINGS} from './defaults';
 import {isRecord} from '../utils/typeGuards';
-import {
-    DEFAULT_COLOR_THEME,
-    DEFAULT_CUSTOM_ACCENT_HEX,
-    isColorThemeId,
-    LEGACY_COLOR_THEME_MAP,
-    sanitizeCustomAccentHex,
-    type ColorThemeId
-} from '../utils/colorThemes';
+import {isColorThemeId, LEGACY_COLOR_THEME_MAP, sanitizeCustomAccentHex, type ColorThemeId} from '../utils/colorThemes';
 
-interface Settings {
+export interface Settings {
     confirmSubjectDelete: boolean;
     confirmProfileDelete: boolean;
     /** If false, subject progress reset runs without a confirm dialog. */
     confirmResetSubjectProgress: boolean;
     /** If false, topic progress reset runs without a confirm dialog. */
     confirmResetTopicProgress: boolean;
-    /** If false, incorrect answers advance only; question is not re-queued. */
+    /** If false, incorrect answers advance only; question is not requeued. */
     quizRequeueOnIncorrect: boolean;
-    /** If false, skipped questions are not re-queued. */
+    /** If false, skipped questions are not requeued. */
     quizRequeueOnSkip: boolean;
-    /** Min positions ahead to reinsert a re-queued question (inclusive, 0 = front). */
+    /** Min positions ahead to reinsert a requeued question (inclusive, 0 = front). */
     quizRequeueGapMin: number;
     /** Max positions ahead to reinsert (inclusive). */
     quizRequeueGapMax: number;
@@ -57,6 +33,8 @@ interface Settings {
     /** Quiz feedback tones (correct / wrong / skip / continue). */
     soundEnabled: boolean;
 }
+
+export type AnswerResult = {correct: boolean; explanation?: string};
 
 export interface QuizState {
     profiles: Record<string, Profile>;
@@ -75,7 +53,7 @@ export interface QuizState {
     setIncludeMastered: (include: boolean) => void;
     restartQueue: () => void;
 
-    submitAnswer: (answer: unknown) => {correct: boolean; explanation?: string};
+    submitAnswer: (answer: unknown) => AnswerResult;
     skipQuestion: () => void;
     nextQuestion: () => void;
 
@@ -118,45 +96,20 @@ export interface QuizState {
 
 type PersistedQuizSlice = Pick<QuizState, 'profiles' | 'activeProfileId' | 'settings'>;
 
-const DEFAULT_PROFILE_ID = 'default';
-
-function createDefaultProfile(): Profile {
-    return {
-        id: DEFAULT_PROFILE_ID,
-        name: 'Default',
-        subjects: [],
-        progress: {},
-        session: {...DEFAULT_SESSION_STATE},
-        createdAt: Date.now()
-    };
+function sanitizeBoolean(value: unknown, fallback: boolean): boolean {
+    return typeof value === 'boolean' ? value : fallback;
 }
 
-/** Default `session` when no study subject is active. */
-export const DEFAULT_SESSION_STATE: SessionState = {
-    subjectId: null,
-    selectedTopicIds: [],
-    mode: 'topic_order',
-    includeMastered: false,
-    queue: [],
-    currentQuestionId: null,
-    turnCounter: 0
-};
+function sanitizeNumber(value: unknown, fallback: number): number {
+    return typeof value === 'number' ? value : fallback;
+}
 
-export const DEFAULT_SETTINGS: Settings = {
-    confirmSubjectDelete: true,
-    confirmProfileDelete: true,
-    confirmResetSubjectProgress: true,
-    confirmResetTopicProgress: true,
-    quizRequeueOnIncorrect: true,
-    quizRequeueOnSkip: true,
-    quizRequeueGapMin: 4,
-    quizRequeueGapMax: 6,
-    animatedBackground: true,
-    colorTheme: DEFAULT_COLOR_THEME,
-    customAccentColor: DEFAULT_CUSTOM_ACCENT_HEX,
-    sampleDataSeeded: false,
-    soundEnabled: true
-};
+function sanitizeColorTheme(value: unknown): ColorThemeId {
+    if (typeof value === 'string' && value in LEGACY_COLOR_THEME_MAP) {
+        return LEGACY_COLOR_THEME_MAP[value];
+    }
+    return isColorThemeId(value) ? value : DEFAULT_SETTINGS.colorTheme;
+}
 
 function sanitizeSettings(input: unknown, sampleDataSeededFallback: boolean): Settings {
     const raw = isRecord(input) ? input : {};
@@ -181,13 +134,7 @@ function sanitizeSettings(input: unknown, sampleDataSeededFallback: boolean): Se
         quizRequeueGapMin: min,
         quizRequeueGapMax: max,
         animatedBackground: sanitizeBoolean(raw.animatedBackground, DEFAULT_SETTINGS.animatedBackground),
-        colorTheme: (() => {
-            const t = raw.colorTheme;
-            if (typeof t === 'string' && t in LEGACY_COLOR_THEME_MAP) {
-                return LEGACY_COLOR_THEME_MAP[t]!;
-            }
-            return isColorThemeId(t) ? t : DEFAULT_SETTINGS.colorTheme;
-        })(),
+        colorTheme: sanitizeColorTheme(raw.colorTheme),
         customAccentColor: sanitizeCustomAccentHex(raw.customAccentColor, DEFAULT_SETTINGS.customAccentColor),
         sampleDataSeeded: sanitizeBoolean(raw.sampleDataSeeded, sampleDataSeededFallback),
         soundEnabled: sanitizeBoolean(raw.soundEnabled, DEFAULT_SETTINGS.soundEnabled)
@@ -202,9 +149,10 @@ export function sanitizePersistedQuizState(persistedState: unknown): PersistedQu
     if (isRecord(input.profiles)) {
         for (const [profileId, profile] of Object.entries(input.profiles)) {
             try {
-                const profileInput = isRecord(profile) && typeof profile.id === 'string'
-                    ? profile
-                    : {...(isRecord(profile) ? profile : {}), id: profileId};
+                const profileInput =
+                    isRecord(profile) && typeof profile.id === 'string'
+                        ? profile
+                        : {...(isRecord(profile) ? profile : {}), id: profileId};
                 const validated = validateProfileImport(profileInput);
                 profiles[validated.id] = validated;
             } catch {
@@ -218,9 +166,10 @@ export function sanitizePersistedQuizState(persistedState: unknown): PersistedQu
         profiles[DEFAULT_PROFILE_ID] = createDefaultProfile();
     }
 
-    const activeProfileId = typeof input.activeProfileId === 'string' && profiles[input.activeProfileId]
-        ? input.activeProfileId
-        : Object.values(profiles).sort((a, b) => b.createdAt - a.createdAt)[0].id;
+    const activeProfileId =
+        typeof input.activeProfileId === 'string' && profiles[input.activeProfileId]
+            ? input.activeProfileId
+            : Object.values(profiles).sort((a, b) => b.createdAt - a.createdAt)[0].id;
 
     return {
         profiles,
@@ -237,34 +186,8 @@ export const useQuizStore = create<QuizState>()(
             },
             activeProfileId: DEFAULT_PROFILE_ID,
             settings: {...DEFAULT_SETTINGS},
-            ...createQuizCoreActions({
-                set,
-                get,
-                createId: uuidv4,
-                getCurrentProfile,
-                getCurrentSubject,
-                mergeSubjectsIntoList,
-                rebuildSessionForSubjectIfActive,
-                flattenProgress,
-                extractMediaIdsFromQuestion,
-                extractMediaIdsFromTopic,
-                extractMediaIdsFromSubject,
-                cleanupOrphanedMedia,
-                reconcileProfileStateForSubjects
-            }),
-
-            ...createProfileSettingsActions({
-                set,
-                get,
-                defaultProfileId: DEFAULT_PROFILE_ID,
-                defaultSettings: DEFAULT_SETTINGS,
-                createDefaultProfile,
-                mergeSubjectsIntoList,
-                reconcileProfileStateForSubjects,
-                removeLocalStorageItem,
-                createId: uuidv4,
-                defaultSessionState: DEFAULT_SESSION_STATE
-            })
+            ...createQuizCoreActions(set, get),
+            ...createProfileSettingsActions(set, get)
         }),
         {
             name: 'quiz-storage',
@@ -272,17 +195,17 @@ export const useQuizStore = create<QuizState>()(
             // IndexedDB avoids localStorage size limits for large state JSON.
             storage: createJSONStorage(() => indexedDBStorage),
             migrate: (persistedState: unknown, version: number) => {
-                if (version === 0 || version === undefined) {
+                if (version === 0) {
                     const oldState = isRecord(persistedState) ? persistedState : {};
                     // v0: flat { subjects, progress, session } -> v1: profiles + activeProfileId
                     const defaultProfile: Profile = {
                         id: DEFAULT_PROFILE_ID,
                         name: 'Default',
-                        subjects: Array.isArray(oldState.subjects) ? oldState.subjects as Subject[] : [],
-                        progress: isRecord(oldState.progress) ? oldState.progress as Profile['progress'] : {},
+                        subjects: Array.isArray(oldState.subjects) ? (oldState.subjects as Subject[]) : [],
+                        progress: isRecord(oldState.progress) ? (oldState.progress as Profile['progress']) : {},
                         session: {
                             ...DEFAULT_SESSION_STATE,
-                            ...(isRecord(oldState.session) ? oldState.session : {}),
+                            ...(isRecord(oldState.session) ? oldState.session : {})
                         },
                         createdAt: Date.now()
                     };
@@ -306,7 +229,6 @@ export const useQuizStore = create<QuizState>()(
                     ...sanitized
                 };
             }
-
         }
     )
 );

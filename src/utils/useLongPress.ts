@@ -1,106 +1,77 @@
 import {useCallback, useEffect, useRef} from 'react';
 import type React from 'react';
 
+const LONG_PRESS_MS = 480;
+// How far the finger can move before the touch counts as a scroll instead
+const MOVE_TOLERANCE_PX = 14;
+
+type Point = {x: number; y: number};
+
 type LongPressOptions<T> = {
-    onLongPress: (target: T, coords: {x: number; y: number}) => void;
-    durationMs?: number;
-    movePx?: number;
+    onLongPress: (target: T, coords: Point) => void;
 };
 
-export type LongPressHandlers<T> = {
-    startLongPress: (target: T, e: React.TouchEvent) => void;
-    onLongPressTouchMove: (e: React.TouchEvent) => void;
-    onLongPressTouchEnd: () => void;
-    swallowSyntheticClickAfterLongPress: (e: React.MouseEvent) => void;
-};
-
-export function useLongPress<T>({
-    onLongPress,
-    durationMs = 480,
-    movePx = 14
-}: LongPressOptions<T>): LongPressHandlers<T> {
+/**
+ * Touch handlers that call `onLongPress` when a finger rests on an item. The click the browser
+ * fires when that finger lifts is swallowed, so the item is not also activated. Returns a function
+ * that gives the handlers for one item, to spread onto its element.
+ */
+export function useLongPress<T>({onLongPress}: LongPressOptions<T>) {
     const onLongPressRef = useRef(onLongPress);
     useEffect(() => {
         onLongPressRef.current = onLongPress;
     }, [onLongPress]);
 
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const originRef = useRef<{x: number; y: number} | null>(null);
-    const coordsRef = useRef<{x: number; y: number}>({x: 0, y: 0});
-    const targetRef = useRef<T | null>(null);
+    const originRef = useRef<Point>({x: 0, y: 0});
+    const coordsRef = useRef<Point>({x: 0, y: 0});
     const suppressClickRef = useRef(false);
 
-    const killTimer = useCallback(() => {
+    const cancel = useCallback(() => {
         if (timerRef.current) {
             clearTimeout(timerRef.current);
             timerRef.current = null;
         }
     }, []);
 
-    const reset = useCallback(() => {
-        killTimer();
-        originRef.current = null;
-        targetRef.current = null;
-    }, [killTimer]);
+    const startLongPress = (target: T, e: React.TouchEvent) => {
+        cancel();
+        if (e.touches.length !== 1) return;
+        const {clientX: x, clientY: y} = e.touches[0];
+        originRef.current = {x, y};
+        coordsRef.current = {x, y};
+        timerRef.current = setTimeout(() => {
+            timerRef.current = null;
+            suppressClickRef.current = true;
+            onLongPressRef.current(target, coordsRef.current);
+            navigator.vibrate?.(20);
+        }, LONG_PRESS_MS);
+    };
 
-    const startLongPress = useCallback(
-        (target: T, e: React.TouchEvent) => {
-            if (e.touches.length !== 1) {
-                reset();
-                return;
-            }
-            reset();
-            const t = e.touches[0];
-            targetRef.current = target;
-            originRef.current = {x: t.clientX, y: t.clientY};
-            coordsRef.current = {x: t.clientX, y: t.clientY};
-            timerRef.current = setTimeout(() => {
-                timerRef.current = null;
-                const tgt = targetRef.current;
-                const coords = coordsRef.current;
-                targetRef.current = null;
-                originRef.current = null;
-                if (tgt == null) return;
-                suppressClickRef.current = true;
-                onLongPressRef.current(tgt, coords);
-                try {
-                    navigator.vibrate?.(20);
-                } catch {
-                    /* vibrate is best-effort */
-                }
-            }, durationMs);
-        },
-        [durationMs, reset]
-    );
-
-    const onLongPressTouchMove = useCallback(
-        (e: React.TouchEvent) => {
-            if (!timerRef.current || !originRef.current) return;
-            const t = e.touches[0];
-            if (!t) return;
-            coordsRef.current = {x: t.clientX, y: t.clientY};
-            const o = originRef.current;
-            if (Math.abs(t.clientX - o.x) > movePx || Math.abs(t.clientY - o.y) > movePx) {
-                reset();
-            }
-        },
-        [movePx, reset]
-    );
-
-    const onLongPressTouchEnd = useCallback(() => {
-        if (timerRef.current) {
-            reset();
+    const onTouchMove = (e: React.TouchEvent) => {
+        if (!timerRef.current) return;
+        const {clientX: x, clientY: y} = e.touches[0];
+        coordsRef.current = {x, y};
+        const origin = originRef.current;
+        if (Math.abs(x - origin.x) > MOVE_TOLERANCE_PX || Math.abs(y - origin.y) > MOVE_TOLERANCE_PX) {
+            cancel();
         }
-    }, [reset]);
+    };
 
-    const swallowSyntheticClickAfterLongPress = useCallback((e: React.MouseEvent) => {
+    const onClickCapture = (e: React.MouseEvent) => {
         if (!suppressClickRef.current) return;
         e.preventDefault();
         e.stopPropagation();
         suppressClickRef.current = false;
-    }, []);
+    };
 
-    useEffect(() => () => reset(), [reset]);
+    useEffect(() => cancel, [cancel]);
 
-    return {startLongPress, onLongPressTouchMove, onLongPressTouchEnd, swallowSyntheticClickAfterLongPress};
+    return (target: T) => ({
+        onTouchStart: (e: React.TouchEvent) => startLongPress(target, e),
+        onTouchMove,
+        onTouchEnd: cancel,
+        onTouchCancel: cancel,
+        onClickCapture
+    });
 }

@@ -22,41 +22,29 @@ describe('WordBankInput', () => {
     });
 
     it('should render the sentence with blanks', () => {
-        render(
-            <WordBankInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        render(<WordBankInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
         expect(screen.getByText(/The/)).toBeInTheDocument();
         expect(screen.getByText(/today/)).toBeInTheDocument();
     });
 
-    it('should render word bank header', () => {
-        render(
-            <WordBankInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+    it('names each blank by its position and the word in it', () => {
+        render(<WordBankInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
-        expect(screen.getByText('Word Bank')).toBeInTheDocument();
+        expect(screen.getByRole('button', {name: 'Blank 1, empty'})).toBeDisabled();
+        fireEvent.click(screen.getByRole('button', {name: 'sky'}));
+        expect(screen.getByRole('button', {name: 'Remove sky from blank 1'})).toBeEnabled();
+        expect(screen.getByRole('button', {name: 'Blank 2, empty'})).toBeInTheDocument();
+    });
+
+    it('should render word bank header', () => {
+        render(<WordBankInput question={createQuestion()} onAnswer={mockOnAnswer} />);
+
+        expect(screen.getByText('Word bank')).toBeInTheDocument();
     });
 
     it('should render all word bank words', () => {
-        render(
-            <WordBankInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        render(<WordBankInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
         expect(screen.getByText('sky')).toBeInTheDocument();
         expect(screen.getByText('blue')).toBeInTheDocument();
@@ -65,41 +53,20 @@ describe('WordBankInput', () => {
     });
 
     it('should render submit button', () => {
-        render(
-            <WordBankInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        render(<WordBankInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
-        expect(screen.getByText('Submit Answer')).toBeInTheDocument();
+        expect(screen.getByText('Submit answer')).toBeInTheDocument();
     });
 
     it('should disable submit button when blanks are not filled', () => {
-        render(
-            <WordBankInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        render(<WordBankInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
-        const submitButton = screen.getByText('Submit Answer');
+        const submitButton = screen.getByText('Submit answer');
         expect(submitButton).toBeDisabled();
     });
 
     it('should move word to slot when clicked', () => {
-        render(
-            <WordBankInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        render(<WordBankInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
         fireEvent.click(screen.getByText('sky'));
 
@@ -108,20 +75,13 @@ describe('WordBankInput', () => {
     });
 
     it('should fill blanks and submit answer', () => {
-        render(
-            <WordBankInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        render(<WordBankInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
         fireEvent.click(screen.getByText('sky'));
 
         fireEvent.click(screen.getByText('blue'));
 
-        const submitButton = screen.getByText('Submit Answer');
+        const submitButton = screen.getByText('Submit answer');
         expect(submitButton).not.toBeDisabled();
 
         fireEvent.click(submitButton);
@@ -129,49 +89,27 @@ describe('WordBankInput', () => {
     });
 
     it('should remove word from slot when slot is clicked', () => {
-        render(
-            <WordBankInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        render(<WordBankInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
         fireEvent.click(screen.getByText('sky'));
 
         const skyButton = screen.getByText('sky');
         fireEvent.click(skyButton);
 
-        const submitButton = screen.getByText('Submit Answer');
+        const submitButton = screen.getByText('Submit answer');
         expect(submitButton).toBeDisabled();
     });
 
-    it('should not allow interaction when disabled', () => {
-        render(
-            <WordBankInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={true}
-                submittedAnswer={null}
-            />
-        );
+    it('should lock the blanks after submitting', () => {
+        render(<WordBankInput question={createQuestion()} onAnswer={mockOnAnswer} submittedAnswer={['sky', 'blue']} />);
 
-        fireEvent.click(screen.getByText('sky'));
-
-        const submitButton = screen.getByText('Submit Answer');
-        expect(submitButton).toBeDisabled();
+        for (const button of screen.getAllByRole('button')) {
+            expect(button).toBeDisabled();
+        }
     });
 
     it('should display submitted answer', () => {
-        render(
-            <WordBankInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={true}
-                submittedAnswer={['sky', 'blue']}
-            />
-        );
+        render(<WordBankInput question={createQuestion()} onAnswer={mockOnAnswer} submittedAnswer={['sky', 'blue']} />);
 
         expect(screen.getByText('sky')).toBeInTheDocument();
         expect(screen.getByText('blue')).toBeInTheDocument();
@@ -186,8 +124,6 @@ describe('WordBankInput', () => {
                     answers: ['horse', 'zebra', 'fish']
                 })}
                 onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
             />
         );
 
@@ -195,7 +131,7 @@ describe('WordBankInput', () => {
         fireEvent.click(screen.getByText('zebra'));
         fireEvent.click(screen.getByText('fish'));
 
-        fireEvent.click(screen.getByText('Submit Answer'));
+        fireEvent.click(screen.getByText('Submit answer'));
         expect(mockOnAnswer).toHaveBeenCalledWith(['horse', 'zebra', 'fish']);
     });
 });

@@ -3,21 +3,17 @@ import {clsx} from 'clsx';
 
 export type RightSidebarTab = 'mastery' | 'import' | 'settings';
 
+const TABS: RightSidebarTab[] = ['mastery', 'import', 'settings'];
+
 type SidebarTabsProps = {
     activeTab: RightSidebarTab;
     onChange: (tab: RightSidebarTab) => void;
 };
 
 export const SidebarTabs: React.FC<SidebarTabsProps> = ({activeTab, onChange}) => {
-    const tabs: RightSidebarTab[] = ['mastery', 'import', 'settings'];
-
     return (
-        <div
-            className="flex p-1 bg-slate-100 dark:bg-slate-800/50 rounded-lg"
-            role="tablist"
-            aria-label="Right sidebar sections"
-        >
-            {tabs.map((tab, index) => (
+        <div className="flex p-1 bg-slate-100 dark:bg-slate-800/50 rounded-lg" role="tablist" aria-label="Tools">
+            {TABS.map((tab, index) => (
                 <button
                     key={tab}
                     id={`right-sidebar-tab-${tab}`}
@@ -27,11 +23,11 @@ export const SidebarTabs: React.FC<SidebarTabsProps> = ({activeTab, onChange}) =
                     tabIndex={activeTab === tab ? 0 : -1}
                     type="button"
                     onClick={() => onChange(tab)}
-                    onKeyDown={e => {
+                    onKeyDown={(e) => {
                         if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
                         e.preventDefault();
                         const direction = e.key === 'ArrowRight' ? 1 : -1;
-                        const nextTab = tabs[(index + direction + tabs.length) % tabs.length];
+                        const nextTab = TABS[(index + direction + TABS.length) % TABS.length];
                         onChange(nextTab);
                         requestAnimationFrame(() => {
                             document.getElementById(`right-sidebar-tab-${nextTab}`)?.focus();

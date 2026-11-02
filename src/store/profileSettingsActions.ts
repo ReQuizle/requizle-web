@@ -1,45 +1,28 @@
+import {v4 as uuidv4} from 'uuid';
 import type {Profile} from '../types';
 import {validateProfileImport} from '../utils/importValidation';
 import {normalizeRequeueGapRange} from '../utils/quizLogic';
 import {getCanonicalAppLocationHref} from '../utils/appBaseUrl';
 import {clearStoreData} from '../utils/indexedDBStorage';
 import {clearAllMedia} from '../utils/mediaStorage';
+import {removeLocalStorage} from '../utils/localStorage';
 import type {QuizState} from './useQuizStore';
+import {createDefaultProfile, DEFAULT_PROFILE_ID, DEFAULT_SETTINGS} from './defaults';
 import {sanitizeCustomAccentHex} from '../utils/colorThemes';
-import {extractMediaIdsFromSubject, cleanupOrphanedMedia} from './quizStoreHelpers';
-
-type SetState = (
-    partial: QuizState | Partial<QuizState> | ((state: QuizState) => QuizState | Partial<QuizState>)
-) => void;
-
-type CreateProfileSettingsActionsParams = {
-    set: SetState;
-    get: () => QuizState;
-    defaultProfileId: string;
-    defaultSettings: QuizState['settings'];
-    createDefaultProfile: () => Profile;
-    mergeSubjectsIntoList: (existing: Profile['subjects'], incoming: Profile['subjects']) => Profile['subjects'];
-    reconcileProfileStateForSubjects: (
-        profile: Profile,
-        subjects: Profile['subjects']
-    ) => Pick<Profile, 'progress' | 'session'>;
-    removeLocalStorageItem: (key: string) => void;
-    createId: () => string;
-    defaultSessionState: Profile['session'];
-};
-
-export function createProfileSettingsActions({
-    set,
-    get,
-    defaultProfileId,
-    defaultSettings,
-    createDefaultProfile,
+import {
+    cleanupOrphanedMedia,
+    mediaIdsIn,
+    mergeSubjectProgress,
     mergeSubjectsIntoList,
+    questionsIn,
     reconcileProfileStateForSubjects,
-    removeLocalStorageItem,
-    createId,
-    defaultSessionState
-}: CreateProfileSettingsActionsParams): Pick<
+    type SetQuizState
+} from './quizStoreHelpers';
+
+export function createProfileSettingsActions(
+    set: SetQuizState,
+    get: () => QuizState
+): Pick<
     QuizState,
     | 'createProfile'
     | 'renameProfile'
@@ -60,29 +43,22 @@ export function createProfileSettingsActions({
     | 'markSampleDataSeeded'
     | 'setSoundEnabled'
 > {
+    const updateSettings = (changes: Partial<QuizState['settings']>) =>
+        set((state) => ({settings: {...state.settings, ...changes}}));
+
     return {
         createProfile: (name) => {
-            const normalizedName = name.trim() || 'New profile';
-            const newId = createId();
-            const newProfile: Profile = {
-                id: newId,
-                name: normalizedName,
-                subjects: [],
-                progress: {},
-                session: {...defaultSessionState},
-                createdAt: Date.now()
-            };
-
-            set(state => ({
-                profiles: {...state.profiles, [newId]: newProfile},
-                activeProfileId: newId
+            const newProfile: Profile = {...createDefaultProfile(), id: uuidv4(), name: name.trim() || 'New profile'};
+            set((state) => ({
+                profiles: {...state.profiles, [newProfile.id]: newProfile},
+                activeProfileId: newProfile.id
             }));
         },
 
         renameProfile: (id, newName) => {
             const normalizedName = newName.trim();
             if (!normalizedName) return;
-            set(state => {
+            set((state) => {
                 const profile = state.profiles[id];
                 if (!profile) return state;
 
@@ -99,30 +75,21 @@ export function createProfileSettingsActions({
         },
 
         switchProfile: (id) => {
-            set(state => {
+            set((state) => {
                 if (!state.profiles[id]) return state;
                 return {activeProfileId: id};
             });
         },
 
         deleteProfile: (id) => {
-            const profileToDelete = get().profiles[id];
-            const mediaToCheck = new Set<string>();
-            if (profileToDelete) {
-                for (const subject of profileToDelete.subjects) {
-                    extractMediaIdsFromSubject(subject).forEach(mediaId => mediaToCheck.add(mediaId));
-                }
-            }
-            set(state => {
+            const mediaToCheck = mediaIdsIn(questionsIn(get().profiles[id]?.subjects ?? []));
+            set((state) => {
                 const profileIds = Object.keys(state.profiles);
 
                 if (profileIds.length === 1 && profileIds[0] === id) {
-                    const resetDefault = createDefaultProfile();
                     return {
-                        profiles: {
-                            [defaultProfileId]: resetDefault
-                        },
-                        activeProfileId: defaultProfileId,
+                        profiles: {[DEFAULT_PROFILE_ID]: createDefaultProfile()},
+                        activeProfileId: DEFAULT_PROFILE_ID,
                         settings: {...state.settings, sampleDataSeeded: false}
                     };
                 }
@@ -146,14 +113,8 @@ export function createProfileSettingsActions({
 
         importProfile: (profile) => {
             const validatedProfile = validateProfileImport(profile);
-            const existingBefore = get().profiles[validatedProfile.id];
-            const mediaBefore = new Set<string>();
-            if (existingBefore) {
-                for (const subject of existingBefore.subjects) {
-                    extractMediaIdsFromSubject(subject).forEach(id => mediaBefore.add(id));
-                }
-            }
-            set(state => {
+            const mediaBefore = mediaIdsIn(questionsIn(get().profiles[validatedProfile.id]?.subjects ?? []));
+            set((state) => {
                 const existingProfile = state.profiles[validatedProfile.id];
 
                 if (!existingProfile) {
@@ -169,18 +130,7 @@ export function createProfileSettingsActions({
                 const mergedSubjects = mergeSubjectsIntoList(existingProfile.subjects, validatedProfile.subjects);
                 const mergedProgress = {...existingProfile.progress};
                 for (const [subjectId, subjectProgress] of Object.entries(validatedProfile.progress)) {
-                    if (!mergedProgress[subjectId]) {
-                        mergedProgress[subjectId] = subjectProgress;
-                    } else {
-                        const mergedSubjectProgress = {...mergedProgress[subjectId]};
-                        for (const [topicId, topicProgress] of Object.entries(subjectProgress)) {
-                            mergedSubjectProgress[topicId] = {
-                                ...(mergedSubjectProgress[topicId] || {}),
-                                ...topicProgress
-                            };
-                        }
-                        mergedProgress[subjectId] = mergedSubjectProgress;
-                    }
+                    mergedProgress[subjectId] = mergeSubjectProgress(mergedProgress[subjectId] ?? {}, subjectProgress);
                 }
                 const reconciled = reconcileProfileStateForSubjects(
                     {...existingProfile, subjects: mergedSubjects, progress: mergedProgress},
@@ -212,12 +162,11 @@ export function createProfileSettingsActions({
                     console.error('Failed to clear stored data during factory reset:', result.reason);
                 }
             }
-            removeLocalStorageItem('quiz-storage');
-            removeLocalStorageItem('theme');
+            removeLocalStorage('theme');
             set({
-                profiles: {[defaultProfileId]: createDefaultProfile()},
-                activeProfileId: defaultProfileId,
-                settings: {...defaultSettings}
+                profiles: {[DEFAULT_PROFILE_ID]: createDefaultProfile()},
+                activeProfileId: DEFAULT_PROFILE_ID,
+                settings: {...DEFAULT_SETTINGS}
             });
 
             const canonicalHref = getCanonicalAppLocationHref();
@@ -228,63 +177,38 @@ export function createProfileSettingsActions({
             }
         },
 
-        setConfirmSubjectDelete: (confirm) => set((state) => ({
-            settings: {...state.settings, confirmSubjectDelete: confirm}
-        })),
+        setConfirmSubjectDelete: (confirm) => updateSettings({confirmSubjectDelete: confirm}),
 
-        setConfirmProfileDelete: (confirm) => set((state) => ({
-            settings: {...state.settings, confirmProfileDelete: confirm}
-        })),
+        setConfirmProfileDelete: (confirm) => updateSettings({confirmProfileDelete: confirm}),
 
-        setConfirmResetSubjectProgress: (confirm) => set((state) => ({
-            settings: {...state.settings, confirmResetSubjectProgress: confirm}
-        })),
+        setConfirmResetSubjectProgress: (confirm) => updateSettings({confirmResetSubjectProgress: confirm}),
 
-        setConfirmResetTopicProgress: (confirm) => set((state) => ({
-            settings: {...state.settings, confirmResetTopicProgress: confirm}
-        })),
+        setConfirmResetTopicProgress: (confirm) => updateSettings({confirmResetTopicProgress: confirm}),
 
-        setQuizRequeueOnIncorrect: (value) => set((state) => ({
-            settings: {...state.settings, quizRequeueOnIncorrect: value}
-        })),
+        setQuizRequeueOnIncorrect: (value) => updateSettings({quizRequeueOnIncorrect: value}),
 
-        setQuizRequeueOnSkip: (value) => set((state) => ({
-            settings: {...state.settings, quizRequeueOnSkip: value}
-        })),
+        setQuizRequeueOnSkip: (value) => updateSettings({quizRequeueOnSkip: value}),
 
-        setQuizRequeueGaps: (minGap, maxGap) => set((state) => {
+        setQuizRequeueGaps: (minGap, maxGap) => {
             const {min, max} = normalizeRequeueGapRange(minGap, maxGap);
-            return {
+            updateSettings({quizRequeueGapMin: min, quizRequeueGapMax: max});
+        },
+
+        setAnimatedBackground: (value) => updateSettings({animatedBackground: value}),
+
+        setColorTheme: (value) => updateSettings({colorTheme: value}),
+
+        setCustomAccentColor: (value) =>
+            set((state) => ({
                 settings: {
                     ...state.settings,
-                    quizRequeueGapMin: min,
-                    quizRequeueGapMax: max
+                    customAccentColor: sanitizeCustomAccentHex(value, state.settings.customAccentColor),
+                    colorTheme: 'custom'
                 }
-            };
-        }),
+            })),
 
-        setAnimatedBackground: (value) => set((state) => ({
-            settings: {...state.settings, animatedBackground: value}
-        })),
+        markSampleDataSeeded: () => updateSettings({sampleDataSeeded: true}),
 
-        setColorTheme: (value) => set((state) => ({
-            settings: {...state.settings, colorTheme: value}
-        })),
-
-        setCustomAccentColor: (value) => set((state) => ({
-            settings: {
-                ...state.settings,
-                customAccentColor: sanitizeCustomAccentHex(value, state.settings.customAccentColor),
-                colorTheme: 'custom'
-            }
-        })),
-
-        markSampleDataSeeded: () => set((state) => ({
-            settings: {...state.settings, sampleDataSeeded: true}
-        })),
-
-        setSoundEnabled: (value) => set((state) => ({
-            settings: {...state.settings, soundEnabled: value}
-        }))
+        setSoundEnabled: (value) => updateSettings({soundEnabled: value})
     };
 }

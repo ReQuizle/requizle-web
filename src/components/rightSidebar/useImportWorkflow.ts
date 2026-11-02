@@ -1,8 +1,7 @@
-import {useEffect, useRef, useState} from 'react';
+import {useRef, useState} from 'react';
 import {
     validateSubjects,
     isSubjectExportV1,
-    sanitizeSubjectProgress,
     validateProfileImport,
     isImportableQuizPayload,
     extractMediaReferencesWithContext,
@@ -11,19 +10,33 @@ import {
     replaceMediaByPath,
     type MediaGroup
 } from '../../utils/importValidation';
-import {
-    storeMedia,
-    createMediaRef,
-    deleteMedia
-} from '../../utils/mediaStorage';
-import {readFileAsText} from '../../utils/fileReaders';
+import {storeMedia, createMediaRef, deleteMedia} from '../../utils/mediaStorage';
 import {parseRqzlArchiveFile} from '../../utils/rqzlArchive';
 import type {Profile, Subject, SubjectExportV1} from '../../types';
+import {plural} from '../../utils/plural';
 
-type ImportResult = {type: 'profile' | 'subjects'; message: string};
+/** The `accept` value for file inputs that import quizzes. */
+export const IMPORT_FILE_TYPES = '.rqzl,.zip,.json,application/json,application/zip';
+
+const INVALID_FORMAT_MESSAGE = 'Invalid import format: expected a profile, subject export, subject, or subject array';
+
+/** An import waiting for the user to upload the local media files it refers to */
+export type PendingImport = {
+    data: unknown;
+    mediaGroups: MediaGroup[];
+    uploadError: string | null;
+};
+
+function errorMessage(e: unknown): string {
+    return e instanceof Error ? e.message : 'Unknown error';
+}
+
+/** Deletes media stored for an import that did not finish. Failures are ignored. */
+async function discardMedia(ids: string[]): Promise<void> {
+    await Promise.all(ids.map((id) => deleteMedia(id).catch(() => undefined)));
+}
 
 type UseImportWorkflowParams = {
-    activeTab: 'mastery' | 'import' | 'settings';
     profiles: Record<string, Profile>;
     subjects: Subject[];
     importProfile: (profile: Profile) => void;
@@ -32,7 +45,6 @@ type UseImportWorkflowParams = {
 };
 
 export function useImportWorkflow({
-    activeTab,
     profiles,
     subjects,
     importProfile,
@@ -42,31 +54,12 @@ export function useImportWorkflow({
     const [jsonInput, setJsonInput] = useState('');
     const [importError, setImportError] = useState<string | null>(null);
     const [importSuccessMessage, setImportSuccessMessage] = useState<string | null>(null);
-    const [pendingImport, setPendingImport] = useState<{
-        data: unknown;
-        mediaGroups: MediaGroup[];
-        uploadError: string | null;
-    } | null>(null);
-    const [importDndActive, setImportDndActive] = useState(false);
+    const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
     const [isImporting, setIsImporting] = useState(false);
     const [isCompletingPendingImport, setIsCompletingPendingImport] = useState(false);
-    const importDndDepth = useRef(0);
     const imageInputRef = useRef<HTMLInputElement>(null);
     const pendingStagedMediaIdsRef = useRef<string[]>([]);
     const importInFlightRef = useRef(false);
-
-    useEffect(() => {
-        if (activeTab !== 'import') {
-            importDndDepth.current = 0;
-            let cancelled = false;
-            queueMicrotask(() => {
-                if (!cancelled) setImportDndActive(false);
-            });
-            return () => {
-                cancelled = true;
-            };
-        }
-    }, [activeTab]);
 
     const runImportTask = async (task: () => Promise<void>) => {
         if (importInFlightRef.current) return;
@@ -80,126 +73,112 @@ export function useImportWorkflow({
         }
     };
 
-    const performImport = (parsed: unknown): ImportResult => {
+    /** Imports the payload and returns a message saying what happened. */
+    const performImport = (parsed: unknown): string => {
         if (isSubjectExportV1(parsed)) {
             importSubjectExport(parsed);
-            const subj = parsed.subject;
-            const label = typeof subj.name === 'string' ? subj.name : subj.id;
-            const validProgress = sanitizeSubjectProgress(parsed.progress, parsed.subject);
-            const hasProgress = Object.values(validProgress).some(qMap => Object.keys(qMap).length > 0);
-            return {
-                type: 'subjects',
-                message: hasProgress ? `Imported "${label}" with progress.` : `Imported "${label}".`
-            };
+            const {name} = parsed.subject;
+            const hasProgress = Object.values(parsed.progress ?? {}).some((topic) => Object.keys(topic).length > 0);
+            return hasProgress ? `Imported "${name}" with progress.` : `Imported "${name}".`;
         }
 
+        let profile: Profile | null = null;
         try {
-            const profile = validateProfileImport(parsed);
-            const existingProfile = profiles[profile.id];
-            importProfile(profile);
-            const action = existingProfile ? 'merged with existing' : 'imported';
-            return {type: 'profile', message: `Profile "${profile.name}" ${action} successfully!`};
+            profile = validateProfileImport(parsed);
         } catch {
-            void 0;
+            // Not a profile, so it is imported as subjects below
+        }
+        if (profile) {
+            const exists = profile.id in profiles;
+            importProfile(profile);
+            return exists
+                ? `Merged "${profile.name}" into the existing profile.`
+                : `Imported profile "${profile.name}".`;
         }
 
         const validatedSubjects = validateSubjects(parsed);
-        const existingSubjectIds = subjects.map(s => s.id);
-        const mergedCount = validatedSubjects.filter(s => existingSubjectIds.includes(s.id)).length;
+        const existingSubjectIds = subjects.map((s) => s.id);
+        const mergedCount = validatedSubjects.filter((s) => existingSubjectIds.includes(s.id)).length;
         const newCount = validatedSubjects.length - mergedCount;
         importSubjects(validatedSubjects);
 
         if (mergedCount > 0 && newCount > 0) {
-            return {type: 'subjects', message: `Merged ${mergedCount} existing subject(s) and added ${newCount} new subject(s)`};
+            return `Merged ${plural(mergedCount, 'existing subject')} and added ${plural(newCount, 'new subject')}.`;
         }
         if (mergedCount > 0) {
-            return {type: 'subjects', message: `Merged ${mergedCount} subject(s) with existing data`};
+            return `Merged ${plural(mergedCount, 'subject')} with existing data.`;
         }
-        return {type: 'subjects', message: `Added ${newCount} new subject(s)`};
+        return `Added ${plural(newCount, 'new subject')}.`;
     };
 
-    const detectAndImport = async (parsed: unknown): Promise<{type: 'profile' | 'subjects' | 'pending'; message: string}> => {
+    /** Imports the payload, or returns null when the user has to upload its media files first. */
+    const detectAndImport = (parsed: unknown): string | null => {
         if (!isImportableQuizPayload(parsed)) {
-            throw new Error('Invalid import format: expected a profile, subject export, subject, or subject array');
+            throw new Error(INVALID_FORMAT_MESSAGE);
         }
 
-        const allRefs = extractMediaReferencesWithContext(parsed);
-        const localRefs = getLocalMediaRefs(allRefs);
-
+        const localRefs = getLocalMediaRefs(extractMediaReferencesWithContext(parsed));
         if (localRefs.length > 0) {
-            const mediaGroups = groupMediaByFilename(localRefs);
-            setPendingImport({
-                data: parsed,
-                mediaGroups,
-                uploadError: null
-            });
-            const conflictCount = mediaGroups.filter(g => g.isConflict).length;
-            return {
-                type: 'pending',
-                message: `Found ${mediaGroups.length} media file(s). ${conflictCount > 0 ? `${conflictCount} have naming conflicts.` : ''}`
-            };
+            setPendingImport({data: parsed, mediaGroups: groupMediaByFilename(localRefs), uploadError: null});
+            return null;
         }
 
         return performImport(parsed);
     };
 
+    const showImportResult = (message: string) => {
+        setJsonInput('');
+        setImportError(null);
+        setImportSuccessMessage(message);
+    };
+
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!pendingImport || !e.target.files) return;
         const files = Array.from(e.target.files);
-        const nonConflictFilenames = pendingImport.mediaGroups
-            .filter(g => !g.isConflict && !g.uploaded)
-            .map(g => g.filename);
-        const validFiles = files.filter(file => nonConflictFilenames.includes(file.name));
-        const skipped = files.filter(file => !nonConflictFilenames.includes(file.name)).map(f => f.name);
+        e.target.value = '';
 
-        if (validFiles.length === 0) {
+        const neededFilenames = new Set(
+            pendingImport.mediaGroups.filter((g) => !g.isConflict && !g.uploaded).map((g) => g.filename)
+        );
+        const uploads = new Map(
+            files.filter((file) => neededFilenames.has(file.name)).map((file) => [file.name, file])
+        );
+        const skipped = files.filter((file) => !neededFilenames.has(file.name)).map((file) => file.name);
+
+        if (uploads.size === 0) {
             setPendingImport({
                 ...pendingImport,
-                uploadError: skipped.length > 0
-                    ? `Skipped: ${skipped.join(', ')} (not in required list or is a conflict)`
-                    : 'No matching files selected'
+                uploadError:
+                    skipped.length > 0
+                        ? `None of the chosen files are on the list, or they need uploading one at a time: ${skipped.join(', ')}`
+                        : 'No matching files selected'
             });
-            e.target.value = '';
             return;
         }
 
-        const uploadResults = new Map<string, File>();
-        validFiles.forEach(file => {
-            uploadResults.set(file.name, file);
-        });
-
-        setPendingImport(prev => {
+        setPendingImport((prev) => {
             if (!prev) return prev;
-            const newMediaGroups = prev.mediaGroups.map(group => {
-                if (group.isConflict) return group;
-                const uploadedFile = uploadResults.get(group.filename);
-                if (!uploadedFile) return group;
-                return {...group, uploaded: true, uploadedFile};
-            });
-            const notices: string[] = [];
-            if (skipped.length > 0) {
-                notices.push(`Skipped ${skipped.length} file(s) not in required list`);
-            }
             return {
                 ...prev,
-                mediaGroups: newMediaGroups,
-                uploadError: notices.length > 0 ? notices.join('. ') : null
+                mediaGroups: prev.mediaGroups.map((group) => {
+                    const uploadedFile = group.isConflict ? undefined : uploads.get(group.filename);
+                    return uploadedFile ? {...group, uploaded: true, uploadedFile} : group;
+                }),
+                uploadError: skipped.length > 0 ? `Skipped ${plural(skipped.length, 'file')} not on the list` : null
             };
         });
-
-        e.target.value = '';
     };
 
     const handleConflictUpload = (groupIndex: number, refIndex: number, e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!e.target.files || !e.target.files[0]) return;
-        const file = e.target.files[0];
-        setPendingImport(prev => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setPendingImport((prev) => {
             if (!prev) return prev;
             const newMediaGroups = prev.mediaGroups.map((group, idx) => {
                 if (idx !== groupIndex) return group;
                 const refMap = new Map(group.uploadedPerRef || []);
                 refMap.set(group.references[refIndex].path, file);
-                const allUploaded = group.references.every(ref => refMap.has(ref.path));
+                const allUploaded = group.references.every((ref) => refMap.has(ref.path));
                 return {...group, uploaded: allUploaded, uploadedPerRef: refMap};
             });
             return {...prev, mediaGroups: newMediaGroups, uploadError: null};
@@ -208,13 +187,13 @@ export function useImportWorkflow({
     };
 
     const handleSingleUpload = (groupIndex: number, e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!e.target.files || !e.target.files[0]) return;
-        const file = e.target.files[0];
-        setPendingImport(prev => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setPendingImport((prev) => {
             if (!prev) return prev;
-            const newMediaGroups = prev.mediaGroups.map((group, idx) => (
+            const newMediaGroups = prev.mediaGroups.map((group, idx) =>
                 idx !== groupIndex ? group : {...group, uploaded: true, uploadedFile: file}
-            ));
+            );
             return {...prev, mediaGroups: newMediaGroups, uploadError: null};
         });
         e.target.value = '';
@@ -224,9 +203,9 @@ export function useImportWorkflow({
         if (importInFlightRef.current) return;
         if (!pendingImport) return;
         const {data, mediaGroups} = pendingImport;
-        const missingGroups = mediaGroups.filter(g => !g.uploaded);
+        const missingGroups = mediaGroups.filter((g) => !g.uploaded);
         if (missingGroups.length > 0) {
-            const missingNames = missingGroups.map(g => g.filename).join(', ');
+            const missingNames = missingGroups.map((g) => g.filename).join(', ');
             setPendingImport({...pendingImport, uploadError: `Missing files: ${missingNames}`});
             return;
         }
@@ -259,20 +238,14 @@ export function useImportWorkflow({
                 }
             }
 
-            const processedData = replaceMediaByPath(data, mediaRefMap);
-            const result = performImport(processedData);
+            const message = performImport(replaceMediaByPath(data, mediaRefMap));
             setPendingImport(null);
             pendingStagedMediaIdsRef.current = [];
-            setJsonInput('');
-            setImportError(null);
-            setImportSuccessMessage(result.message);
+            showImportResult(message);
         } catch (e) {
-            await Promise.all(
-                [...rollbackMediaIds, ...createdMediaIds].map(id => deleteMedia(id).catch(() => undefined))
-            );
+            await discardMedia([...rollbackMediaIds, ...createdMediaIds]);
             pendingStagedMediaIdsRef.current = [];
-            const errorMessage = e instanceof Error ? e.message : 'Unknown error';
-            setPendingImport({...pendingImport, uploadError: `Import failed: ${errorMessage}`});
+            setPendingImport({...pendingImport, uploadError: `Import failed: ${errorMessage(e)}`});
         } finally {
             importInFlightRef.current = false;
             setIsCompletingPendingImport(false);
@@ -281,11 +254,7 @@ export function useImportWorkflow({
 
     const cancelPendingImport = () => {
         if (isCompletingPendingImport) return;
-        if (pendingStagedMediaIdsRef.current.length > 0) {
-            void Promise.all(
-                pendingStagedMediaIdsRef.current.map(id => deleteMedia(id).catch(() => undefined))
-            );
-        }
+        void discardMedia(pendingStagedMediaIdsRef.current);
         pendingStagedMediaIdsRef.current = [];
         setPendingImport(null);
         setImportError(null);
@@ -294,158 +263,95 @@ export function useImportWorkflow({
     const handleImport = () => {
         void runImportTask(async () => {
             try {
-                const parsed: unknown = JSON.parse(jsonInput);
-                const result = await detectAndImport(parsed);
-                if (result.type === 'pending') {
+                const message = detectAndImport(JSON.parse(jsonInput));
+                if (message) {
+                    showImportResult(message);
+                } else {
                     setImportError(null);
-                    return;
                 }
-                setJsonInput('');
-                setImportError(null);
-                setImportSuccessMessage(result.message);
             } catch (e) {
-                const errorMessage = e instanceof Error ? e.message : 'Unknown error';
-                setImportError(`Import failed: ${errorMessage}`);
+                setImportError(`Import failed: ${errorMessage(e)}`);
             }
         });
     };
 
     const readAndImportFile = async (file: File) => {
         const lowerName = file.name.toLowerCase();
-        pendingStagedMediaIdsRef.current = [];
-        const isArchiveImport = lowerName.endsWith('.rqzl') || lowerName.endsWith('.zip');
-        if (!(lowerName.endsWith('.json') || isArchiveImport)) {
+        const isArchive = lowerName.endsWith('.rqzl') || lowerName.endsWith('.zip');
+        if (!isArchive && !lowerName.endsWith('.json')) {
             setImportError('Unsupported file type. Use .rqzl, .zip, or .json files.');
             return;
         }
 
+        pendingStagedMediaIdsRef.current = [];
+        const storedMediaIds: string[] = [];
         try {
             let parsed: unknown;
-            const archiveCreatedIds: string[] = [];
-            if (isArchiveImport) {
+            if (isArchive) {
                 const archive = await parseRqzlArchiveFile(file);
-                parsed = archive.payload;
-                if (!isImportableQuizPayload(parsed)) {
-                    throw new Error('Invalid import format: expected a profile, subject export, subject, or subject array');
+                if (!isImportableQuizPayload(archive.payload)) {
+                    throw new Error(INVALID_FORMAT_MESSAGE);
                 }
-                const archiveMediaRefMap = new Map<string, string>();
-                try {
-                    for (const entry of archive.mediaEntries) {
-                        const typedBlob = entry.blob.type ? entry.blob : new Blob([entry.blob], {type: entry.mimeType});
-                        const mediaId = await storeMedia(typedBlob, entry.filename);
-                        archiveCreatedIds.push(mediaId);
-                        const newMediaRef = createMediaRef(mediaId);
-                        archiveMediaRefMap.set(createMediaRef(entry.id), newMediaRef);
-                        if (entry.path) {
-                            archiveMediaRefMap.set(entry.path, newMediaRef);
-                        }
+                const mediaRefMap = new Map<string, string>();
+                for (const entry of archive.mediaEntries) {
+                    const mediaId = await storeMedia(entry.blob, entry.filename);
+                    storedMediaIds.push(mediaId);
+                    const mediaRef = createMediaRef(mediaId);
+                    mediaRefMap.set(createMediaRef(entry.id), mediaRef);
+                    if (entry.path) {
+                        mediaRefMap.set(entry.path, mediaRef);
                     }
-                    parsed = replaceMediaByPath(parsed, archiveMediaRefMap);
-                    pendingStagedMediaIdsRef.current = [...archiveCreatedIds];
-                } catch (archiveMediaError) {
-                    await Promise.all(archiveCreatedIds.map(id => deleteMedia(id).catch(() => undefined)));
-                    pendingStagedMediaIdsRef.current = [];
-                    throw archiveMediaError;
                 }
+                parsed = replaceMediaByPath(archive.payload, mediaRefMap);
             } else {
-                const content = await readFileAsText(file);
+                let content: string;
+                try {
+                    content = await file.text();
+                } catch {
+                    setImportError('Could not read that file. Try choosing it again, or use another file.');
+                    return;
+                }
                 parsed = JSON.parse(content);
             }
 
-            let result: {type: 'profile' | 'subjects' | 'pending'; message: string};
-            try {
-                result = await detectAndImport(parsed);
-            } catch (importError) {
-                if (archiveCreatedIds.length > 0) {
-                    await Promise.all(archiveCreatedIds.map(id => deleteMedia(id).catch(() => undefined)));
-                }
-                throw importError;
-            }
-            if (result.type === 'pending') {
-                setImportError(null);
-                return;
-            }
-            pendingStagedMediaIdsRef.current = [];
-
-            setJsonInput('');
-            setImportError(null);
-            setImportSuccessMessage(result.message);
-        } catch (e) {
-            pendingStagedMediaIdsRef.current = [];
-            const errorMessage = e instanceof Error ? e.message : 'Unknown error';
-            if (errorMessage.includes('read file')) {
-                setImportError('Could not read that file. Try another file or paste JSON below.');
+            const message = detectAndImport(parsed);
+            if (message) {
+                showImportResult(message);
             } else {
-                setImportError(`File import failed: ${errorMessage}`);
+                // Kept until the user finishes or cancels uploading the media the archive left out
+                pendingStagedMediaIdsRef.current = storedMediaIds;
+                setImportError(null);
             }
+        } catch (e) {
+            await discardMedia(storedMediaIds);
+            setImportError(`File import failed: ${errorMessage(e)}`);
         }
     };
 
-    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, resetInput = true) => {
+    const importFile = (file: File) => {
+        void runImportTask(() => readAndImportFile(file));
+    };
+
+    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        void runImportTask(async () => {
-            await readAndImportFile(file);
-        });
-        if (resetInput) {
-            e.target.value = '';
-        }
-    };
-
-    const handleImportDragEnter = (e: React.DragEvent) => {
-        if (activeTab !== 'import') return;
-        e.preventDefault();
-        e.stopPropagation();
-        importDndDepth.current += 1;
-        setImportDndActive(true);
-    };
-
-    const handleImportDragLeave = (e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        importDndDepth.current -= 1;
-        if (importDndDepth.current <= 0) {
-            importDndDepth.current = 0;
-            setImportDndActive(false);
-        }
-    };
-
-    const handleImportDragOver = (e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        e.dataTransfer.dropEffect = 'copy';
-    };
-
-    const handleImportDrop = (e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        importDndDepth.current = 0;
-        setImportDndActive(false);
-        const file = e.dataTransfer.files?.[0];
-        if (!file) return;
-        void runImportTask(async () => {
-            await readAndImportFile(file);
-        });
+        importFile(file);
+        e.target.value = '';
     };
 
     return {
         jsonInput,
         setJsonInput,
         importError,
-        setImportError,
         importSuccessMessage,
         setImportSuccessMessage,
         pendingImport,
         imageInputRef,
         isImporting,
         isCompletingPendingImport,
-        importDndActive: activeTab === 'import' && importDndActive,
         handleImport,
         handleFileUpload,
-        handleImportDragEnter,
-        handleImportDragLeave,
-        handleImportDragOver,
-        handleImportDrop,
+        importFile,
         handleImageUpload,
         handleConflictUpload,
         handleSingleUpload,

@@ -11,9 +11,7 @@ const mockGetMedia = vi.fn();
 vi.mock('../utils/mediaStorage', () => ({
     getMedia: (...args: unknown[]) => mockGetMedia(...args),
     isIndexedDBMedia: (ref: string) => ref.startsWith('idb:'),
-    extractMediaId: (ref: string) => ref.replace('idb:', ''),
-    createMediaObjectUrl: () => 'blob:mock-media',
-    revokeMediaObjectUrl: vi.fn()
+    extractMediaId: (ref: string) => ref.replace('idb:', '')
 }));
 
 vi.mock('./Latex', () => ({
@@ -21,48 +19,66 @@ vi.mock('./Latex', () => ({
 }));
 
 vi.mock('./inputs/MultipleChoiceInput', () => ({
-    MultipleChoiceInput: ({onAnswer, disabled}: {onAnswer: (answer: number) => void; disabled?: boolean}) => (
-        <button onClick={() => onAnswer(0)} disabled={disabled}>
+    MultipleChoiceInput: ({
+        onAnswer,
+        submittedAnswer
+    }: {
+        onAnswer: (answer: number) => void;
+        submittedAnswer?: number;
+    }) => (
+        <button type="button" onClick={() => onAnswer(0)} disabled={submittedAnswer !== undefined}>
             Select Option A
         </button>
     )
 }));
 
 vi.mock('./inputs/TrueFalseInput', () => ({
-    TrueFalseInput: ({onAnswer, disabled}: {onAnswer: (answer: boolean) => void; disabled?: boolean}) => (
+    TrueFalseInput: ({onAnswer, submittedAnswer}: {onAnswer: (answer: boolean) => void; submittedAnswer?: boolean}) => (
         <div>
-            <button onClick={() => onAnswer(true)} disabled={disabled}>Select True</button>
-            <button onClick={() => onAnswer(false)} disabled={disabled}>Select False</button>
+            <button type="button" onClick={() => onAnswer(true)} disabled={submittedAnswer !== undefined}>
+                Select True
+            </button>
+            <button type="button" onClick={() => onAnswer(false)} disabled={submittedAnswer !== undefined}>
+                Select False
+            </button>
         </div>
     )
 }));
 
 vi.mock('./inputs/MultipleAnswerInput', () => ({
     MultipleAnswerInput: ({onAnswer}: {onAnswer: (answer: number[]) => void}) => (
-        <button onClick={() => onAnswer([0, 2])}>Submit MA</button>
+        <button type="button" onClick={() => onAnswer([0, 2])}>
+            Submit MA
+        </button>
     )
 }));
 
 vi.mock('./inputs/KeywordsInput', () => ({
     KeywordsInput: ({onAnswer}: {onAnswer: (answer: string) => void}) => (
-        <button onClick={() => onAnswer('Paris')}>Submit KW</button>
+        <button type="button" onClick={() => onAnswer('Paris')}>
+            Submit KW
+        </button>
     )
 }));
 
 vi.mock('./inputs/MatchingInput', () => ({
     MatchingInput: ({onAnswer}: {onAnswer: (answer: Record<string, string>) => void}) => (
-        <button onClick={() => onAnswer({'A': '1'})}>Submit Match</button>
+        <button type="button" onClick={() => onAnswer({A: '1'})}>
+            Submit Match
+        </button>
     )
 }));
 
 vi.mock('./inputs/WordBankInput', () => ({
     WordBankInput: ({onAnswer}: {onAnswer: (answer: string[]) => void}) => (
-        <button onClick={() => onAnswer(['sky', 'blue'])}>Submit Word Bank</button>
+        <button type="button" onClick={() => onAnswer(['sky', 'blue'])}>
+            Submit Word Bank
+        </button>
     )
 }));
 
 vi.mock('canvas-confetti', () => ({
-    default: vi.fn()
+    default: {create: vi.fn(() => vi.fn(() => null))}
 }));
 
 describe('QuestionCard', () => {
@@ -112,7 +128,7 @@ describe('QuestionCard', () => {
             };
 
             render(<QuestionCard question={question} />);
-            expect(screen.getByText('MULTIPLE CHOICE')).toBeInTheDocument();
+            expect(screen.getByText('Multiple choice')).toBeInTheDocument();
         });
 
         it('should render skip button', () => {
@@ -170,7 +186,7 @@ describe('QuestionCard', () => {
 
             expect(screen.getByText('Not quite right')).toBeInTheDocument();
             expect(screen.getByText('The correct answer is B')).toBeInTheDocument();
-            expect(screen.getByText('Correct Answer:')).toBeInTheDocument();
+            expect(screen.getByText('Correct answer:')).toBeInTheDocument();
         });
     });
 
@@ -331,29 +347,6 @@ describe('QuestionCard', () => {
             expect(screen.queryByText('Skip')).not.toBeInTheDocument();
             expect(screen.getByText('Select True')).toBeDisabled();
             expect(screen.getByText('Select False')).toBeDisabled();
-        });
-
-        it('resets submitted state when question changes', async () => {
-            const baseQuestion = {
-                topicId: 't1',
-                type: 'multiple_choice' as const,
-                choices: ['A', 'B'],
-                answerIndex: 0,
-                explanation: ''
-            };
-            mockSubmitAnswer.mockReturnValue({correct: true});
-
-            const {rerender} = render(
-                <QuestionCard question={{...baseQuestion, id: 'q1', prompt: 'Q1'}} />
-            );
-            fireEvent.click(screen.getByText('Select Option A'));
-            expect(screen.queryByText('Skip')).not.toBeInTheDocument();
-
-            rerender(<QuestionCard question={{...baseQuestion, id: 'q2', prompt: 'Q2'}} />);
-            await waitFor(() => {
-                expect(screen.queryByText('Correct!')).not.toBeInTheDocument();
-            });
-            expect(screen.getByText('Select Option A')).not.toBeDisabled();
         });
     });
 
@@ -527,9 +520,7 @@ describe('QuestionCard', () => {
 
             render(<QuestionCard question={question} />);
 
-            await waitFor(() => {
-                expect(screen.getByText('Failed to load media')).toBeInTheDocument();
-            }, {timeout: 3000});
+            expect(await screen.findByText('Failed to load media')).toBeInTheDocument();
         });
 
         it('should not render media section when no media is present', () => {

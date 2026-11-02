@@ -1,55 +1,151 @@
-import type {Profile, Question, QuestionProgress, SessionState, Subject} from '../types';
+import {v4 as uuidv4} from 'uuid';
+import type {Profile, ProgressMap, QuestionProgress, SessionState, Subject, Topic} from '../types';
 import {sanitizeSubjectProgress, validateSubjects} from '../utils/importValidation';
+import {checkAnswer, randomRequeueInsertIndex} from '../utils/quizLogic';
 import {
-    checkAnswer,
-    generateQueue,
-    getActiveQuestions,
-    randomRequeueInsertIndex
-} from '../utils/quizLogic';
-import type {QuizState} from './useQuizStore';
-
-type SetState = (
-    partial: QuizState | Partial<QuizState> | ((state: QuizState) => QuizState | Partial<QuizState>)
-) => void;
-
-type CreateQuizCoreActionsParams = {
-    set: SetState;
-    get: () => QuizState;
-    createId: () => string;
-    getCurrentProfile: (state: QuizState) => Profile;
-    getCurrentSubject: (state: QuizState) => Subject | undefined;
-    mergeSubjectsIntoList: (existing: Subject[], incoming: Subject[]) => Subject[];
-    rebuildSessionForSubjectIfActive: (
-        profile: Profile,
-        subjectId: string,
-        mergedSubjects: Subject[],
-        subjectProgressSlice: Record<string, Record<string, QuestionProgress>> | undefined
-    ) => SessionState;
-    flattenProgress: (
-        subjectProgress: Record<string, Record<string, QuestionProgress>> | undefined
-    ) => Record<string, QuestionProgress>;
-    extractMediaIdsFromQuestion: (question: Question) => Set<string>;
-    extractMediaIdsFromTopic: (topic: Subject['topics'][number]) => Set<string>;
-    extractMediaIdsFromSubject: (subject: Subject) => Set<string>;
-    cleanupOrphanedMedia: (mediaToCheck: Set<string>, getState: () => QuizState) => void;
-    reconcileProfileStateForSubjects: (profile: Profile, subjects: Subject[]) => Pick<Profile, 'progress' | 'session'>;
-};
-
-export function createQuizCoreActions({
-    set,
-    get,
-    createId,
+    cleanupOrphanedMedia,
+    endSession,
     getCurrentProfile,
     getCurrentSubject,
+    mediaIdsIn,
+    mergeSubjectProgress,
     mergeSubjectsIntoList,
+    questionsIn,
     rebuildSessionForSubjectIfActive,
-    flattenProgress,
-    extractMediaIdsFromQuestion,
-    extractMediaIdsFromTopic,
-    extractMediaIdsFromSubject,
-    cleanupOrphanedMedia,
-    reconcileProfileStateForSubjects
-}: CreateQuizCoreActionsParams): Pick<
+    reconcileProfileStateForSubjects,
+    withFreshQueue,
+    type SetQuizState
+} from './quizStoreHelpers';
+import type {QuizState} from './useQuizStore';
+
+/** The state change that applies `changes` to the active profile. */
+function updateActiveProfile(state: QuizState, changes: Partial<Profile>): Partial<QuizState> {
+    return {
+        profiles: {
+            ...state.profiles,
+            [state.activeProfileId]: {...getCurrentProfile(state), ...changes}
+        }
+    };
+}
+
+/**
+ * The profile changes for new subjects or progress. When the changed subject is the one being
+ * studied, its queue is rebuilt to match.
+ */
+function withSubjectChanges(
+    profile: Profile,
+    subjectId: string,
+    {subjects = profile.subjects, progress = profile.progress}: Partial<Pick<Profile, 'subjects' | 'progress'>>
+): Pick<Profile, 'subjects' | 'progress' | 'session'> {
+    return {
+        subjects,
+        progress,
+        session: rebuildSessionForSubjectIfActive(profile, subjectId, subjects, progress[subjectId])
+    };
+}
+
+function updateSubject(subjects: Subject[], subjectId: string, update: (subject: Subject) => Subject): Subject[] {
+    return subjects.map((subject) => (subject.id === subjectId ? update(subject) : subject));
+}
+
+function updateTopic(
+    subjects: Subject[],
+    subjectId: string,
+    topicId: string,
+    update: (topic: Topic) => Topic
+): Subject[] {
+    return updateSubject(subjects, subjectId, (subject) => ({
+        ...subject,
+        topics: subject.topics.map((topic) => (topic.id === topicId ? update(topic) : topic))
+    }));
+}
+
+function findTopic(profile: Profile, subjectId: string, topicId: string): Topic | undefined {
+    return profile.subjects.find((s) => s.id === subjectId)?.topics.find((t) => t.id === topicId);
+}
+
+function findQuestion(subject: Subject, questionId: string) {
+    for (const topic of subject.topics) {
+        const question = topic.questions.find((q) => q.id === questionId);
+        if (question) return {question, topicId: topic.id};
+    }
+    return undefined;
+}
+
+/** A copy of `record` without `key`. */
+function omitKey<T>(record: Record<string, T>, key: string): Record<string, T> {
+    const copy = {...record};
+    delete copy[key];
+    return copy;
+}
+
+/** A copy of `record` with `key` set to `value`, or removed when `value` has no entries. */
+function setOrOmit<T extends object>(record: Record<string, T>, key: string, value: T): Record<string, T> {
+    return Object.keys(value).length > 0 ? {...record, [key]: value} : omitKey(record, key);
+}
+
+/** The progress map after one attempt at a question. */
+function recordAttempt(
+    progress: ProgressMap,
+    subjectId: string,
+    topicId: string,
+    questionId: string,
+    correct: boolean
+): ProgressMap {
+    const subjectProgress = progress[subjectId] ?? {};
+    const topicProgress = subjectProgress[topicId] ?? {};
+    const previous: QuestionProgress = topicProgress[questionId] ?? {
+        id: questionId,
+        correctStreak: 0,
+        attempts: 0,
+        mastered: false
+    };
+    return {
+        ...progress,
+        [subjectId]: {
+            ...subjectProgress,
+            [topicId]: {
+                ...topicProgress,
+                [questionId]: {
+                    ...previous,
+                    attempts: previous.attempts + 1,
+                    correctStreak: correct ? previous.correctStreak + 1 : 0,
+                    mastered: correct
+                }
+            }
+        }
+    };
+}
+
+/** The queue with the question put back in, a random number of places ahead within the configured gap. */
+function requeue(queue: string[], questionId: string, settings: QuizState['settings']): string[] {
+    const index = randomRequeueInsertIndex(queue.length, settings.quizRequeueGapMin, settings.quizRequeueGapMax);
+    return [...queue.slice(0, index), questionId, ...queue.slice(index)];
+}
+
+/** The session moved on to the first question in `queue`. */
+function advance(session: SessionState, queue: string[]): SessionState {
+    const [currentQuestionId = null, ...rest] = queue;
+    return {...session, queue: rest, currentQuestionId, turnCounter: session.turnCounter + 1};
+}
+
+/**
+ * The state change that applies `changes` to the session, then refills the queue when a
+ * subject is being studied.
+ */
+function updateSession(state: QuizState, changes: Partial<SessionState>): Partial<QuizState> {
+    const profile = getCurrentProfile(state);
+    const session = {...profile.session, ...changes};
+    const subject = profile.subjects.find((s) => s.id === session.subjectId);
+    return updateActiveProfile(state, {
+        session: subject ? withFreshQueue(session, subject, profile.progress[subject.id]) : session
+    });
+}
+
+export function createQuizCoreActions(
+    set: SetQuizState,
+    get: () => QuizState
+): Pick<
     QuizState,
     | 'setSubjects'
     | 'importSubjects'
@@ -76,927 +172,314 @@ export function createQuizCoreActions({
     | 'skipQuestion'
     | 'resetSubjectProgress'
 > {
-    const collectProfileMediaIds = (state: QuizState): Set<string> => {
-        const ids = new Set<string>();
-        const profile = getCurrentProfile(state);
-        if (!profile) return ids;
-        for (const subject of profile.subjects) {
-            for (const id of extractMediaIdsFromSubject(subject)) {
-                ids.add(id);
-            }
-        }
-        return ids;
-    };
+    const activeProfileMediaIds = () => mediaIdsIn(questionsIn(getCurrentProfile(get()).subjects));
 
     return {
-        setSubjects: (subjects) => set((state) => {
-            const profile = getCurrentProfile(state);
-            const reconciled = reconcileProfileStateForSubjects(profile, subjects);
-            return {
-                profiles: {
-                    ...state.profiles,
-                    [state.activeProfileId]: {
-                        ...profile,
-                        subjects,
-                        progress: reconciled.progress,
-                        session: reconciled.session
-                    }
-                }
-            };
-        }),
+        setSubjects: (subjects) =>
+            set((state) =>
+                updateActiveProfile(state, {
+                    subjects,
+                    ...reconcileProfileStateForSubjects(getCurrentProfile(state), subjects)
+                })
+            ),
 
         importSubjects: (newSubjects) => {
-            const mediaBefore = collectProfileMediaIds(get());
+            const mediaBefore = activeProfileMediaIds();
             set((state) => {
                 const profile = getCurrentProfile(state);
-                const mergedSubjects = mergeSubjectsIntoList(profile.subjects, newSubjects);
-                const reconciled = reconcileProfileStateForSubjects(profile, mergedSubjects);
-
-                return {
-                    profiles: {
-                        ...state.profiles,
-                        [state.activeProfileId]: {
-                            ...profile,
-                            subjects: mergedSubjects,
-                            progress: reconciled.progress,
-                            session: reconciled.session
-                        }
-                    }
-                };
+                const subjects = mergeSubjectsIntoList(profile.subjects, newSubjects);
+                return updateActiveProfile(state, {
+                    subjects,
+                    ...reconcileProfileStateForSubjects(profile, subjects)
+                });
             });
             cleanupOrphanedMedia(mediaBefore, get);
         },
 
         importSubjectExport: (bundle) => {
-            const validated = validateSubjects([bundle.subject]);
-            const mediaBefore = collectProfileMediaIds(get());
+            const [subject] = validateSubjects([bundle.subject]);
+            const mediaBefore = activeProfileMediaIds();
             set((state) => {
                 const profile = getCurrentProfile(state);
-                const mergedSubjects = mergeSubjectsIntoList(profile.subjects, validated);
-                const sid = validated[0].id;
-                const prevSlice = profile.progress[sid] || {};
-                const mergedSlice: Record<string, Record<string, QuestionProgress>> = {...prevSlice};
-                const validProgress = sanitizeSubjectProgress(bundle.progress, validated[0]);
-                for (const [topicId, qMap] of Object.entries(validProgress)) {
-                    mergedSlice[topicId] = {...(mergedSlice[topicId] || {}), ...qMap};
-                }
-                const newProgress: Profile['progress'] = {...profile.progress};
-                if (Object.keys(mergedSlice).length > 0) {
-                    newProgress[sid] = mergedSlice;
-                }
-                const newSession = rebuildSessionForSubjectIfActive(profile, sid, mergedSubjects, newProgress[sid]);
-
-                return {
-                    profiles: {
-                        ...state.profiles,
-                        [state.activeProfileId]: {
-                            ...profile,
-                            subjects: mergedSubjects,
-                            progress: newProgress,
-                            session: newSession
-                        }
-                    }
-                };
+                const subjectProgress = mergeSubjectProgress(
+                    profile.progress[subject.id] ?? {},
+                    sanitizeSubjectProgress(bundle.progress, subject)
+                );
+                return updateActiveProfile(
+                    state,
+                    withSubjectChanges(profile, subject.id, {
+                        subjects: mergeSubjectsIntoList(profile.subjects, [subject]),
+                        progress: setOrOmit(profile.progress, subject.id, subjectProgress)
+                    })
+                );
             });
             cleanupOrphanedMedia(mediaBefore, get);
         },
 
-        resetTopicProgress: (subjectId, topicId) => {
+        resetTopicProgress: (subjectId, topicId) =>
             set((state) => {
                 const profile = getCurrentProfile(state);
-                const subjSlice = {...(profile.progress[subjectId] || {})};
-                delete subjSlice[topicId];
-                const newProgress = {...profile.progress};
-                if (Object.keys(subjSlice).length === 0) {
-                    delete newProgress[subjectId];
-                } else {
-                    newProgress[subjectId] = subjSlice;
-                }
-                const mergedSubjects = profile.subjects;
-                const sliceForSession = newProgress[subjectId];
-                const newSession = rebuildSessionForSubjectIfActive(
-                    profile,
-                    subjectId,
-                    mergedSubjects,
-                    sliceForSession
+                const subjectProgress = omitKey(profile.progress[subjectId] ?? {}, topicId);
+                return updateActiveProfile(
+                    state,
+                    withSubjectChanges(profile, subjectId, {
+                        progress: setOrOmit(profile.progress, subjectId, subjectProgress)
+                    })
                 );
+            }),
 
-                return {
-                    profiles: {
-                        ...state.profiles,
-                        [state.activeProfileId]: {
-                            ...profile,
-                            progress: newProgress,
-                            session: newSession
-                        }
-                    }
-                };
-            });
-        },
-
-        markTopicMastered: (subjectId, topicId) => {
+        markTopicMastered: (subjectId, topicId) =>
             set((state) => {
                 const profile = getCurrentProfile(state);
-                const subject = profile.subjects.find(s => s.id === subjectId);
-                if (!subject) return state;
-                const topic = subject.topics.find(t => t.id === topicId);
+                const topic = findTopic(profile, subjectId, topicId);
                 if (!topic) return state;
 
-                const subjSlice = {...(profile.progress[subjectId] || {})};
-                const topicSlice = {...(subjSlice[topicId] || {})};
-                for (const q of topic.questions) {
-                    topicSlice[q.id] = {
-                        id: q.id,
-                        attempts: 1,
-                        correctStreak: 1,
-                        mastered: true
-                    };
+                const topicProgress = {...profile.progress[subjectId]?.[topicId]};
+                for (const question of topic.questions) {
+                    topicProgress[question.id] = {id: question.id, attempts: 1, correctStreak: 1, mastered: true};
                 }
-                subjSlice[topicId] = topicSlice;
-                const newProgress = {...profile.progress, [subjectId]: subjSlice};
-                const newSession = rebuildSessionForSubjectIfActive(
-                    profile,
-                    subjectId,
-                    profile.subjects,
-                    subjSlice
-                );
-
-                return {
-                    profiles: {
-                        ...state.profiles,
-                        [state.activeProfileId]: {
-                            ...profile,
-                            progress: newProgress,
-                            session: newSession
+                return updateActiveProfile(
+                    state,
+                    withSubjectChanges(profile, subjectId, {
+                        progress: {
+                            ...profile.progress,
+                            [subjectId]: {...profile.progress[subjectId], [topicId]: topicProgress}
                         }
-                    }
-                };
-            });
-        },
+                    })
+                );
+            }),
 
         deleteSubject: (subjectId) => {
-            const state = get();
-            const profile = getCurrentProfile(state);
-            const subjectToDelete = profile.subjects.find(s => s.id === subjectId);
-            const mediaToCheck = subjectToDelete ? extractMediaIdsFromSubject(subjectToDelete) : new Set<string>();
+            const mediaToCheck = mediaIdsIn(
+                questionsIn(getCurrentProfile(get()).subjects.filter((s) => s.id === subjectId))
+            );
 
             set((state) => {
-                const currentProfile = getCurrentProfile(state);
-                const newSubjects = currentProfile.subjects.filter(s => s.id !== subjectId);
-                const newProgress = {...currentProfile.progress};
-                delete newProgress[subjectId];
-
-                let newSession = currentProfile.session;
-                if (currentProfile.session.subjectId === subjectId) {
-                    newSession = {
-                        ...currentProfile.session,
-                        subjectId: null,
-                        selectedTopicIds: [],
-                        queue: [],
-                        currentQuestionId: null
-                    };
-                }
-
-                return {
-                    profiles: {
-                        ...state.profiles,
-                        [state.activeProfileId]: {
-                            ...currentProfile,
-                            subjects: newSubjects,
-                            progress: newProgress,
-                            session: newSession
-                        }
-                    }
-                };
+                const profile = getCurrentProfile(state);
+                return updateActiveProfile(state, {
+                    subjects: profile.subjects.filter((s) => s.id !== subjectId),
+                    progress: omitKey(profile.progress, subjectId),
+                    session: profile.session.subjectId === subjectId ? endSession(profile.session) : profile.session
+                });
             });
-
             cleanupOrphanedMedia(mediaToCheck, get);
         },
 
         createSubject: (name) => {
-            const subjectId = createId();
-            const topicId = createId();
-            const trimmed = name.trim();
             const subject: Subject = {
-                id: subjectId,
-                name: trimmed || 'New subject',
-                topics: [{id: topicId, name: 'Topic 1', questions: []}]
+                id: uuidv4(),
+                name: name.trim() || 'New subject',
+                topics: [{id: uuidv4(), name: 'Topic 1', questions: []}]
             };
-            set((state) => {
-                const profile = getCurrentProfile(state);
-                return {
-                    profiles: {
-                        ...state.profiles,
-                        [state.activeProfileId]: {
-                            ...profile,
-                            subjects: [...profile.subjects, subject]
-                        }
-                    }
-                };
-            });
-            return subjectId;
+            set((state) => updateActiveProfile(state, {subjects: [...getCurrentProfile(state).subjects, subject]}));
+            return subject.id;
         },
 
         renameSubject: (subjectId, name) => {
             const trimmed = name.trim();
             if (!trimmed) return;
-            set((state) => {
-                const profile = getCurrentProfile(state);
-                const subjects = profile.subjects.map(s =>
-                    s.id === subjectId ? {...s, name: trimmed} : s
-                );
-                return {
-                    profiles: {
-                        ...state.profiles,
-                        [state.activeProfileId]: {
-                            ...profile,
-                            subjects
-                        }
-                    }
-                };
-            });
+            set((state) =>
+                updateActiveProfile(state, {
+                    subjects: updateSubject(getCurrentProfile(state).subjects, subjectId, (subject) => ({
+                        ...subject,
+                        name: trimmed
+                    }))
+                })
+            );
         },
 
         addTopic: (subjectId, name) => {
-            const topicId = createId();
-            const trimmed = name.trim() || 'New topic';
+            const topic: Topic = {id: uuidv4(), name: name.trim() || 'New topic', questions: []};
             set((state) => {
                 const profile = getCurrentProfile(state);
-                const subjects = profile.subjects.map(s => {
-                    if (s.id !== subjectId) return s;
-                    return {...s, topics: [...s.topics, {id: topicId, name: trimmed, questions: []}]};
-                });
-                const newSession = rebuildSessionForSubjectIfActive(
-                    profile,
-                    subjectId,
-                    subjects,
-                    profile.progress[subjectId]
-                );
-                return {
-                    profiles: {
-                        ...state.profiles,
-                        [state.activeProfileId]: {
-                            ...profile,
-                            subjects,
-                            session: newSession
-                        }
-                    }
-                };
+                const subjects = updateSubject(profile.subjects, subjectId, (subject) => ({
+                    ...subject,
+                    topics: [...subject.topics, topic]
+                }));
+                return updateActiveProfile(state, withSubjectChanges(profile, subjectId, {subjects}));
             });
-            return topicId;
+            return topic.id;
         },
 
         renameTopic: (subjectId, topicId, name) => {
             const trimmed = name.trim();
             if (!trimmed) return;
-            set((state) => {
-                const profile = getCurrentProfile(state);
-                const subjects = profile.subjects.map(s => {
-                    if (s.id !== subjectId) return s;
-                    return {
-                        ...s,
-                        topics: s.topics.map(t => (t.id === topicId ? {...t, name: trimmed} : t))
-                    };
-                });
-                return {
-                    profiles: {
-                        ...state.profiles,
-                        [state.activeProfileId]: {
-                            ...profile,
-                            subjects
-                        }
-                    }
-                };
-            });
+            set((state) =>
+                updateActiveProfile(state, {
+                    subjects: updateTopic(getCurrentProfile(state).subjects, subjectId, topicId, (topic) => ({
+                        ...topic,
+                        name: trimmed
+                    }))
+                })
+            );
         },
 
         deleteTopic: (subjectId, topicId) => {
-            const stateBefore = get();
-            const profileBefore = getCurrentProfile(stateBefore);
-            const subjectBefore = profileBefore.subjects.find(s => s.id === subjectId);
-            const topicBefore = subjectBefore?.topics.find(t => t.id === topicId);
-            const mediaToCheck = topicBefore ? extractMediaIdsFromTopic(topicBefore) : new Set<string>();
+            const mediaToCheck = mediaIdsIn(findTopic(getCurrentProfile(get()), subjectId, topicId)?.questions ?? []);
 
             set((state) => {
                 const profile = getCurrentProfile(state);
-                const subject = profile.subjects.find(s => s.id === subjectId);
-                if (!subject) return state;
+                if (!profile.subjects.some((s) => s.id === subjectId)) return state;
 
-                const newTopics = subject.topics.filter(t => t.id !== topicId);
-                const subjects = profile.subjects.map(s =>
-                    s.id === subjectId ? {...s, topics: newTopics} : s
+                const subjects = updateSubject(profile.subjects, subjectId, (subject) => ({
+                    ...subject,
+                    topics: subject.topics.filter((t) => t.id !== topicId)
+                }));
+                const subjectProgress = omitKey(profile.progress[subjectId] ?? {}, topicId);
+                const selectedTopicIds = profile.session.selectedTopicIds.filter((id) => id !== topicId);
+                return updateActiveProfile(
+                    state,
+                    withSubjectChanges({...profile, session: {...profile.session, selectedTopicIds}}, subjectId, {
+                        subjects,
+                        progress: setOrOmit(profile.progress, subjectId, subjectProgress)
+                    })
                 );
-
-                const subjSlice = {...(profile.progress[subjectId] || {})};
-                delete subjSlice[topicId];
-                const newProgress = {...profile.progress};
-                if (Object.keys(subjSlice).length === 0) {
-                    delete newProgress[subjectId];
-                } else {
-                    newProgress[subjectId] = subjSlice;
-                }
-
-                const selectedTopicIds = profile.session.selectedTopicIds.filter(id => id !== topicId);
-                const sessionBase = {...profile.session, selectedTopicIds};
-                const profileWithSession = {...profile, session: sessionBase};
-                const sliceForSession = newProgress[subjectId];
-                const newSession = rebuildSessionForSubjectIfActive(
-                    profileWithSession,
-                    subjectId,
-                    subjects,
-                    sliceForSession
-                );
-
-                return {
-                    profiles: {
-                        ...state.profiles,
-                        [state.activeProfileId]: {
-                            ...profile,
-                            subjects,
-                            progress: newProgress,
-                            session: newSession
-                        }
-                    }
-                };
             });
-
             cleanupOrphanedMedia(mediaToCheck, get);
         },
 
-        addQuestion: (subjectId, topicId, question) => {
+        addQuestion: (subjectId, topicId, question) =>
             set((state) => {
                 const profile = getCurrentProfile(state);
-                const subjects = profile.subjects.map(s => {
-                    if (s.id !== subjectId) return s;
-                    return {
-                        ...s,
-                        topics: s.topics.map(t =>
-                            t.id === topicId ? {...t, questions: [...t.questions, question]} : t
-                        )
-                    };
-                });
-                const newSession = rebuildSessionForSubjectIfActive(
-                    profile,
-                    subjectId,
-                    subjects,
-                    profile.progress[subjectId]
-                );
-                return {
-                    profiles: {
-                        ...state.profiles,
-                        [state.activeProfileId]: {
-                            ...profile,
-                            subjects,
-                            session: newSession
-                        }
-                    }
-                };
-            });
-        },
+                const subjects = updateTopic(profile.subjects, subjectId, topicId, (topic) => ({
+                    ...topic,
+                    questions: [...topic.questions, question]
+                }));
+                return updateActiveProfile(state, withSubjectChanges(profile, subjectId, {subjects}));
+            }),
 
         updateQuestion: (subjectId, topicId, question) => {
-            const stateBefore = get();
-            const profileBefore = getCurrentProfile(stateBefore);
-            const topicBefore = profileBefore.subjects
-                .find(s => s.id === subjectId)
-                ?.topics.find(t => t.id === topicId);
-            const oldQ = topicBefore?.questions.find(q => q.id === question.id);
-            const mediaToCheck = new Set<string>();
-            if (oldQ) {
-                extractMediaIdsFromQuestion(oldQ).forEach(id => mediaToCheck.add(id));
-            }
+            const previous = findTopic(getCurrentProfile(get()), subjectId, topicId)?.questions.find(
+                (q) => q.id === question.id
+            );
+            const mediaToCheck = mediaIdsIn(previous ? [previous] : []);
 
             set((state) => {
                 const profile = getCurrentProfile(state);
-                const subjects = profile.subjects.map(s => {
-                    if (s.id !== subjectId) return s;
-                    return {
-                        ...s,
-                        topics: s.topics.map(t => {
-                            if (t.id !== topicId) return t;
-                            return {
-                                ...t,
-                                questions: t.questions.map(q => (q.id === question.id ? question : q))
-                            };
-                        })
-                    };
-                });
-                const newSession = rebuildSessionForSubjectIfActive(
-                    profile,
-                    subjectId,
-                    subjects,
-                    profile.progress[subjectId]
-                );
-                return {
-                    profiles: {
-                        ...state.profiles,
-                        [state.activeProfileId]: {
-                            ...profile,
-                            subjects,
-                            session: newSession
-                        }
-                    }
-                };
+                const subjects = updateTopic(profile.subjects, subjectId, topicId, (topic) => ({
+                    ...topic,
+                    questions: topic.questions.map((q) => (q.id === question.id ? question : q))
+                }));
+                return updateActiveProfile(state, withSubjectChanges(profile, subjectId, {subjects}));
             });
-
             cleanupOrphanedMedia(mediaToCheck, get);
         },
 
         deleteQuestion: (subjectId, topicId, questionId) => {
-            const stateBefore = get();
-            const profileBefore = getCurrentProfile(stateBefore);
-            const qBefore = profileBefore.subjects
-                .find(s => s.id === subjectId)
-                ?.topics.find(t => t.id === topicId)
-                ?.questions.find(q => q.id === questionId);
-            const mediaToCheck = qBefore ? extractMediaIdsFromQuestion(qBefore) : new Set<string>();
+            const question = findTopic(getCurrentProfile(get()), subjectId, topicId)?.questions.find(
+                (q) => q.id === questionId
+            );
+            const mediaToCheck = mediaIdsIn(question ? [question] : []);
 
             set((state) => {
                 const profile = getCurrentProfile(state);
-                const subjects = profile.subjects.map(s => {
-                    if (s.id !== subjectId) return s;
-                    return {
-                        ...s,
-                        topics: s.topics.map(t => {
-                            if (t.id !== topicId) return t;
-                            return {...t, questions: t.questions.filter(q => q.id !== questionId)};
-                        })
-                    };
-                });
-
-                const subjSlice = {...(profile.progress[subjectId] || {})};
-                const topicSlice = {...(subjSlice[topicId] || {})};
-                delete topicSlice[questionId];
-                const newSubjSlice = {...subjSlice};
-                if (Object.keys(topicSlice).length === 0) {
-                    delete newSubjSlice[topicId];
-                } else {
-                    newSubjSlice[topicId] = topicSlice;
-                }
-                const newProgress = {...profile.progress};
-                if (Object.keys(newSubjSlice).length === 0) {
-                    delete newProgress[subjectId];
-                } else {
-                    newProgress[subjectId] = newSubjSlice;
-                }
-
-                const sliceForSession = newProgress[subjectId];
-                const newSession = rebuildSessionForSubjectIfActive(
-                    profile,
+                const subjects = updateTopic(profile.subjects, subjectId, topicId, (topic) => ({
+                    ...topic,
+                    questions: topic.questions.filter((q) => q.id !== questionId)
+                }));
+                const subjectProgress = profile.progress[subjectId] ?? {};
+                const topicProgress = omitKey(subjectProgress[topicId] ?? {}, questionId);
+                const progress = setOrOmit(
+                    profile.progress,
                     subjectId,
-                    subjects,
-                    sliceForSession
+                    setOrOmit(subjectProgress, topicId, topicProgress)
                 );
-
-                return {
-                    profiles: {
-                        ...state.profiles,
-                        [state.activeProfileId]: {
-                            ...profile,
-                            subjects,
-                            progress: newProgress,
-                            session: newSession
-                        }
-                    }
-                };
+                return updateActiveProfile(state, withSubjectChanges(profile, subjectId, {subjects, progress}));
             });
-
             cleanupOrphanedMedia(mediaToCheck, get);
         },
 
-        startSession: (subjectId) => {
+        startSession: (subjectId) =>
+            set((state) =>
+                getCurrentProfile(state).subjects.some((s) => s.id === subjectId)
+                    ? updateSession(state, {subjectId, selectedTopicIds: []})
+                    : state
+            ),
+
+        toggleTopic: (topicId) =>
             set((state) => {
-                const profile = getCurrentProfile(state);
-                const subject = profile.subjects.find(s => s.id === subjectId);
-                if (!subject) return state;
-
-                const newSession: SessionState = {
-                    ...profile.session,
-                    subjectId,
-                    selectedTopicIds: [],
-                    queue: [],
-                    currentQuestionId: null
-                };
-
-                const questions = getActiveQuestions(subject, []);
-                const queue = generateQueue(
-                    questions,
-                    flattenProgress(profile.progress[subjectId]),
-                    newSession.mode,
-                    newSession.includeMastered
-                );
-
-                newSession.queue = queue.slice(1);
-                newSession.currentQuestionId = queue[0] || null;
-
-                return {
-                    profiles: {
-                        ...state.profiles,
-                        [state.activeProfileId]: {
-                            ...profile,
-                            session: newSession
-                        }
-                    }
-                };
-            });
-        },
-
-        toggleTopic: (topicId) => {
-            set((state) => {
-                const profile = getCurrentProfile(state);
                 const subject = getCurrentSubject(state);
                 if (!subject) return state;
 
-                const currentSelected = profile.session.selectedTopicIds;
-                let newSelected = currentSelected.includes(topicId)
-                    ? currentSelected.filter(id => id !== topicId)
-                    : [...currentSelected, topicId];
+                const selected = getCurrentProfile(state).session.selectedTopicIds;
+                const selectedTopicIds = selected.includes(topicId)
+                    ? selected.filter((id) => id !== topicId)
+                    : [...selected, topicId];
+                // An empty selection means every topic
+                return updateSession(state, {
+                    selectedTopicIds: selectedTopicIds.length === subject.topics.length ? [] : selectedTopicIds
+                });
+            }),
 
-                if (newSelected.length === subject.topics.length) {
-                    newSelected = [];
-                }
+        selectAllTopics: () =>
+            set((state) => (getCurrentSubject(state) ? updateSession(state, {selectedTopicIds: []}) : state)),
 
-                const questions = getActiveQuestions(subject, newSelected);
-                const queue = generateQueue(
-                    questions,
-                    flattenProgress(profile.progress[subject.id]),
-                    profile.session.mode,
-                    profile.session.includeMastered
-                );
+        setMode: (mode) => set((state) => updateSession(state, {mode})),
 
-                return {
-                    profiles: {
-                        ...state.profiles,
-                        [state.activeProfileId]: {
-                            ...profile,
-                            session: {
-                                ...profile.session,
-                                selectedTopicIds: newSelected,
-                                queue: queue.slice(1),
-                                currentQuestionId: queue[0] || null
-                            }
-                        }
-                    }
-                };
-            });
-        },
+        setIncludeMastered: (include) => set((state) => updateSession(state, {includeMastered: include})),
 
-        selectAllTopics: () => {
-            set((state) => {
-                const profile = getCurrentProfile(state);
-                const subject = getCurrentSubject(state);
-                if (!subject) return state;
-
-                const questions = getActiveQuestions(subject, []);
-                const queue = generateQueue(
-                    questions,
-                    flattenProgress(profile.progress[subject.id]),
-                    profile.session.mode,
-                    profile.session.includeMastered
-                );
-
-                return {
-                    profiles: {
-                        ...state.profiles,
-                        [state.activeProfileId]: {
-                            ...profile,
-                            session: {
-                                ...profile.session,
-                                selectedTopicIds: [],
-                                queue: queue.slice(1),
-                                currentQuestionId: queue[0] || null
-                            }
-                        }
-                    }
-                };
-            });
-        },
-
-        setMode: (mode) => {
-            set((state) => {
-                const profile = getCurrentProfile(state);
-                const subject = getCurrentSubject(state);
-
-                if (!subject) {
-                    return {
-                        profiles: {
-                            ...state.profiles,
-                            [state.activeProfileId]: {
-                                ...profile,
-                                session: {...profile.session, mode}
-                            }
-                        }
-                    };
-                }
-
-                const questions = getActiveQuestions(subject, profile.session.selectedTopicIds);
-                const queue = generateQueue(
-                    questions,
-                    flattenProgress(profile.progress[subject.id]),
-                    mode,
-                    profile.session.includeMastered
-                );
-
-                return {
-                    profiles: {
-                        ...state.profiles,
-                        [state.activeProfileId]: {
-                            ...profile,
-                            session: {
-                                ...profile.session,
-                                mode,
-                                queue: queue.slice(1),
-                                currentQuestionId: queue[0] || null
-                            }
-                        }
-                    }
-                };
-            });
-        },
-
-        setIncludeMastered: (include) => {
-            set((state) => {
-                const profile = getCurrentProfile(state);
-                const subject = getCurrentSubject(state);
-
-                if (!subject) {
-                    return {
-                        profiles: {
-                            ...state.profiles,
-                            [state.activeProfileId]: {
-                                ...profile,
-                                session: {...profile.session, includeMastered: include}
-                            }
-                        }
-                    };
-                }
-
-                const questions = getActiveQuestions(subject, profile.session.selectedTopicIds);
-                const queue = generateQueue(
-                    questions,
-                    flattenProgress(profile.progress[subject.id]),
-                    profile.session.mode,
-                    include
-                );
-
-                return {
-                    profiles: {
-                        ...state.profiles,
-                        [state.activeProfileId]: {
-                            ...profile,
-                            session: {
-                                ...profile.session,
-                                includeMastered: include,
-                                queue: queue.slice(1),
-                                currentQuestionId: queue[0] || null
-                            }
-                        }
-                    }
-                };
-            });
-        },
-
-        restartQueue: () => {
-            set((state) => {
-                const profile = getCurrentProfile(state);
-                const subject = getCurrentSubject(state);
-                if (!subject) return state;
-
-                const questions = getActiveQuestions(subject, profile.session.selectedTopicIds);
-                const queue = generateQueue(
-                    questions,
-                    flattenProgress(profile.progress[subject.id]),
-                    profile.session.mode,
-                    profile.session.includeMastered
-                );
-
-                return {
-                    profiles: {
-                        ...state.profiles,
-                        [state.activeProfileId]: {
-                            ...profile,
-                            session: {
-                                ...profile.session,
-                                queue: queue.slice(1),
-                                currentQuestionId: queue[0] || null
-                            }
-                        }
-                    }
-                };
-            });
-        },
+        restartQueue: () => set((state) => (getCurrentSubject(state) ? updateSession(state, {}) : state)),
 
         submitAnswer: (answer) => {
-            const state = get();
-            const profile = getCurrentProfile(state);
-            const subject = getCurrentSubject(state);
-            const {currentQuestionId} = profile.session;
+            const stateBefore = get();
+            const subject = getCurrentSubject(stateBefore);
+            const questionId = getCurrentProfile(stateBefore).session.currentQuestionId;
+            if (!subject || !questionId) return {correct: false};
+            const found = findQuestion(subject, questionId);
+            if (!found) return {correct: false};
 
-            if (!subject || !currentQuestionId) return {correct: false};
-
-            let question = null;
-            let topicId = null;
-            for (const topic of subject.topics) {
-                const q = topic.questions.find(q => q.id === currentQuestionId);
-                if (q) {
-                    question = q;
-                    topicId = topic.id;
-                    break;
-                }
-            }
-
-            if (!question || !topicId) return {correct: false};
-
-            const isCorrect = checkAnswer(question, answer);
-
-            set((state) => {
-                const currentProfile = state.profiles[state.activeProfileId];
-                const subjectProgress = currentProfile.progress[subject.id] || {};
-                const topicProgress = subjectProgress[topicId!] || {};
-                const currentQProgress = topicProgress[currentQuestionId] || {
-                    id: currentQuestionId,
-                    correctStreak: 0,
-                    attempts: 0,
-                    mastered: false
-                };
-
-                const newQProgress: QuestionProgress = {
-                    ...currentQProgress,
-                    attempts: currentQProgress.attempts + 1,
-                    correctStreak: isCorrect ? currentQProgress.correctStreak + 1 : 0,
-                    mastered: isCorrect
-                };
-
-                const newProgress = {
-                    ...currentProfile.progress,
-                    [subject.id]: {
-                        ...subjectProgress,
-                        [topicId!]: {
-                            ...topicProgress,
-                            [currentQuestionId]: newQProgress
-                        }
-                    }
-                };
-
-                const newQueue = [...currentProfile.session.queue];
-                const quizSettings = state.settings;
-                if (!isCorrect && quizSettings.quizRequeueOnIncorrect) {
-                    const insertIndex = randomRequeueInsertIndex(
-                        newQueue.length,
-                        quizSettings.quizRequeueGapMin,
-                        quizSettings.quizRequeueGapMax
-                    );
-                    newQueue.splice(insertIndex, 0, currentQuestionId);
-                }
-
-                return {
-                    profiles: {
-                        ...state.profiles,
-                        [state.activeProfileId]: {
-                            ...currentProfile,
-                            progress: newProgress,
-                            session: {
-                                ...currentProfile.session,
-                                queue: newQueue
-                            }
-                        }
-                    }
-                };
-            });
-
-            return {correct: isCorrect, explanation: question.explanation};
-        },
-
-        nextQuestion: () => {
+            const correct = checkAnswer(found.question, answer);
             set((state) => {
                 const profile = getCurrentProfile(state);
-                const newQueue = [...profile.session.queue];
-                const nextQuestionId = newQueue.shift() || null;
-
-                return {
-                    profiles: {
-                        ...state.profiles,
-                        [state.activeProfileId]: {
-                            ...profile,
-                            session: {
-                                ...profile.session,
-                                queue: newQueue,
-                                currentQuestionId: nextQuestionId,
-                                turnCounter: profile.session.turnCounter + 1,
-                            }
-                        }
+                const {queue} = profile.session;
+                return updateActiveProfile(state, {
+                    progress: recordAttempt(profile.progress, subject.id, found.topicId, questionId, correct),
+                    session: {
+                        ...profile.session,
+                        queue:
+                            !correct && state.settings.quizRequeueOnIncorrect
+                                ? requeue(queue, questionId, state.settings)
+                                : queue
                     }
-                };
+                });
             });
+            return {correct, explanation: found.question.explanation};
         },
+
+        nextQuestion: () =>
+            set((state) => {
+                const {session} = getCurrentProfile(state);
+                return updateActiveProfile(state, {session: advance(session, session.queue)});
+            }),
 
         skipQuestion: () => {
-            const state = get();
-            const profile = getCurrentProfile(state);
-            const subject = getCurrentSubject(state);
-            const {currentQuestionId} = profile.session;
-            if (!subject || !currentQuestionId) return;
-
-            let topicId = null;
-            for (const topic of subject.topics) {
-                if (topic.questions.some(q => q.id === currentQuestionId)) {
-                    topicId = topic.id;
-                    break;
-                }
-            }
-            if (!topicId) return;
+            const stateBefore = get();
+            const subject = getCurrentSubject(stateBefore);
+            const questionId = getCurrentProfile(stateBefore).session.currentQuestionId;
+            if (!subject || !questionId) return;
+            const found = findQuestion(subject, questionId);
+            if (!found) return;
 
             set((state) => {
-                const currentProfile = state.profiles[state.activeProfileId];
-                const subjectProgress = currentProfile.progress[subject.id] || {};
-                const topicProgress = subjectProgress[topicId!] || {};
-                const currentQProgress = topicProgress[currentQuestionId] || {
-                    id: currentQuestionId,
-                    correctStreak: 0,
-                    attempts: 0,
-                    mastered: false
-                };
-
-                const newQProgress = {
-                    ...currentQProgress,
-                    attempts: currentQProgress.attempts + 1,
-                    correctStreak: 0,
-                    mastered: false
-                };
-
-                const newProgress = {
-                    ...currentProfile.progress,
-                    [subject.id]: {
-                        ...subjectProgress,
-                        [topicId!]: {
-                            ...topicProgress,
-                            [currentQuestionId]: newQProgress
-                        }
-                    }
-                };
-
-                const newQueue = [...currentProfile.session.queue];
-                const quizSettings = state.settings;
-                if (quizSettings.quizRequeueOnSkip) {
-                    const insertIndex = randomRequeueInsertIndex(
-                        newQueue.length,
-                        quizSettings.quizRequeueGapMin,
-                        quizSettings.quizRequeueGapMax
-                    );
-                    newQueue.splice(insertIndex, 0, currentQuestionId);
-                }
-
-                const nextQuestionId = newQueue.shift() || null;
-
-                return {
-                    profiles: {
-                        ...state.profiles,
-                        [state.activeProfileId]: {
-                            ...currentProfile,
-                            progress: newProgress,
-                            session: {
-                                ...currentProfile.session,
-                                queue: newQueue,
-                                currentQuestionId: nextQuestionId,
-                                turnCounter: currentProfile.session.turnCounter + 1
-                            }
-                        }
-                    }
-                };
+                const profile = getCurrentProfile(state);
+                const {session} = profile;
+                const queue = state.settings.quizRequeueOnSkip
+                    ? requeue(session.queue, questionId, state.settings)
+                    : session.queue;
+                return updateActiveProfile(state, {
+                    progress: recordAttempt(profile.progress, subject.id, found.topicId, questionId, false),
+                    session: advance(session, queue)
+                });
             });
         },
 
-        resetSubjectProgress: (subjectId) => {
+        resetSubjectProgress: (subjectId) =>
             set((state) => {
                 const profile = getCurrentProfile(state);
-                const newProgress = {...profile.progress};
-                delete newProgress[subjectId];
-
-                let newSession = profile.session;
-                if (profile.session.subjectId === subjectId) {
-                    const subject = profile.subjects.find(s => s.id === subjectId);
-                    if (subject) {
-                        const questions = getActiveQuestions(subject, profile.session.selectedTopicIds);
-                        const queue = generateQueue(questions, {}, profile.session.mode, profile.session.includeMastered);
-                        newSession = {
-                            ...profile.session,
-                            queue: queue.slice(1),
-                            currentQuestionId: queue[0] || null
-                        };
-                    }
-                }
-
-                return {
-                    profiles: {
-                        ...state.profiles,
-                        [state.activeProfileId]: {
-                            ...profile,
-                            progress: newProgress,
-                            session: newSession
-                        }
-                    }
-                };
-            });
-        }
+                return updateActiveProfile(
+                    state,
+                    withSubjectChanges(profile, subjectId, {progress: omitKey(profile.progress, subjectId)})
+                );
+            })
     };
 }

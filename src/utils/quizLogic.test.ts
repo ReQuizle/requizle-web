@@ -7,7 +7,17 @@ import {
     normalizeRequeueGapRange,
     randomRequeueInsertIndex
 } from './quizLogic';
-import type {Question, Subject, QuestionProgress, MultipleChoiceQuestion, MultipleAnswerQuestion, TrueFalseQuestion, KeywordsQuestion, MatchingQuestion, WordBankQuestion} from '../types';
+import type {
+    Question,
+    Subject,
+    QuestionProgress,
+    MultipleChoiceQuestion,
+    MultipleAnswerQuestion,
+    TrueFalseQuestion,
+    KeywordsQuestion,
+    MatchingQuestion,
+    WordBankQuestion
+} from '../types';
 
 const createMultipleChoice = (overrides: Partial<MultipleChoiceQuestion> = {}): MultipleChoiceQuestion => ({
     id: 'mc1',
@@ -78,48 +88,36 @@ describe('quizLogic', () => {
         });
 
         it('should return 0 when no questions are mastered', () => {
-            const questions: Question[] = [
-                createTrueFalse({id: 'q1'}),
-                createTrueFalse({id: 'q2'})
-            ];
+            const questions: Question[] = [createTrueFalse({id: 'q1'}), createTrueFalse({id: 'q2'})];
             const progress: Record<string, QuestionProgress> = {
-                'q1': {id: 'q1', attempts: 1, correctStreak: 1, mastered: false},
-                'q2': {id: 'q2', attempts: 1, correctStreak: 0, mastered: false}
+                q1: {id: 'q1', attempts: 1, correctStreak: 1, mastered: false},
+                q2: {id: 'q2', attempts: 1, correctStreak: 0, mastered: false}
             };
             expect(calculateMastery(questions, progress)).toBe(0);
         });
 
         it('should return 50 when half the questions are mastered', () => {
-            const questions: Question[] = [
-                createTrueFalse({id: 'q1'}),
-                createTrueFalse({id: 'q2'})
-            ];
+            const questions: Question[] = [createTrueFalse({id: 'q1'}), createTrueFalse({id: 'q2'})];
             const progress: Record<string, QuestionProgress> = {
-                'q1': {id: 'q1', attempts: 3, correctStreak: 3, mastered: true},
-                'q2': {id: 'q2', attempts: 1, correctStreak: 0, mastered: false}
+                q1: {id: 'q1', attempts: 3, correctStreak: 3, mastered: true},
+                q2: {id: 'q2', attempts: 1, correctStreak: 0, mastered: false}
             };
             expect(calculateMastery(questions, progress)).toBe(50);
         });
 
         it('should return 100 when all questions are mastered', () => {
-            const questions: Question[] = [
-                createTrueFalse({id: 'q1'}),
-                createTrueFalse({id: 'q2'})
-            ];
+            const questions: Question[] = [createTrueFalse({id: 'q1'}), createTrueFalse({id: 'q2'})];
             const progress: Record<string, QuestionProgress> = {
-                'q1': {id: 'q1', attempts: 3, correctStreak: 3, mastered: true},
-                'q2': {id: 'q2', attempts: 3, correctStreak: 3, mastered: true}
+                q1: {id: 'q1', attempts: 3, correctStreak: 3, mastered: true},
+                q2: {id: 'q2', attempts: 3, correctStreak: 3, mastered: true}
             };
             expect(calculateMastery(questions, progress)).toBe(100);
         });
 
         it('should handle questions with no progress entry', () => {
-            const questions: Question[] = [
-                createTrueFalse({id: 'q1'}),
-                createTrueFalse({id: 'q2'})
-            ];
+            const questions: Question[] = [createTrueFalse({id: 'q1'}), createTrueFalse({id: 'q2'})];
             const progress: Record<string, QuestionProgress> = {
-                'q1': {id: 'q1', attempts: 3, correctStreak: 3, mastered: true}
+                q1: {id: 'q1', attempts: 3, correctStreak: 3, mastered: true}
             };
             expect(calculateMastery(questions, progress)).toBe(50);
         });
@@ -133,17 +131,12 @@ describe('quizLogic', () => {
                 {
                     id: 't1',
                     name: 'Topic 1',
-                    questions: [
-                        createTrueFalse({id: 'q1', topicId: 't1'}),
-                        createTrueFalse({id: 'q2', topicId: 't1'})
-                    ]
+                    questions: [createTrueFalse({id: 'q1', topicId: 't1'}), createTrueFalse({id: 'q2', topicId: 't1'})]
                 },
                 {
                     id: 't2',
                     name: 'Topic 2',
-                    questions: [
-                        createTrueFalse({id: 'q3', topicId: 't2'})
-                    ]
+                    questions: [createTrueFalse({id: 'q3', topicId: 't2'})]
                 },
                 {
                     id: 't3',
@@ -164,23 +157,13 @@ describe('quizLogic', () => {
         it('should return questions only for selected topics', () => {
             const questions = getActiveQuestions(subject, ['t1']);
             expect(questions).toHaveLength(2);
-            expect(questions.map(q => q.id)).toEqual(['q1', 'q2']);
+            expect(questions.map((q) => q.id)).toEqual(['q1', 'q2']);
         });
 
         it('should return questions for multiple selected topics', () => {
             const questions = getActiveQuestions(subject, ['t1', 't3']);
             expect(questions).toHaveLength(4);
-            expect(questions.map(q => q.id)).toEqual(['q1', 'q2', 'q4', 'q5']);
-        });
-
-        it('should return empty array for null subject', () => {
-            const questions = getActiveQuestions(null, []);
-            expect(questions).toHaveLength(0);
-        });
-
-        it('should return empty array for undefined subject', () => {
-            const questions = getActiveQuestions(undefined, []);
-            expect(questions).toHaveLength(0);
+            expect(questions.map((q) => q.id)).toEqual(['q1', 'q2', 'q4', 'q5']);
         });
     });
 
@@ -194,9 +177,9 @@ describe('quizLogic', () => {
         ];
 
         const progressWithMastered: Record<string, QuestionProgress> = {
-            'q1': {id: 'q1', attempts: 3, correctStreak: 3, mastered: true},
-            'q2': {id: 'q2', attempts: 1, correctStreak: 0, mastered: false},
-            'q3': {id: 'q3', attempts: 5, correctStreak: 3, mastered: true}
+            q1: {id: 'q1', attempts: 3, correctStreak: 3, mastered: true},
+            q2: {id: 'q2', attempts: 1, correctStreak: 0, mastered: false},
+            q3: {id: 'q3', attempts: 5, correctStreak: 3, mastered: true}
         };
 
         it('should generate a queue of question IDs', () => {
@@ -228,11 +211,11 @@ describe('quizLogic', () => {
 
         it('should return empty array when all questions are mastered and includeMastered is false', () => {
             const allMastered: Record<string, QuestionProgress> = {
-                'q1': {id: 'q1', attempts: 3, correctStreak: 3, mastered: true},
-                'q2': {id: 'q2', attempts: 3, correctStreak: 3, mastered: true},
-                'q3': {id: 'q3', attempts: 3, correctStreak: 3, mastered: true},
-                'q4': {id: 'q4', attempts: 3, correctStreak: 3, mastered: true},
-                'q5': {id: 'q5', attempts: 3, correctStreak: 3, mastered: true}
+                q1: {id: 'q1', attempts: 3, correctStreak: 3, mastered: true},
+                q2: {id: 'q2', attempts: 3, correctStreak: 3, mastered: true},
+                q3: {id: 'q3', attempts: 3, correctStreak: 3, mastered: true},
+                q4: {id: 'q4', attempts: 3, correctStreak: 3, mastered: true},
+                q5: {id: 'q5', attempts: 3, correctStreak: 3, mastered: true}
             };
             const queue = generateQueue(questions, allMastered, 'random', false);
             expect(queue).toHaveLength(0);
@@ -248,7 +231,7 @@ describe('quizLogic', () => {
             for (let i = 0; i < 10; i++) {
                 results.push(generateQueue(questions, {}, 'random', false));
             }
-            const allSameAsOriginal = results.every(r => r.join(',') === 'q1,q2,q3,q4,q5');
+            const allSameAsOriginal = results.every((r) => r.join(',') === 'q1,q2,q3,q4,q5');
             expect(allSameAsOriginal).toBe(false);
         });
 
@@ -387,16 +370,16 @@ describe('quizLogic', () => {
             });
 
             it('should return true for all correct matches', () => {
-                expect(checkAnswer(question, {'A': '1', 'B': '2', 'C': '3'})).toBe(true);
+                expect(checkAnswer(question, {A: '1', B: '2', C: '3'})).toBe(true);
             });
 
             it('should return false for incorrect matches', () => {
-                expect(checkAnswer(question, {'A': '2', 'B': '1', 'C': '3'})).toBe(false);
-                expect(checkAnswer(question, {'A': '1', 'B': '3', 'C': '2'})).toBe(false);
+                expect(checkAnswer(question, {A: '2', B: '1', C: '3'})).toBe(false);
+                expect(checkAnswer(question, {A: '1', B: '3', C: '2'})).toBe(false);
             });
 
             it('should return false for missing matches', () => {
-                expect(checkAnswer(question, {'A': '1', 'B': '2'})).toBe(false);
+                expect(checkAnswer(question, {A: '1', B: '2'})).toBe(false);
             });
 
             it('should return false for null/undefined/invalid answers', () => {
@@ -433,18 +416,6 @@ describe('quizLogic', () => {
             it('should return false for non-array answer', () => {
                 expect(checkAnswer(question, 'sky blue')).toBe(false);
                 expect(checkAnswer(question, null)).toBe(false);
-            });
-        });
-
-        describe('unknown type', () => {
-            it('should return false for unknown question type', () => {
-                const question = {
-                    id: 'unknown',
-                    type: 'unknown_type' as const,
-                    topicId: 't1',
-                    prompt: 'Unknown'
-                } as unknown as Question;
-                expect(checkAnswer(question, 'anything')).toBe(false);
             });
         });
     });

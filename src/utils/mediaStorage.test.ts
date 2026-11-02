@@ -24,7 +24,7 @@ describe('mediaStorage', () => {
 
             const id = await storeMedia(blob, filename);
 
-            expect(id).toMatch(/^media-\d+-[a-z0-9]+$/);
+            expect(id).toMatch(/^media-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
         });
 
         it('should store media with correct metadata', async () => {

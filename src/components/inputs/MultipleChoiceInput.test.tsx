@@ -21,14 +21,7 @@ describe('MultipleChoiceInput', () => {
     });
 
     it('should render all choices', () => {
-        render(
-            <MultipleChoiceInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        render(<MultipleChoiceInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
         expect(screen.getByText('Option A')).toBeInTheDocument();
         expect(screen.getByText('Option B')).toBeInTheDocument();
@@ -37,14 +30,7 @@ describe('MultipleChoiceInput', () => {
     });
 
     it('should render choice letters (A, B, C, D)', () => {
-        render(
-            <MultipleChoiceInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        render(<MultipleChoiceInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
         expect(screen.getByText('A')).toBeInTheDocument();
         expect(screen.getByText('B')).toBeInTheDocument();
@@ -53,14 +39,7 @@ describe('MultipleChoiceInput', () => {
     });
 
     it('should call onAnswer with correct index when clicked', () => {
-        render(
-            <MultipleChoiceInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        render(<MultipleChoiceInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
         fireEvent.click(screen.getByText('Option B'));
         expect(mockOnAnswer).toHaveBeenCalledWith(1);
@@ -69,29 +48,8 @@ describe('MultipleChoiceInput', () => {
         expect(mockOnAnswer).toHaveBeenCalledWith(0);
     });
 
-    it('should not call onAnswer when disabled', () => {
-        render(
-            <MultipleChoiceInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={true}
-                submittedAnswer={null}
-            />
-        );
-
-        fireEvent.click(screen.getByText('Option A'));
-        expect(mockOnAnswer).not.toHaveBeenCalled();
-    });
-
     it('should not call onAnswer after answer is submitted', () => {
-        render(
-            <MultipleChoiceInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={0}
-            />
-        );
+        render(<MultipleChoiceInput question={createQuestion()} onAnswer={mockOnAnswer} submittedAnswer={0} />);
 
         fireEvent.click(screen.getByText('Option B'));
         expect(mockOnAnswer).not.toHaveBeenCalled();
@@ -102,7 +60,6 @@ describe('MultipleChoiceInput', () => {
             <MultipleChoiceInput
                 question={createQuestion({answerIndex: 2})}
                 onAnswer={mockOnAnswer}
-                disabled={true}
                 submittedAnswer={1}
             />
         );

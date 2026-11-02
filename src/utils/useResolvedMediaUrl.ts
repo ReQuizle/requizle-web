@@ -1,107 +1,65 @@
-import {useEffect, useRef, useState} from 'react';
-import {
-    createMediaObjectUrl,
-    extractMediaId,
-    getMedia,
-    isIndexedDBMedia,
-    revokeMediaObjectUrl
-} from './mediaStorage';
+import {useEffect, useState} from 'react';
+import {isVideoMediaUrl} from './mediaFormat';
+import {extractMediaId, getMedia, isIndexedDBMedia} from './mediaStorage';
 
-type UseResolvedMediaUrlOptions = {
-    maxRetries?: number;
-    retryDelayMs?: number;
-};
-
-type UseResolvedMediaUrlResult = {
+type ResolvedMedia = {
     resolvedUrl: string | null;
+    /** Whether the media is a video. Stored media is checked by file type, since its URL has no extension. */
+    isVideo: boolean;
     loading: boolean;
     error: boolean;
 };
 
-export function useResolvedMediaUrl(
-    media: string | undefined,
-    options: UseResolvedMediaUrlOptions = {}
-): UseResolvedMediaUrlResult {
-    const maxRetries = options.maxRetries ?? 0;
-    const retryDelayMs = options.retryDelayMs ?? 300;
-    const mediaId = media && isIndexedDBMedia(media) ? extractMediaId(media) : null;
+/** A stored file once read. `url` is null when it could not be read. */
+type LoadedMedia = {mediaId: string; url: string | null; isVideo: boolean};
 
-    const [loadedMediaId, setLoadedMediaId] = useState<string | null>(null);
-    const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
-    const [mediaErrorId, setMediaErrorId] = useState<string | null>(null);
-    const objectUrlRef = useRef<string | null>(null);
+/**
+ * The URL to show question media from. `idb:` references are loaded from IndexedDB into an object
+ * URL, which is revoked when the media changes or the component unmounts; other values are used as is.
+ */
+export function useResolvedMediaUrl(media: string | undefined): ResolvedMedia {
+    const mediaId = media && isIndexedDBMedia(media) ? extractMediaId(media) : null;
+    const [loaded, setLoaded] = useState<LoadedMedia | null>(null);
 
     useEffect(() => {
-        if (!mediaId) {
-            return;
-        }
-        const retryTimers = new Set<ReturnType<typeof setTimeout>>();
+        if (!mediaId) return;
         let cancelled = false;
+        let objectUrl: string | null = null;
 
-        const scheduleRetry = (retryCount: number) => {
-            const timer = setTimeout(() => {
-                retryTimers.delete(timer);
-                attemptLoad(retryCount);
-            }, retryDelayMs);
-            retryTimers.add(timer);
-        };
-
-        const handleFailure = (retryCount: number) => {
-            if (retryCount < maxRetries) {
-                scheduleRetry(retryCount + 1);
-                return;
-            }
-            setMediaErrorId(mediaId);
-        };
-
-        const attemptLoad = (retryCount: number) => {
-            getMedia(mediaId)
-                .then(entry => {
-                    if (cancelled) return;
-                    if (!entry) {
-                        handleFailure(retryCount);
-                        return;
-                    }
-                    setLoadedMediaId(mediaId);
-                    setResolvedUrl(prev => {
-                        if (prev?.startsWith('blob:')) {
-                            revokeMediaObjectUrl(prev);
-                        }
-                        const nextUrl = createMediaObjectUrl(entry);
-                        objectUrlRef.current = nextUrl;
-                        return nextUrl;
-                    });
-                    setMediaErrorId(null);
-                })
-                .catch(() => {
-                    if (cancelled) return;
-                    handleFailure(retryCount);
+        getMedia(mediaId)
+            .catch(() => null)
+            .then((entry) => {
+                if (cancelled) return;
+                if (!entry) {
+                    setLoaded({mediaId, url: null, isVideo: false});
+                    return;
+                }
+                objectUrl = URL.createObjectURL(entry.blob);
+                setLoaded({
+                    mediaId,
+                    url: objectUrl,
+                    isVideo: entry.mimeType.startsWith('video/') || isVideoMediaUrl(entry.filename)
                 });
-        };
-
-        attemptLoad(0);
+            });
 
         return () => {
             cancelled = true;
-            retryTimers.forEach(timer => clearTimeout(timer));
-            retryTimers.clear();
-            if (objectUrlRef.current?.startsWith('blob:')) {
-                revokeMediaObjectUrl(objectUrlRef.current);
-            }
-            objectUrlRef.current = null;
+            if (objectUrl) URL.revokeObjectURL(objectUrl);
         };
-    }, [mediaId, maxRetries, retryDelayMs]);
+    }, [mediaId]);
 
     if (!media) {
-        return {resolvedUrl: null, loading: false, error: false};
+        return {resolvedUrl: null, isVideo: false, loading: false, error: false};
     }
     if (!mediaId) {
-        return {resolvedUrl: media, loading: false, error: false};
+        return {resolvedUrl: media, isVideo: isVideoMediaUrl(media), loading: false, error: false};
     }
 
+    const current = loaded?.mediaId === mediaId ? loaded : null;
     return {
-        resolvedUrl: loadedMediaId === mediaId ? resolvedUrl : null,
-        loading: loadedMediaId !== mediaId && mediaErrorId !== mediaId,
-        error: mediaErrorId === mediaId
+        resolvedUrl: current?.url ?? null,
+        isVideo: current?.isVideo ?? false,
+        loading: !current,
+        error: !!current && !current.url
     };
 }

@@ -60,11 +60,13 @@ describe('importValidation', () => {
                     subject: {
                         id: 's1',
                         name: 'S',
-                        topics: [{
-                            id: 't1',
-                            name: 'T',
-                            questions: [{id: 'q1', type: 'true_false', prompt: 'Q?', answer: true}]
-                        }]
+                        topics: [
+                            {
+                                id: 't1',
+                                name: 'T',
+                                questions: [{id: 'q1', type: 'true_false', prompt: 'Q?', answer: true}]
+                            }
+                        ]
                     },
                     progress: {
                         t1: {
@@ -82,11 +84,13 @@ describe('importValidation', () => {
                     subject: {
                         id: 's1',
                         name: 'S',
-                        topics: [{
-                            id: 't1',
-                            name: 'T',
-                            questions: [{id: 'q1', type: 'true_false', prompt: 'Q?', answer: true}]
-                        }]
+                        topics: [
+                            {
+                                id: 't1',
+                                name: 'T',
+                                questions: [{id: 'q1', type: 'true_false', prompt: 'Q?', answer: true}]
+                            }
+                        ]
                     },
                     progress: {
                         t1: {
@@ -103,14 +107,16 @@ describe('importValidation', () => {
             const subject = validateSubjects({
                 id: 's1',
                 name: 'S',
-                topics: [{
-                    id: 't1',
-                    name: 'T',
-                    questions: [
-                        {id: 'q1', type: 'true_false', prompt: 'Q1?', answer: true},
-                        {id: 'q2', type: 'true_false', prompt: 'Q2?', answer: false}
-                    ]
-                }]
+                topics: [
+                    {
+                        id: 't1',
+                        name: 'T',
+                        questions: [
+                            {id: 'q1', type: 'true_false', prompt: 'Q1?', answer: true},
+                            {id: 'q2', type: 'true_false', prompt: 'Q2?', answer: false}
+                        ]
+                    }
+                ]
             })[0];
 
             const progress = sanitizeSubjectProgress(
@@ -140,18 +146,22 @@ describe('importValidation', () => {
                 id: ' imported ',
                 name: ' Imported Profile ',
                 createdAt: 123,
-                subjects: [{
-                    id: 's1',
-                    name: 'S',
-                    topics: [{
-                        id: 't1',
-                        name: 'T',
-                        questions: [
-                            {id: 'q1', type: 'true_false', prompt: 'Q1?', answer: true},
-                            {id: 'q2', type: 'true_false', prompt: 'Q2?', answer: false}
+                subjects: [
+                    {
+                        id: 's1',
+                        name: 'S',
+                        topics: [
+                            {
+                                id: 't1',
+                                name: 'T',
+                                questions: [
+                                    {id: 'q1', type: 'true_false', prompt: 'Q1?', answer: true},
+                                    {id: 'q2', type: 'true_false', prompt: 'Q2?', answer: false}
+                                ]
+                            }
                         ]
-                    }]
-                }],
+                    }
+                ],
                 progress: {
                     s1: {
                         t1: {
@@ -206,17 +216,21 @@ describe('importValidation', () => {
         });
 
         it('rejects malformed profile imports', () => {
-            expect(() => validateProfileImport({
-                id: '',
-                name: 'Profile',
-                subjects: []
-            })).toThrow(/id/);
+            expect(() =>
+                validateProfileImport({
+                    id: '',
+                    name: 'Profile',
+                    subjects: []
+                })
+            ).toThrow(/id/);
 
-            expect(() => validateProfileImport({
-                id: 'p1',
-                name: 'Profile',
-                subjects: [{id: 's1', name: 'Broken'}]
-            })).toThrow(/topics/);
+            expect(() =>
+                validateProfileImport({
+                    id: 'p1',
+                    name: 'Profile',
+                    subjects: [{id: 's1', name: 'Broken'}]
+                })
+            ).toThrow(/topics/);
         });
     });
 
@@ -225,33 +239,41 @@ describe('importValidation', () => {
             const subject = {
                 id: 's1',
                 name: 'S',
-                topics: [{
-                    id: 't1',
-                    name: 'T',
-                    questions: [{id: 'q1', type: 'true_false', prompt: 'Q?', answer: true}]
-                }]
+                topics: [
+                    {
+                        id: 't1',
+                        name: 'T',
+                        questions: [{id: 'q1', type: 'true_false', prompt: 'Q?', answer: true}]
+                    }
+                ]
             };
 
             expect(isImportableQuizPayload(subject)).toBe(true);
-            expect(isImportableQuizPayload({
-                id: 'p1',
-                name: 'Profile',
-                subjects: [subject],
-                progress: {},
-                session: {},
-                createdAt: 123
-            })).toBe(true);
-            expect(isImportableQuizPayload({
-                requizleSubjectExport: 1,
-                subject
-            })).toBe(true);
+            expect(
+                isImportableQuizPayload({
+                    id: 'p1',
+                    name: 'Profile',
+                    subjects: [subject],
+                    progress: {},
+                    session: {},
+                    createdAt: 123
+                })
+            ).toBe(true);
+            expect(
+                isImportableQuizPayload({
+                    requizleSubjectExport: 1,
+                    subject
+                })
+            ).toBe(true);
         });
 
         it('rejects invalid payloads before media restoration', () => {
-            expect(isImportableQuizPayload({
-                _media: [{id: 'm1', filename: 'image.png', mimeType: 'image/png', dataBase64: 'abc'}],
-                subjects: [{id: 's1', name: 'Broken'}]
-            })).toBe(false);
+            expect(
+                isImportableQuizPayload({
+                    _media: [{id: 'm1', filename: 'image.png', mimeType: 'image/png', dataBase64: 'abc'}],
+                    subjects: [{id: 's1', name: 'Broken'}]
+                })
+            ).toBe(false);
         });
     });
 
@@ -294,18 +316,24 @@ describe('importValidation', () => {
 
     describe('validateSubjects', () => {
         it('should validate a valid subject array', () => {
-            const data = [{
-                name: 'Math',
-                topics: [{
-                    name: 'Algebra',
-                    questions: [{
-                        type: 'multiple_choice',
-                        prompt: 'What is 2+2?',
-                        choices: ['3', '4', '5'],
-                        answerIndex: 1
-                    }]
-                }]
-            }];
+            const data = [
+                {
+                    name: 'Math',
+                    topics: [
+                        {
+                            name: 'Algebra',
+                            questions: [
+                                {
+                                    type: 'multiple_choice',
+                                    prompt: 'What is 2+2?',
+                                    choices: ['3', '4', '5'],
+                                    answerIndex: 1
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ];
 
             const result = validateSubjects(data);
             expect(result).toHaveLength(1);
@@ -314,162 +342,244 @@ describe('importValidation', () => {
         });
 
         it('should accept "question" as alias for "prompt"', () => {
-            const data = [{
-                name: 'Test',
-                topics: [{
-                    name: 'Topic',
-                    questions: [{
-                        type: 'true_false',
-                        question: 'Is the sky blue?',
-                        answer: true
-                    }]
-                }]
-            }];
+            const data = [
+                {
+                    name: 'Test',
+                    topics: [
+                        {
+                            name: 'Topic',
+                            questions: [
+                                {
+                                    type: 'true_false',
+                                    question: 'Is the sky blue?',
+                                    answer: true
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ];
 
             const result = validateSubjects(data);
             expect(result[0].topics[0].questions[0].prompt).toBe('Is the sky blue?');
         });
 
         it('should throw on invalid question type', () => {
-            const data = [{
-                name: 'Test',
-                topics: [{
-                    name: 'Topic',
-                    questions: [{
-                        type: 'invalid_type',
-                        prompt: 'Question?'
-                    }]
-                }]
-            }];
+            const data = [
+                {
+                    name: 'Test',
+                    topics: [
+                        {
+                            name: 'Topic',
+                            questions: [
+                                {
+                                    type: 'invalid_type',
+                                    prompt: 'Question?'
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ];
 
-            expect(() => validateSubjects(data)).toThrow(/Missing or invalid "type"/);
+            expect(() => validateSubjects(data)).toThrow(/missing or invalid "type"/);
         });
 
         it('should reject non-string answer content that would break rendering', () => {
-            expect(() => validateSubjects([{
-                name: 'Test',
-                topics: [{
-                    name: 'Topic',
-                    questions: [{
-                        type: 'multiple_choice',
-                        prompt: 'Question?',
-                        choices: ['A', 123],
-                        answerIndex: 0
-                    }]
-                }]
-            }])).toThrow(/choices/);
+            expect(() =>
+                validateSubjects([
+                    {
+                        name: 'Test',
+                        topics: [
+                            {
+                                name: 'Topic',
+                                questions: [
+                                    {
+                                        type: 'multiple_choice',
+                                        prompt: 'Question?',
+                                        choices: ['A', 123],
+                                        answerIndex: 0
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ])
+            ).toThrow('Invalid multiple_choice question 1 in topic "Topic": missing or invalid "choices"');
 
-            expect(() => validateSubjects([{
-                name: 'Test',
-                topics: [{
-                    name: 'Topic',
-                    questions: [{
-                        type: 'keywords',
-                        prompt: 'Question?',
-                        answer: ['ok', 123]
-                    }]
-                }]
-            }])).toThrow(/array must contain strings/);
+            expect(() =>
+                validateSubjects([
+                    {
+                        name: 'Test',
+                        topics: [
+                            {
+                                name: 'Topic',
+                                questions: [
+                                    {
+                                        type: 'keywords',
+                                        prompt: 'Question?',
+                                        answer: ['ok', 123]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ])
+            ).toThrow(/array must contain strings/);
 
-            expect(() => validateSubjects([{
-                name: 'Test',
-                topics: [{
-                    name: 'Topic',
-                    questions: [{
-                        type: 'word_bank',
-                        prompt: 'Question?',
-                        sentence: 'A _',
-                        wordBank: ['A'],
-                        answers: [123]
-                    }]
-                }]
-            }])).toThrow(/answers/);
+            expect(() =>
+                validateSubjects([
+                    {
+                        name: 'Test',
+                        topics: [
+                            {
+                                name: 'Topic',
+                                questions: [
+                                    {
+                                        type: 'word_bank',
+                                        prompt: 'Question?',
+                                        sentence: 'A _',
+                                        wordBank: ['A'],
+                                        answers: [123]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ])
+            ).toThrow(/answers/);
         });
 
         it('should reject fractional answer indices', () => {
-            expect(() => validateSubjects([{
-                name: 'Test',
-                topics: [{
-                    name: 'Topic',
-                    questions: [{
-                        type: 'multiple_choice',
-                        prompt: 'Question?',
-                        choices: ['A', 'B'],
-                        answerIndex: 0.5
-                    }]
-                }]
-            }])).toThrow(/answerIndex/);
+            expect(() =>
+                validateSubjects([
+                    {
+                        name: 'Test',
+                        topics: [
+                            {
+                                name: 'Topic',
+                                questions: [
+                                    {
+                                        type: 'multiple_choice',
+                                        prompt: 'Question?',
+                                        choices: ['A', 'B'],
+                                        answerIndex: 0.5
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ])
+            ).toThrow(/answerIndex/);
 
-            expect(() => validateSubjects([{
-                name: 'Test',
-                topics: [{
-                    name: 'Topic',
-                    questions: [{
-                        type: 'multiple_answer',
-                        prompt: 'Question?',
-                        choices: ['A', 'B'],
-                        answerIndices: [0.5]
-                    }]
-                }]
-            }])).toThrow(/answerIndices/);
+            expect(() =>
+                validateSubjects([
+                    {
+                        name: 'Test',
+                        topics: [
+                            {
+                                name: 'Topic',
+                                questions: [
+                                    {
+                                        type: 'multiple_answer',
+                                        prompt: 'Question?',
+                                        choices: ['A', 'B'],
+                                        answerIndices: [0.5]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ])
+            ).toThrow(/answerIndices/);
         });
 
         it('should reject impossible answer definitions', () => {
-            expect(() => validateSubjects([{
-                name: 'Test',
-                topics: [{
-                    name: 'Topic',
-                    questions: [{
-                        type: 'multiple_answer',
-                        prompt: 'Question?',
-                        choices: ['A', 'B'],
-                        answerIndices: [0, 0]
-                    }]
-                }]
-            }])).toThrow(/duplicate/);
-
-            expect(() => validateSubjects([{
-                name: 'Test',
-                topics: [{
-                    name: 'Topic',
-                    questions: [{
-                        type: 'matching',
-                        prompt: 'Question?',
-                        pairs: [
-                            {left: 'A', right: '1'},
-                            {left: 'A', right: '2'}
+            expect(() =>
+                validateSubjects([
+                    {
+                        name: 'Test',
+                        topics: [
+                            {
+                                name: 'Topic',
+                                questions: [
+                                    {
+                                        type: 'multiple_answer',
+                                        prompt: 'Question?',
+                                        choices: ['A', 'B'],
+                                        answerIndices: [0, 0]
+                                    }
+                                ]
+                            }
                         ]
-                    }]
-                }]
-            }])).toThrow(/unique/);
+                    }
+                ])
+            ).toThrow(/duplicate/);
 
-            expect(() => validateSubjects([{
-                name: 'Test',
-                topics: [{
-                    name: 'Topic',
-                    questions: [{
-                        type: 'word_bank',
-                        prompt: 'Question?',
-                        sentence: '_ and _',
-                        wordBank: ['same'],
-                        answers: ['same', 'same']
-                    }]
-                }]
-            }])).toThrow(/wordBank/);
+            expect(() =>
+                validateSubjects([
+                    {
+                        name: 'Test',
+                        topics: [
+                            {
+                                name: 'Topic',
+                                questions: [
+                                    {
+                                        type: 'matching',
+                                        prompt: 'Question?',
+                                        pairs: [
+                                            {left: 'A', right: '1'},
+                                            {left: 'A', right: '2'}
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ])
+            ).toThrow(/unique/);
+
+            expect(() =>
+                validateSubjects([
+                    {
+                        name: 'Test',
+                        topics: [
+                            {
+                                name: 'Topic',
+                                questions: [
+                                    {
+                                        type: 'word_bank',
+                                        prompt: 'Question?',
+                                        sentence: '_ and _',
+                                        wordBank: ['same'],
+                                        answers: ['same', 'same']
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ])
+            ).toThrow(/wordBank/);
         });
 
         it('should generate IDs when not provided', () => {
-            const data = [{
-                name: 'Test',
-                topics: [{
-                    name: 'Topic',
-                    questions: [{
-                        type: 'true_false',
-                        prompt: 'Question?',
-                        answer: true
-                    }]
-                }]
-            }];
+            const data = [
+                {
+                    name: 'Test',
+                    topics: [
+                        {
+                            name: 'Topic',
+                            questions: [
+                                {
+                                    type: 'true_false',
+                                    prompt: 'Question?',
+                                    answer: true
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ];
 
             const result = validateSubjects(data);
             expect(result[0].id).toBeDefined();
@@ -478,20 +588,26 @@ describe('importValidation', () => {
         });
 
         it('should preserve provided IDs', () => {
-            const data = [{
-                id: 'my-subject',
-                name: 'Test',
-                topics: [{
-                    id: 'my-topic',
-                    name: 'Topic',
-                    questions: [{
-                        id: 'my-question',
-                        type: 'true_false',
-                        prompt: 'Question?',
-                        answer: true
-                    }]
-                }]
-            }];
+            const data = [
+                {
+                    id: 'my-subject',
+                    name: 'Test',
+                    topics: [
+                        {
+                            id: 'my-topic',
+                            name: 'Topic',
+                            questions: [
+                                {
+                                    id: 'my-question',
+                                    type: 'true_false',
+                                    prompt: 'Question?',
+                                    answer: true
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ];
 
             const result = validateSubjects(data);
             expect(result[0].id).toBe('my-subject');
@@ -500,23 +616,29 @@ describe('importValidation', () => {
         });
 
         it('normalizes questions and strips invalid optional fields', () => {
-            const result = validateSubjects([{
-                id: 's1',
-                name: 'Subject',
-                topics: [{
-                    id: 't1',
-                    name: 'Topic',
-                    questions: [{
-                        id: 'q1',
-                        type: 'true_false',
-                        prompt: '  Question?  ',
-                        answer: true,
-                        media: 123,
-                        explanation: ['not valid'],
-                        unexpected: 'remove me'
-                    }]
-                }]
-            }]);
+            const result = validateSubjects([
+                {
+                    id: 's1',
+                    name: 'Subject',
+                    topics: [
+                        {
+                            id: 't1',
+                            name: 'Topic',
+                            questions: [
+                                {
+                                    id: 'q1',
+                                    type: 'true_false',
+                                    prompt: '  Question?  ',
+                                    answer: true,
+                                    media: 123,
+                                    explanation: ['not valid'],
+                                    unexpected: 'remove me'
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]);
 
             expect(result[0].topics[0].questions[0]).toEqual({
                 id: 'q1',
@@ -528,90 +650,153 @@ describe('importValidation', () => {
         });
 
         it('should validate all question types', () => {
-            const data = [{
-                name: 'Test',
-                topics: [{
-                    name: 'Topic',
-                    questions: [
-                        {type: 'multiple_choice', prompt: 'Q1', choices: ['A', 'B'], answerIndex: 0},
-                        {type: 'multiple_answer', prompt: 'Q2', choices: ['A', 'B', 'C'], answerIndices: [0, 2]},
-                        {type: 'true_false', prompt: 'Q3', answer: false},
-                        {type: 'keywords', prompt: 'Q4', answer: 'keyword'},
-                        {type: 'matching', prompt: 'Q5', pairs: [{left: 'A', right: '1'}]},
-                        {type: 'word_bank', prompt: 'Q6', sentence: 'Fill in _', wordBank: ['word'], answers: ['word']}
+            const data = [
+                {
+                    name: 'Test',
+                    topics: [
+                        {
+                            name: 'Topic',
+                            questions: [
+                                {type: 'multiple_choice', prompt: 'Q1', choices: ['A', 'B'], answerIndex: 0},
+                                {
+                                    type: 'multiple_answer',
+                                    prompt: 'Q2',
+                                    choices: ['A', 'B', 'C'],
+                                    answerIndices: [0, 2]
+                                },
+                                {type: 'true_false', prompt: 'Q3', answer: false},
+                                {type: 'keywords', prompt: 'Q4', answer: 'keyword'},
+                                {type: 'matching', prompt: 'Q5', pairs: [{left: 'A', right: '1'}]},
+                                {
+                                    type: 'word_bank',
+                                    prompt: 'Q6',
+                                    sentence: 'Fill in _',
+                                    wordBank: ['word'],
+                                    answers: ['word']
+                                }
+                            ]
+                        }
                     ]
-                }]
-            }];
+                }
+            ];
 
             const result = validateSubjects(data);
             expect(result[0].topics[0].questions).toHaveLength(6);
         });
 
         it('rejects duplicate subject IDs in one import payload', () => {
-            expect(() => validateSubjects([
-                {
-                    id: 's1',
-                    name: 'Subject A',
-                    topics: [{id: 't1', name: 'Topic A', questions: [{id: 'q1', type: 'true_false', prompt: 'Q?', answer: true}]}]
-                },
-                {
-                    id: 's1',
-                    name: 'Subject B',
-                    topics: [{id: 't2', name: 'Topic B', questions: [{id: 'q2', type: 'true_false', prompt: 'Q?', answer: false}]}]
-                }
-            ])).toThrow(/duplicate subject id/i);
+            expect(() =>
+                validateSubjects([
+                    {
+                        id: 's1',
+                        name: 'Subject A',
+                        topics: [
+                            {
+                                id: 't1',
+                                name: 'Topic A',
+                                questions: [{id: 'q1', type: 'true_false', prompt: 'Q?', answer: true}]
+                            }
+                        ]
+                    },
+                    {
+                        id: 's1',
+                        name: 'Subject B',
+                        topics: [
+                            {
+                                id: 't2',
+                                name: 'Topic B',
+                                questions: [{id: 'q2', type: 'true_false', prompt: 'Q?', answer: false}]
+                            }
+                        ]
+                    }
+                ])
+            ).toThrow(/duplicate subject id/i);
         });
 
         it('rejects duplicate topic IDs within a subject', () => {
-            expect(() => validateSubjects([{
-                id: 's1',
-                name: 'Subject',
-                topics: [
-                    {id: 't1', name: 'Topic A', questions: [{id: 'q1', type: 'true_false', prompt: 'Q1?', answer: true}]},
-                    {id: 't1', name: 'Topic B', questions: [{id: 'q2', type: 'true_false', prompt: 'Q2?', answer: false}]}
-                ]
-            }])).toThrow(/duplicate topic id/i);
+            expect(() =>
+                validateSubjects([
+                    {
+                        id: 's1',
+                        name: 'Subject',
+                        topics: [
+                            {
+                                id: 't1',
+                                name: 'Topic A',
+                                questions: [{id: 'q1', type: 'true_false', prompt: 'Q1?', answer: true}]
+                            },
+                            {
+                                id: 't1',
+                                name: 'Topic B',
+                                questions: [{id: 'q2', type: 'true_false', prompt: 'Q2?', answer: false}]
+                            }
+                        ]
+                    }
+                ])
+            ).toThrow(/duplicate topic id/i);
         });
 
         it('rejects duplicate question IDs within the same topic', () => {
-            expect(() => validateSubjects([{
-                id: 's1',
-                name: 'Subject',
-                topics: [{
-                    id: 't1',
-                    name: 'Topic',
-                    questions: [
-                        {id: 'q1', type: 'true_false', prompt: 'Q1?', answer: true},
-                        {id: 'q1', type: 'true_false', prompt: 'Q2?', answer: false}
-                    ]
-                }]
-            }])).toThrow(/duplicate question id/i);
+            expect(() =>
+                validateSubjects([
+                    {
+                        id: 's1',
+                        name: 'Subject',
+                        topics: [
+                            {
+                                id: 't1',
+                                name: 'Topic',
+                                questions: [
+                                    {id: 'q1', type: 'true_false', prompt: 'Q1?', answer: true},
+                                    {id: 'q1', type: 'true_false', prompt: 'Q2?', answer: false}
+                                ]
+                            }
+                        ]
+                    }
+                ])
+            ).toThrow(/duplicate question id/i);
         });
 
         it('rejects duplicate question IDs across topics in the same subject', () => {
-            expect(() => validateSubjects([{
-                id: 's1',
-                name: 'Subject',
-                topics: [
-                    {id: 't1', name: 'Topic A', questions: [{id: 'q1', type: 'true_false', prompt: 'Q1?', answer: true}]},
-                    {id: 't2', name: 'Topic B', questions: [{id: 'q1', type: 'true_false', prompt: 'Q2?', answer: false}]}
-                ]
-            }])).toThrow(/duplicate question id/i);
+            expect(() =>
+                validateSubjects([
+                    {
+                        id: 's1',
+                        name: 'Subject',
+                        topics: [
+                            {
+                                id: 't1',
+                                name: 'Topic A',
+                                questions: [{id: 'q1', type: 'true_false', prompt: 'Q1?', answer: true}]
+                            },
+                            {
+                                id: 't2',
+                                name: 'Topic B',
+                                questions: [{id: 'q1', type: 'true_false', prompt: 'Q2?', answer: false}]
+                            }
+                        ]
+                    }
+                ])
+            ).toThrow(/duplicate question id/i);
         });
     });
 
     describe('extractMediaReferencesWithContext', () => {
         it('should extract media references from subjects', () => {
-            const data = [{
-                name: 'Subject1',
-                topics: [{
-                    name: 'Topic1',
-                    questions: [
-                        {prompt: 'Q1', media: 'images/photo1.png'},
-                        {prompt: 'Q2', media: 'images/photo2.png'}
+            const data = [
+                {
+                    name: 'Subject1',
+                    topics: [
+                        {
+                            name: 'Topic1',
+                            questions: [
+                                {prompt: 'Q1', media: 'images/photo1.png'},
+                                {prompt: 'Q2', media: 'images/photo2.png'}
+                            ]
+                        }
                     ]
-                }]
-            }];
+                }
+            ];
 
             const refs = extractMediaReferencesWithContext(data);
             expect(refs).toHaveLength(2);
@@ -624,13 +809,17 @@ describe('importValidation', () => {
         it('should handle profile format with subjects field', () => {
             const data = {
                 name: 'Profile',
-                subjects: [{
-                    name: 'Subject1',
-                    topics: [{
-                        name: 'Topic1',
-                        questions: [{prompt: 'Q1', media: 'image.png'}]
-                    }]
-                }]
+                subjects: [
+                    {
+                        name: 'Subject1',
+                        topics: [
+                            {
+                                name: 'Topic1',
+                                questions: [{prompt: 'Q1', media: 'image.png'}]
+                            }
+                        ]
+                    }
+                ]
             };
 
             const refs = extractMediaReferencesWithContext(data);
@@ -663,7 +852,7 @@ describe('importValidation', () => {
             const groups = groupMediaByFilename(refs);
             expect(groups).toHaveLength(2);
 
-            const imageGroup = groups.find(g => g.filename === 'image.png');
+            const imageGroup = groups.find((g) => g.filename === 'image.png');
             expect(imageGroup?.references).toHaveLength(2);
             expect(imageGroup?.isConflict).toBe(true);
         });
@@ -682,17 +871,17 @@ describe('importValidation', () => {
     describe('replaceMediaByPath', () => {
         it('should replace media paths in nested data', () => {
             const data = {
-                topics: [{
-                    questions: [
-                        {prompt: 'Q1', media: 'images/photo.png'},
-                        {prompt: 'Q2', media: 'images/other.png'}
-                    ]
-                }]
+                topics: [
+                    {
+                        questions: [
+                            {prompt: 'Q1', media: 'images/photo.png'},
+                            {prompt: 'Q2', media: 'images/other.png'}
+                        ]
+                    }
+                ]
             };
 
-            const mediaMap = new Map([
-                ['images/photo.png', 'idb:new-id-123']
-            ]);
+            const mediaMap = new Map([['images/photo.png', 'idb:new-id-123']]);
 
             const result = replaceMediaByPath(data, mediaMap) as typeof data;
             expect(result.topics[0].questions[0].media).toBe('idb:new-id-123');
@@ -700,12 +889,12 @@ describe('importValidation', () => {
         });
 
         it('should handle arrays', () => {
-            const data = [
-                {media: 'a.png'},
-                {media: 'b.png'}
-            ];
+            const data = [{media: 'a.png'}, {media: 'b.png'}];
 
-            const mediaMap = new Map([['a.png', 'idb:a'], ['b.png', 'idb:b']]);
+            const mediaMap = new Map([
+                ['a.png', 'idb:a'],
+                ['b.png', 'idb:b']
+            ]);
 
             const result = replaceMediaByPath(data, mediaMap) as typeof data;
             expect(result[0].media).toBe('idb:a');

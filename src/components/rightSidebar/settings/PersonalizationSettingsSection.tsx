@@ -2,12 +2,11 @@ import React from 'react';
 import {clsx} from 'clsx';
 import {ThemeToggle} from '../../ThemeToggle';
 import {SettingsSwitchRow} from './SettingsSwitchRow';
-import {
-    COLOR_PRESETS,
-    getPresetLabel,
-    type ColorThemeId,
-    type PresetColorThemeId
-} from '../../../utils/colorThemes';
+import {COLOR_PRESETS, type ColorThemeId} from '../../../utils/colorThemes';
+
+const SWATCH_CLASS =
+    'h-8 w-8 rounded-full transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400 dark:focus-visible:ring-slate-500 dark:focus-visible:ring-offset-slate-800';
+const SELECTED_SWATCH_CLASS = 'ring-2 ring-offset-2 ring-slate-400 dark:ring-offset-slate-800';
 
 type PersonalizationSettingsSectionProps = {
     animatedBackground: boolean;
@@ -30,10 +29,7 @@ export const PersonalizationSettingsSection: React.FC<PersonalizationSettingsSec
     onSetColorTheme,
     onSetCustomAccentColor
 }) => {
-    const title =
-        colorTheme === 'custom'
-            ? 'Custom'
-            : getPresetLabel(colorTheme as PresetColorThemeId);
+    const themeLabel = COLOR_PRESETS.find((preset) => preset.id === colorTheme)?.label ?? 'Custom';
 
     return (
         <div
@@ -42,7 +38,9 @@ export const PersonalizationSettingsSection: React.FC<PersonalizationSettingsSec
             aria-labelledby="settings-tab-personalization"
             className="space-y-3"
         >
-            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Personalization</h3>
+            <h2 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                Personalization
+            </h2>
             <div className="flex items-center justify-between p-3 min-h-[52px] bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
                 <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Theme</span>
                 <ThemeToggle />
@@ -51,14 +49,16 @@ export const PersonalizationSettingsSection: React.FC<PersonalizationSettingsSec
                 <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Color theme</span>
                     <div className="text-right min-w-0">
-                        <div className="text-xs text-slate-600 dark:text-slate-300 truncate">{title}</div>
+                        <div className="text-xs text-slate-600 dark:text-slate-300 truncate">{themeLabel}</div>
                         {colorTheme === 'custom' && (
-                            <div className="text-[10px] text-slate-500 font-mono truncate">{customAccentColor}</div>
+                            <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono truncate">
+                                {customAccentColor}
+                            </div>
                         )}
                     </div>
                 </div>
                 <div role="radiogroup" aria-label="Color theme" className="flex flex-wrap gap-2">
-                    {COLOR_PRESETS.map(p => {
+                    {COLOR_PRESETS.map((p) => {
                         const isActive = colorTheme === p.id;
                         const swatch =
                             p.id === 'monochrome'
@@ -74,10 +74,8 @@ export const PersonalizationSettingsSection: React.FC<PersonalizationSettingsSec
                                 title={p.label}
                                 onClick={() => onSetColorTheme(p.id)}
                                 className={clsx(
-                                    'h-8 w-8 rounded-full transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400 dark:focus-visible:ring-slate-500 dark:focus-visible:ring-offset-slate-800',
-                                    isActive
-                                        ? 'ring-2 ring-offset-2 ring-slate-400 dark:ring-slate-400 dark:ring-offset-slate-800'
-                                        : 'opacity-80 hover:opacity-100 hover:scale-110'
+                                    SWATCH_CLASS,
+                                    isActive ? SELECTED_SWATCH_CLASS : 'opacity-80 hover:opacity-100 hover:scale-110'
                                 )}
                                 style={swatch}
                             />
@@ -91,10 +89,9 @@ export const PersonalizationSettingsSection: React.FC<PersonalizationSettingsSec
                         title="Custom color"
                         onClick={() => onSetColorTheme('custom')}
                         className={clsx(
-                            'h-8 w-8 rounded-full transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400 dark:focus-visible:ring-slate-500 dark:focus-visible:ring-offset-slate-800 border border-dashed border-slate-300 dark:border-slate-500',
-                            colorTheme === 'custom'
-                                ? 'ring-2 ring-offset-2 ring-slate-400 dark:ring-slate-400 dark:ring-offset-slate-800'
-                                : 'opacity-80 hover:opacity-100'
+                            SWATCH_CLASS,
+                            'border border-dashed border-slate-300 dark:border-slate-500',
+                            colorTheme === 'custom' ? SELECTED_SWATCH_CLASS : 'opacity-80 hover:opacity-100'
                         )}
                         style={{backgroundColor: customAccentColor}}
                     />
@@ -105,7 +102,7 @@ export const PersonalizationSettingsSection: React.FC<PersonalizationSettingsSec
                         <input
                             type="color"
                             value={customAccentColor}
-                            onChange={e => onSetCustomAccentColor(e.target.value)}
+                            onChange={(e) => onSetCustomAccentColor(e.target.value)}
                             className="h-9 w-16 cursor-pointer rounded border border-slate-200 dark:border-slate-600 bg-transparent p-0"
                             aria-label="Custom accent color"
                         />

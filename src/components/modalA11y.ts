@@ -10,10 +10,31 @@ const FOCUSABLE_SELECTOR = [
     '[tabindex]:not([tabindex="-1"])'
 ].join(',');
 
-function getFocusableElements(container: HTMLElement): HTMLElement[] {
+export function getFocusableElements(container: HTMLElement): HTMLElement[] {
     return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
-        el => !el.hasAttribute('disabled') && el.getAttribute('aria-hidden') !== 'true'
+        (el) => el.getAttribute('aria-hidden') !== 'true'
     );
+}
+
+/** Handles a Tab key press so focus wraps around instead of leaving the container. */
+export function keepFocusInside(e: KeyboardEvent, container: HTMLElement): void {
+    const focusable = getFocusableElements(container);
+    if (focusable.length === 0) {
+        e.preventDefault();
+        container.focus();
+        return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    // Shift+Tab from the container itself would otherwise move focus out of it
+    if (e.shiftKey && (document.activeElement === first || document.activeElement === container)) {
+        e.preventDefault();
+        last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+    }
 }
 
 export function useModalA11y(containerRef: React.RefObject<HTMLElement | null>, onClose: () => void) {
@@ -24,19 +45,12 @@ export function useModalA11y(containerRef: React.RefObject<HTMLElement | null>, 
     }, [onClose]);
 
     useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
         const previousActiveElement = document.activeElement as HTMLElement | null;
         const previousOverflow = document.body.style.overflow;
         document.body.style.overflow = 'hidden';
-
-        const focusInitialTarget = () => {
-            const container = containerRef.current;
-            if (!container) return;
-            const focusable = getFocusableElements(container);
-            const first = focusable[0] ?? container;
-            first.focus();
-        };
-
-        focusInitialTarget();
+        (getFocusableElements(container)[0] ?? container).focus();
 
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
@@ -44,33 +58,14 @@ export function useModalA11y(containerRef: React.RefObject<HTMLElement | null>, 
                 onCloseRef.current();
                 return;
             }
-            if (e.key !== 'Tab') return;
-            const container = containerRef.current;
-            if (!container) return;
-            const focusable = getFocusableElements(container);
-            if (focusable.length === 0) {
-                e.preventDefault();
-                container.focus();
-                return;
-            }
-            const first = focusable[0];
-            const last = focusable[focusable.length - 1];
-            const active = document.activeElement as HTMLElement | null;
-
-            if (e.shiftKey && active === first) {
-                e.preventDefault();
-                last.focus();
-            } else if (!e.shiftKey && active === last) {
-                e.preventDefault();
-                first.focus();
-            }
+            if (e.key === 'Tab') keepFocusInside(e, container);
         };
 
         document.addEventListener('keydown', handleKeyDown);
         return () => {
             document.removeEventListener('keydown', handleKeyDown);
             document.body.style.overflow = previousOverflow;
-            previousActiveElement?.focus?.();
+            previousActiveElement?.focus();
         };
     }, [containerRef]);
 }

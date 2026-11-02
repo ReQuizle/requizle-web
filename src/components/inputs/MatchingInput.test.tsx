@@ -24,14 +24,7 @@ describe('MatchingInput', () => {
     });
 
     it('should render left column items', () => {
-        render(
-            <MatchingInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        render(<MatchingInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
         expect(screen.getByText('A')).toBeInTheDocument();
         expect(screen.getByText('B')).toBeInTheDocument();
@@ -39,14 +32,7 @@ describe('MatchingInput', () => {
     });
 
     it('should render right column items (shuffled)', () => {
-        render(
-            <MatchingInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        render(<MatchingInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
         expect(screen.getByText('1')).toBeInTheDocument();
         expect(screen.getByText('2')).toBeInTheDocument();
@@ -54,55 +40,27 @@ describe('MatchingInput', () => {
     });
 
     it('should render column headers', () => {
-        render(
-            <MatchingInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        render(<MatchingInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
         expect(screen.getByText('Items')).toBeInTheDocument();
         expect(screen.getByText('Matches')).toBeInTheDocument();
     });
 
     it('should render submit button', () => {
-        render(
-            <MatchingInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        render(<MatchingInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
-        expect(screen.getByText('Submit Matches')).toBeInTheDocument();
+        expect(screen.getByText('Submit matches')).toBeInTheDocument();
     });
 
     it('should disable submit button when not all items are matched', () => {
-        render(
-            <MatchingInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        render(<MatchingInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
-        const submitButton = screen.getByText('Submit Matches');
+        const submitButton = screen.getByText('Submit matches');
         expect(submitButton).toBeDisabled();
     });
 
     it('should select left item when clicked', () => {
-        const {container} = render(
-            <MatchingInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        const {container} = render(<MatchingInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
         fireEvent.click(screen.getByText('A'));
 
@@ -110,14 +68,7 @@ describe('MatchingInput', () => {
     });
 
     it('should match items when left is selected and right is clicked', () => {
-        render(
-            <MatchingInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        render(<MatchingInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
         fireEvent.click(screen.getByText('A'));
         fireEvent.click(screen.getByText('1'));
@@ -128,47 +79,37 @@ describe('MatchingInput', () => {
         fireEvent.click(screen.getByText('C'));
         fireEvent.click(screen.getByText('3'));
 
-        const submitButton = screen.getByText('Submit Matches');
+        const submitButton = screen.getByText('Submit matches');
         expect(submitButton).not.toBeDisabled();
 
         fireEvent.click(submitButton);
-        expect(mockOnAnswer).toHaveBeenCalledWith({'A': '1', 'B': '2', 'C': '3'});
+        expect(mockOnAnswer).toHaveBeenCalledWith({A: '1', B: '2', C: '3'});
     });
 
     it('should unmatch when clicking already matched left item', () => {
-        render(
-            <MatchingInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        render(<MatchingInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
         fireEvent.click(screen.getByText('A'));
         fireEvent.click(screen.getByText('1'));
 
         fireEvent.click(screen.getByText('A'));
 
-        const submitButton = screen.getByText('Submit Matches');
+        const submitButton = screen.getByText('Submit matches');
         expect(submitButton).toBeDisabled();
     });
 
-    it('should not allow interaction when disabled', () => {
+    it('should lock the matches after submitting', () => {
         render(
             <MatchingInput
                 question={createQuestion()}
                 onAnswer={mockOnAnswer}
-                disabled={true}
-                submittedAnswer={null}
+                submittedAnswer={{A: '1', B: '2', C: '3'}}
             />
         );
 
-        fireEvent.click(screen.getByText('A'));
-        fireEvent.click(screen.getByText('1'));
-
-        const submitButton = screen.getByText('Submit Matches');
-        expect(submitButton).toBeDisabled();
+        for (const button of screen.getAllByRole('button')) {
+            expect(button).toBeDisabled();
+        }
     });
 
     it('should display submitted answer', () => {
@@ -176,8 +117,7 @@ describe('MatchingInput', () => {
             <MatchingInput
                 question={createQuestion()}
                 onAnswer={mockOnAnswer}
-                disabled={true}
-                submittedAnswer={{'A': '1', 'B': '2', 'C': '3'}}
+                submittedAnswer={{A: '1', B: '2', C: '3'}}
             />
         );
 

@@ -21,14 +21,7 @@ describe('MultipleAnswerInput', () => {
     });
 
     it('should render all choices', () => {
-        render(
-            <MultipleAnswerInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        render(<MultipleAnswerInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
         expect(screen.getByText('Apple')).toBeInTheDocument();
         expect(screen.getByText('Banana')).toBeInTheDocument();
@@ -37,46 +30,25 @@ describe('MultipleAnswerInput', () => {
     });
 
     it('should render submit button', () => {
-        render(
-            <MultipleAnswerInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        render(<MultipleAnswerInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
-        expect(screen.getByText('Submit Answer')).toBeInTheDocument();
+        expect(screen.getByText('Submit answer')).toBeInTheDocument();
     });
 
     it('should toggle selection when clicking choices', () => {
-        render(
-            <MultipleAnswerInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        render(<MultipleAnswerInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
         fireEvent.click(screen.getByText('Apple'));
 
         fireEvent.click(screen.getByText('Cherry'));
 
-        fireEvent.click(screen.getByText('Submit Answer'));
+        fireEvent.click(screen.getByText('Submit answer'));
 
         expect(mockOnAnswer).toHaveBeenCalledWith(expect.arrayContaining([0, 2]));
     });
 
     it('should allow deselecting choices', () => {
-        render(
-            <MultipleAnswerInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        render(<MultipleAnswerInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
         fireEvent.click(screen.getByText('Apple'));
 
@@ -84,68 +56,45 @@ describe('MultipleAnswerInput', () => {
 
         fireEvent.click(screen.getByText('Banana'));
 
-        fireEvent.click(screen.getByText('Submit Answer'));
+        fireEvent.click(screen.getByText('Submit answer'));
 
         expect(mockOnAnswer).toHaveBeenCalledWith([1]);
     });
 
     it('should disable submit button when nothing is selected', () => {
-        render(
-            <MultipleAnswerInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        render(<MultipleAnswerInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
-        const submitButton = screen.getByText('Submit Answer');
+        const submitButton = screen.getByText('Submit answer');
         expect(submitButton).toBeDisabled();
     });
 
     it('should enable submit button when something is selected', () => {
-        render(
-            <MultipleAnswerInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        render(<MultipleAnswerInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
         fireEvent.click(screen.getByText('Apple'));
 
-        const submitButton = screen.getByText('Submit Answer');
+        const submitButton = screen.getByText('Submit answer');
         expect(submitButton).not.toBeDisabled();
     });
 
-    it('should not allow selection when disabled', () => {
-        render(
-            <MultipleAnswerInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={true}
-                submittedAnswer={null}
-            />
-        );
+    it('should not change the selection after submitting', () => {
+        render(<MultipleAnswerInput question={createQuestion()} onAnswer={mockOnAnswer} submittedAnswer={[1]} />);
 
         fireEvent.click(screen.getByText('Apple'));
-        fireEvent.click(screen.getByText('Submit Answer'));
+        fireEvent.click(screen.getByText('Submit answer'));
 
+        expect(screen.getByText('Apple').closest('button')!.firstElementChild).not.toHaveClass('text-indigo-600');
         expect(mockOnAnswer).not.toHaveBeenCalled();
     });
 
-    it('should show submitted selections', () => {
-        const {container} = render(
-            <MultipleAnswerInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={true}
-                submittedAnswer={[0, 1]}
-            />
-        );
+    it('should mark correct, wrong, and missed choices after submitting', () => {
+        render(<MultipleAnswerInput question={createQuestion()} onAnswer={mockOnAnswer} submittedAnswer={[0, 1]} />);
 
-        const buttons = container.querySelectorAll('button');
-        expect(buttons.length).toBeGreaterThan(0);
+        const choice = (text: string) => screen.getByText(text).closest('button')!;
+        expect(choice('Apple').firstElementChild).toHaveClass('text-green-600');
+        expect(choice('Apple').firstElementChild).not.toHaveClass('text-indigo-600');
+        expect(choice('Banana').firstElementChild).toHaveClass('text-red-700');
+        expect(choice('Cherry')).toHaveClass('border-dashed');
+        expect(choice('Date')).toHaveClass('text-slate-500');
     });
 });

@@ -13,17 +13,24 @@ function ModalHarness() {
                 pendingImport={
                     open
                         ? {
-                            data: {},
-                            mediaGroups: [
-                                {
-                                    filename: 'example.png',
-                                    references: [{path: 'images/example.png', filename: 'example.png', subjectName: 'S1', topicName: 'T1'}],
-                                    isConflict: false,
-                                    uploaded: false
-                                }
-                            ],
-                            uploadError: null
-                        }
+                              data: {},
+                              mediaGroups: [
+                                  {
+                                      filename: 'example.png',
+                                      references: [
+                                          {
+                                              path: 'images/example.png',
+                                              filename: 'example.png',
+                                              subjectName: 'S1',
+                                              topicName: 'T1'
+                                          }
+                                      ],
+                                      isConflict: false,
+                                      uploaded: false
+                                  }
+                              ],
+                              uploadError: null
+                          }
                         : null
                 }
                 isCompleting={false}
@@ -42,11 +49,11 @@ describe('PendingMediaImportModal', () => {
     it('renders with dialog semantics and closes on Escape', () => {
         render(<ModalHarness />);
 
-        const dialog = screen.getByRole('dialog', {name: 'Upload Media'});
+        const dialog = screen.getByRole('dialog', {name: 'Upload media'});
         expect(dialog).toBeInTheDocument();
 
         fireEvent.keyDown(document, {key: 'Escape'});
-        expect(screen.queryByRole('dialog', {name: 'Upload Media'})).not.toBeInTheDocument();
+        expect(screen.queryByRole('dialog', {name: 'Upload media'})).not.toBeInTheDocument();
     });
 
     it('traps tab focus inside the modal', () => {
@@ -59,6 +66,6 @@ describe('PendingMediaImportModal', () => {
 
         fireEvent.keyDown(document, {key: 'Tab', shiftKey: true});
         expect(document.activeElement).not.toBe(outsideButton);
-        expect(screen.getByRole('dialog', {name: 'Upload Media'}).contains(document.activeElement)).toBe(true);
+        expect(screen.getByRole('dialog', {name: 'Upload media'}).contains(document.activeElement)).toBe(true);
     });
 });

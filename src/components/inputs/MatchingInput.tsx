@@ -1,47 +1,36 @@
 import React, {useState} from 'react';
 import type {MatchingQuestion} from '../../types';
 import {clsx} from 'clsx';
-import {motion} from 'framer-motion';
 import {RichText} from '../RichText';
 import {shuffleArray} from '../../utils/array';
 
 interface Props {
     question: MatchingQuestion;
     onAnswer: (answer: Record<string, string>) => void;
-    disabled: boolean;
-    submittedAnswer: Record<string, string> | null;
+    submittedAnswer?: Record<string, string>;
 }
 
-export const MatchingInput: React.FC<Props> = ({question, onAnswer, disabled, submittedAnswer}) => {
+export const MatchingInput: React.FC<Props> = ({question, onAnswer, submittedAnswer}) => {
     const [matches, setMatches] = useState<Record<string, string>>(submittedAnswer ?? {});
     const [selectedLeft, setSelectedLeft] = useState<string | null>(null);
-
-    const [shuffledRightItems] = useState<string[]>(() => {
-        const rightItems = question.pairs.map(pair => pair.right);
-        return shuffleArray(rightItems);
-    });
+    const [shuffledRightItems] = useState(() => shuffleArray(question.pairs.map((pair) => pair.right)));
+    const answered = submittedAnswer !== undefined;
 
     const handleLeftClick = (leftId: string) => {
-        if (disabled) return;
         if (matches[leftId]) {
-            const newMatches = {...matches};
-            delete newMatches[leftId];
-            setMatches(newMatches);
+            setMatches((prev) => {
+                const next = {...prev};
+                delete next[leftId];
+                return next;
+            });
         } else {
             setSelectedLeft(leftId === selectedLeft ? null : leftId);
         }
     };
 
     const handleRightClick = (rightId: string) => {
-        if (disabled || !selectedLeft) return;
-
-        const isAlreadyMatched = Object.values(matches).includes(rightId);
-        if (isAlreadyMatched) return;
-
-        setMatches(prev => ({
-            ...prev,
-            [selectedLeft]: rightId
-        }));
+        if (!selectedLeft || Object.values(matches).includes(rightId)) return;
+        setMatches((prev) => ({...prev, [selectedLeft]: rightId}));
         setSelectedLeft(null);
     };
 
@@ -51,54 +40,64 @@ export const MatchingInput: React.FC<Props> = ({question, onAnswer, disabled, su
         <div className="space-y-6">
             <div className="grid grid-cols-2 gap-8">
                 <div className="space-y-3">
-                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Items</h3>
+                    <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                        Items
+                    </h3>
                     {question.pairs.map((pair) => {
                         const isMatched = !!matches[pair.left];
                         const isSelected = selectedLeft === pair.left;
 
                         return (
-                            <motion.button
+                            <button
                                 key={pair.left}
+                                type="button"
                                 onClick={() => handleLeftClick(pair.left)}
-                                disabled={disabled}
+                                disabled={answered}
                                 className={clsx(
-                                    "w-full p-4 rounded-xl border-2 text-left text-sm font-medium transition-all",
-                                    isMatched ? "bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300" :
-                                        isSelected ? "bg-indigo-600 dark:bg-indigo-600 border-indigo-600 dark:border-indigo-600 text-on-accent shadow-lg scale-105" :
-                                            "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500 text-slate-700 dark:text-slate-300"
+                                    'w-full p-4 rounded-xl border-2 text-left text-sm font-medium transition-all',
+                                    isMatched
+                                        ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300'
+                                        : isSelected
+                                          ? 'bg-indigo-600 border-indigo-600 text-on-accent shadow-lg scale-105'
+                                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500 text-slate-700 dark:text-slate-300'
                                 )}
                             >
                                 <RichText inline>{pair.left}</RichText>
-                            </motion.button>
+                            </button>
                         );
                     })}
                 </div>
 
                 <div className="space-y-3">
-                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Matches</h3>
+                    <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                        Matches
+                    </h3>
                     {shuffledRightItems.map((rightItem) => {
-                        const matchedLeft = Object.keys(matches).find(key => matches[key] === rightItem);
+                        const matchedLeft = Object.keys(matches).find((key) => matches[key] === rightItem);
                         const isMatched = !!matchedLeft;
 
                         return (
-                            <motion.button
+                            <button
                                 key={rightItem}
+                                type="button"
                                 onClick={() => handleRightClick(rightItem)}
-                                disabled={disabled}
+                                disabled={answered}
                                 className={clsx(
-                                    "w-full p-4 rounded-xl border-2 text-left text-sm font-medium transition-all relative",
-                                    isMatched ? "bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300" :
-                                        selectedLeft ? "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 border-dashed hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/10 cursor-pointer" :
-                                            "bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-700/50 text-slate-400 dark:text-slate-600 cursor-default"
+                                    'w-full p-4 rounded-xl border-2 text-left text-sm font-medium transition-all relative',
+                                    isMatched
+                                        ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300'
+                                        : selectedLeft
+                                          ? 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 border-dashed hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/10 cursor-pointer'
+                                          : 'bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-700/50 text-slate-500 dark:text-slate-400 cursor-default'
                                 )}
                             >
                                 <RichText inline>{rightItem}</RichText>
                                 {matchedLeft && (
                                     <div className="absolute -left-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 rounded-full flex items-center justify-center text-xs font-bold border-2 border-white dark:border-slate-800 shadow-sm">
-                                        {question.pairs.findIndex(p => p.left === matchedLeft) + 1}
+                                        {question.pairs.findIndex((p) => p.left === matchedLeft) + 1}
                                     </div>
                                 )}
-                            </motion.button>
+                            </button>
                         );
                     })}
                 </div>
@@ -106,11 +105,12 @@ export const MatchingInput: React.FC<Props> = ({question, onAnswer, disabled, su
 
             <div className="flex justify-end">
                 <button
+                    type="button"
                     onClick={() => onAnswer(matches)}
-                    disabled={disabled || !isComplete}
-                    className="btn btn-primary"
+                    disabled={answered || !isComplete}
+                    className="btn-primary"
                 >
-                    Submit Matches
+                    Submit matches
                 </button>
             </div>
         </div>

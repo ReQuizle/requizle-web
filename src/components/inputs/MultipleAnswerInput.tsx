@@ -8,27 +8,15 @@ import {RichText} from '../RichText';
 interface Props {
     question: MultipleAnswerQuestion;
     onAnswer: (answer: number[]) => void;
-    disabled: boolean;
-    submittedAnswer: number[] | null;
+    submittedAnswer?: number[];
 }
 
-export const MultipleAnswerInput: React.FC<Props> = ({question, onAnswer, disabled, submittedAnswer}) => {
+export const MultipleAnswerInput: React.FC<Props> = ({question, onAnswer, submittedAnswer}) => {
     const [selectedIndices, setSelectedIndices] = useState<number[]>(submittedAnswer ?? []);
+    const answered = submittedAnswer !== undefined;
 
     const toggleSelection = (index: number) => {
-        if (disabled) return;
-
-        setSelectedIndices(prev => {
-            if (prev.includes(index)) {
-                return prev.filter(i => i !== index);
-            } else {
-                return [...prev, index];
-            }
-        });
-    };
-
-    const handleSubmit = () => {
-        onAnswer(selectedIndices);
+        setSelectedIndices((prev) => (prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index]));
     };
 
     return (
@@ -37,62 +25,61 @@ export const MultipleAnswerInput: React.FC<Props> = ({question, onAnswer, disabl
                 {question.choices.map((choice, index) => {
                     const isSelected = selectedIndices.includes(index);
                     const isAnswer = question.answerIndices.includes(index);
-                    const isCorrect = submittedAnswer && isSelected && isAnswer;
-                    const isMissed = submittedAnswer && !isSelected && isAnswer;
-                    const isWrong = submittedAnswer && isSelected && !isAnswer;
+                    const isCorrect = answered && isSelected && isAnswer;
+                    const isMissed = answered && !isSelected && isAnswer;
+                    const isWrong = answered && isSelected && !isAnswer;
 
-                    let borderColor = "border-slate-200 dark:border-slate-700";
-                    let bgColor = "bg-white dark:bg-slate-800";
-                    let textColor = "text-slate-700 dark:text-slate-200";
-
-                    if (submittedAnswer) {
-                        if (isCorrect) {
-                            borderColor = "border-green-500 dark:border-green-500";
-                            bgColor = "bg-green-50 dark:bg-green-900/20";
-                            textColor = "text-green-800 dark:text-green-400";
-                        } else if (isMissed) {
-                            borderColor = "border-green-300 dark:border-green-600 border-dashed";
-                            bgColor = "bg-green-50/50 dark:bg-green-900/10";
-                            textColor = "text-green-600 dark:text-green-500";
-                        } else if (isWrong) {
-                            borderColor = "border-red-500 dark:border-red-500";
-                            bgColor = "bg-red-50 dark:bg-red-900/20";
-                            textColor = "text-red-800 dark:text-red-400";
-                        } else {
-                            borderColor = "border-slate-200 dark:border-slate-700";
-                            bgColor = "bg-slate-50 dark:bg-slate-800/50 opacity-60";
-                            textColor = "text-slate-400 dark:text-slate-600";
-                        }
+                    let stateClass =
+                        'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200';
+                    if (isCorrect) {
+                        stateClass =
+                            'border-green-500 bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-400';
+                    } else if (isMissed) {
+                        stateClass =
+                            'border-green-300 dark:border-green-600 border-dashed bg-green-50/50 dark:bg-green-900/10 text-green-600 dark:text-green-500';
+                    } else if (isWrong) {
+                        stateClass = 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-400';
+                    } else if (answered) {
+                        stateClass =
+                            'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400';
                     } else if (isSelected) {
-                        borderColor = "border-indigo-600 dark:border-indigo-500";
-                        bgColor = "bg-indigo-50 dark:bg-indigo-900/20";
-                        textColor = "text-indigo-900 dark:text-indigo-300";
+                        stateClass =
+                            'border-indigo-600 dark:border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-900 dark:text-indigo-300';
                     }
 
                     return (
                         <motion.button
                             key={index}
-                            whileHover={!disabled ? {scale: 1.01} : {}}
-                            whileTap={!disabled ? {scale: 0.99} : {}}
+                            type="button"
+                            whileHover={answered ? {} : {scale: 1.01}}
+                            whileTap={answered ? {} : {scale: 0.99}}
                             onClick={() => toggleSelection(index)}
-                            disabled={disabled}
+                            disabled={answered}
                             className={clsx(
-                                "w-full p-4 rounded-xl border-2 text-left transition-all flex items-center gap-4 group",
-                                borderColor,
-                                bgColor,
-                                textColor,
-                                !disabled && !isSelected && "hover:border-indigo-200 dark:hover:border-indigo-800 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                                'w-full p-4 rounded-xl border-2 text-left transition-all flex items-center gap-4 group',
+                                stateClass,
+                                !answered &&
+                                    !isSelected &&
+                                    'hover:border-indigo-200 dark:hover:border-indigo-800 hover:bg-slate-50 dark:hover:bg-slate-800/50'
                             )}
                         >
-                            <div className={clsx(
-                                "flex-shrink-0 transition-colors",
-                                isSelected ? "text-indigo-600 dark:text-indigo-400" : "text-slate-300 dark:text-slate-600 group-hover:text-indigo-300 dark:group-hover:text-indigo-500",
-                                submittedAnswer && isCorrect && "text-green-600 dark:text-green-400",
-                                submittedAnswer && isWrong && "text-red-600 dark:text-red-400"
-                            )}>
+                            <div
+                                className={clsx(
+                                    'shrink-0 transition-colors',
+                                    isCorrect
+                                        ? 'text-green-600 dark:text-green-400'
+                                        : isWrong
+                                          ? 'text-red-700 dark:text-red-400'
+                                          : isSelected
+                                            ? 'text-indigo-600 dark:text-indigo-400'
+                                            : 'text-slate-300 dark:text-slate-600 group-hover:text-indigo-300 dark:group-hover:text-indigo-500'
+                                )}
+                            >
                                 {isSelected ? <CheckSquare size={24} /> : <Square size={24} />}
                             </div>
-                            <span className="text-lg font-medium"><RichText inline>{choice}</RichText></span>
+                            <span className="text-lg font-medium">
+                                <RichText inline>{choice}</RichText>
+                            </span>
                         </motion.button>
                     );
                 })}
@@ -100,11 +87,12 @@ export const MultipleAnswerInput: React.FC<Props> = ({question, onAnswer, disabl
 
             <div className="flex justify-end">
                 <button
-                    onClick={handleSubmit}
-                    disabled={disabled || selectedIndices.length === 0}
-                    className="btn btn-primary"
+                    type="button"
+                    onClick={() => onAnswer(selectedIndices)}
+                    disabled={answered || selectedIndices.length === 0}
+                    className="btn-primary"
                 >
-                    Submit Answer
+                    Submit answer
                 </button>
             </div>
         </div>

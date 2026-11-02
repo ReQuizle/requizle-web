@@ -1,33 +1,23 @@
-type NormalizeOptions = {
-    trim?: boolean;
-};
+// Both compare entries after trimming, so " cat" and "cat" count as the same word.
 
-function normalizeString(value: string, options?: NormalizeOptions): string {
-    return options?.trim ? value.trim() : value;
+export function hasDuplicateStrings(values: string[]): boolean {
+    const trimmed = values.map((value) => value.trim());
+    return new Set(trimmed).size !== trimmed.length;
 }
 
-export function hasDuplicateStrings(values: string[], options?: NormalizeOptions): boolean {
-    const seen = new Set<string>();
-    for (const value of values) {
-        const normalized = normalizeString(value, options);
-        if (seen.has(normalized)) return true;
-        seen.add(normalized);
-    }
-    return false;
-}
-
-export function hasEnoughWordBankEntries(wordBank: string[], answers: string[], options?: NormalizeOptions): boolean {
+/** Whether the word bank holds every answer, counting a word once for each time it is needed. */
+export function hasEnoughWordBankEntries(wordBank: string[], answers: string[]): boolean {
     const remaining = new Map<string, number>();
     for (const word of wordBank) {
-        const normalized = normalizeString(word, options);
-        remaining.set(normalized, (remaining.get(normalized) ?? 0) + 1);
+        const key = word.trim();
+        remaining.set(key, (remaining.get(key) ?? 0) + 1);
     }
 
     for (const answer of answers) {
-        const normalized = normalizeString(answer, options);
-        const count = remaining.get(normalized) ?? 0;
-        if (count <= 0) return false;
-        remaining.set(normalized, count - 1);
+        const key = answer.trim();
+        const count = remaining.get(key) ?? 0;
+        if (count === 0) return false;
+        remaining.set(key, count - 1);
     }
 
     return true;

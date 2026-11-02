@@ -1,56 +1,24 @@
-import React, {useState, useCallback} from 'react';
+import React, {useState} from 'react';
 import {Link} from 'react-router-dom';
-import {useQuizStore, DEFAULT_SESSION_STATE} from '../store/useQuizStore';
+import {useQuizStore} from '../store/useQuizStore';
+import {DEFAULT_SESSION_STATE} from '../store/defaults';
 import {calculateMastery} from '../utils/quizLogic';
 import {CheckCircle2, Circle, X, SquarePen, EllipsisVertical} from 'lucide-react';
 import {clsx} from 'clsx';
 import {Logo} from './Logo';
+import {ToggleSwitch} from './ToggleSwitch';
 import {SimpleConfirmModal, TypeToConfirmModal} from './AppModals';
-import type {Subject, Topic, SubjectExportV1, QuestionProgress} from '../types';
-import {triggerBlobDownload, triggerJsonDownload} from '../utils/download';
-import {createRqzlArchiveBlob, type ArchiveMediaEntry} from '../utils/rqzlArchive';
-import {getArchiveMediaEntriesForSubjects} from '../utils/archiveMedia';
-import {
-    SidebarContextMenu,
-    type ContextMenuState
-} from './leftSidebar/SidebarContextMenu';
-import {ExportOptionsModal, type ExportOptions} from './ExportOptionsModal';
+import type {Subject, Topic, SubjectExportV1} from '../types';
+import {downloadExport, DEFAULT_EXPORT_OPTIONS, toFileSlug, type ExportOptions} from '../utils/exportFiles';
+import {MissingMediaError} from '../utils/archiveMedia';
+import {SidebarContextMenu, type ContextMenuState} from './leftSidebar/SidebarContextMenu';
+import {ExportOptionsModal} from './ExportOptionsModal';
 import {flattenProgress} from '../store/quizStoreHelpers';
 import {useLongPress} from '../utils/useLongPress';
+import {plural} from '../utils/plural';
 
-type SimpleConfirmState =
-    | null
-    | {
-        variant: 'resetSubject' | 'resetTopic';
-        subjectId: string;
-        subjectName: string;
-        topicId?: string;
-        topicName?: string;
-    };
-
-const DEFAULT_SUBJECT_EXPORT_OPTIONS: ExportOptions = {
-    includeProgress: true,
-    includeMedia: true,
-    format: 'rqzl'
-};
-
-async function buildSubjectExportPayload(
-    subject: Subject,
-    progressSlice: Record<string, Record<string, QuestionProgress>>,
-    options?: {includeProgress?: boolean; includeMedia?: boolean}
-): Promise<{payload: SubjectExportV1; mediaEntries: ArchiveMediaEntry[]}> {
-    const includeProgress = options?.includeProgress !== false;
-    const includeMedia = options?.includeMedia !== false;
-    const mediaEntries = includeMedia
-        ? await getArchiveMediaEntriesForSubjects([subject])
-        : [];
-    const payload: SubjectExportV1 = {
-        requizleSubjectExport: 1,
-        subject,
-        ...(includeProgress ? {progress: progressSlice} : {})
-    };
-    return {payload, mediaEntries};
-}
+/** What a sidebar menu acts on */
+type MenuTarget = {kind: 'subject'; subject: Subject} | {kind: 'topic'; subject: Subject; topic: Topic};
 
 export const LeftSidebar: React.FC = () => {
     const {
@@ -68,39 +36,12 @@ export const LeftSidebar: React.FC = () => {
     } = useQuizStore();
     const [deleteConfirm, setDeleteConfirm] = useState<{id: string; name: string} | null>(null);
     const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
-    const [simpleConfirm, setSimpleConfirm] = useState<SimpleConfirmState>(null);
+    const [resetConfirm, setResetConfirm] = useState<MenuTarget | null>(null);
     const [exportError, setExportError] = useState<string | null>(null);
-    const [subjectExportModal, setSubjectExportModal] = useState<{
-        subject: Subject;
-        options: ExportOptions;
-    } | null>(null);
+    const [exportTarget, setExportTarget] = useState<Subject | null>(null);
 
-    const closeContextMenu = useCallback(() => {
-        setContextMenu(null);
-    }, []);
-
-    const {
-        startLongPress,
-        onLongPressTouchMove,
-        onLongPressTouchEnd,
-        swallowSyntheticClickAfterLongPress
-    } = useLongPress<
-        | {kind: 'subject'; subject: Subject}
-        | {kind: 'topic'; subject: Subject; topic: Topic}
-    >({
-        onLongPress: (target, coords) => {
-            if (target.kind === 'subject') {
-                setContextMenu({kind: 'subject', subject: target.subject, x: coords.x, y: coords.y});
-            } else {
-                setContextMenu({
-                    kind: 'topic',
-                    subject: target.subject,
-                    topic: target.topic,
-                    x: coords.x,
-                    y: coords.y
-                });
-            }
-        }
+    const longPressHandlers = useLongPress<MenuTarget>({
+        onLongPress: (target, {x, y}) => setContextMenu({...target, x, y})
     });
 
     const activeProfile = profiles[activeProfileId];
@@ -108,137 +49,75 @@ export const LeftSidebar: React.FC = () => {
     const progress = activeProfile?.progress ?? {};
     const session = activeProfile?.session ?? DEFAULT_SESSION_STATE;
 
-    const currentSubject = subjects.find(s => s.id === session.subjectId);
+    const currentSubject = subjects.find((s) => s.id === session.subjectId);
 
-    const openSubjectMenu = (e: React.MouseEvent<HTMLElement>, subject: Subject) => {
+    /** Open the menu at the pointer, for a right click */
+    const openMenuAtPointer = (e: React.MouseEvent<HTMLElement>, target: MenuTarget) => {
         e.preventDefault();
         e.stopPropagation();
-        setContextMenu({kind: 'subject', subject, x: e.clientX, y: e.clientY, triggerEl: e.currentTarget});
+        setContextMenu({...target, x: e.clientX, y: e.clientY, triggerEl: e.currentTarget});
     };
 
-    const openTopicMenu = (e: React.MouseEvent<HTMLElement>, subject: Subject, topic: Topic) => {
-        e.preventDefault();
+    /** Open the menu below its actions button */
+    const openMenuFromButton = (e: React.MouseEvent<HTMLElement>, target: MenuTarget) => {
         e.stopPropagation();
-        setContextMenu({kind: 'topic', subject, topic, x: e.clientX, y: e.clientY, triggerEl: e.currentTarget});
-    };
-
-    const openSubjectMenuFromTrigger = (subject: Subject, trigger: HTMLElement) => {
-        const rect = trigger.getBoundingClientRect();
-        setContextMenu({
-            kind: 'subject',
-            subject,
-            x: rect.right,
-            y: rect.bottom,
-            triggerEl: trigger
-        });
-    };
-
-    const openTopicMenuFromTrigger = (subject: Subject, topic: Topic, trigger: HTMLElement) => {
-        const rect = trigger.getBoundingClientRect();
-        setContextMenu({
-            kind: 'topic',
-            subject,
-            topic,
-            x: rect.right,
-            y: rect.bottom,
-            triggerEl: trigger
-        });
+        const rect = e.currentTarget.getBoundingClientRect();
+        setContextMenu({...target, x: rect.right, y: rect.bottom, triggerEl: e.currentTarget});
     };
 
     const performSubjectExport = async (subject: Subject, options: ExportOptions) => {
-        const slice = progress[subject.id] || {};
         try {
-            const {payload, mediaEntries} = await buildSubjectExportPayload(subject, slice, {
-                includeProgress: options.includeProgress,
-                includeMedia: options.includeMedia
-            });
-            const safeName = subject.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/gi, '') || 'subject';
+            const payload: SubjectExportV1 = {
+                requizleSubjectExport: 1,
+                subject,
+                ...(options.includeProgress ? {progress: progress[subject.id] ?? {}} : {})
+            };
             const suffix = options.includeProgress ? '' : '-questions';
-            const baseFilename = `requizle-subject-${safeName}${suffix}`;
-
-            if (options.format === 'json') {
-                triggerJsonDownload(payload, `${baseFilename}.json`);
-            } else {
-                const archive = await createRqzlArchiveBlob(payload, mediaEntries);
-                const ext = options.format === 'zip' ? 'zip' : 'rqzl';
-                triggerBlobDownload(archive, `${baseFilename}.${ext}`);
-            }
+            await downloadExport(
+                payload,
+                [subject],
+                `requizle-subject-${toFileSlug(subject.name, 'subject')}${suffix}`,
+                options
+            );
             setExportError(null);
         } catch (err) {
-            console.error(err);
-            setExportError('Export failed. Try again.');
+            console.error('Subject export failed:', err);
+            setExportError(err instanceof MissingMediaError ? err.message : 'Export failed. Try again.');
         }
     };
 
-    const handleQuickExportSubject = (subject: Subject) => {
-        closeContextMenu();
-        void performSubjectExport(subject, DEFAULT_SUBJECT_EXPORT_OPTIONS);
-    };
-
-    const handleOpenSubjectExportAs = (subject: Subject) => {
-        closeContextMenu();
-        setSubjectExportModal({
-            subject,
-            options: {...DEFAULT_SUBJECT_EXPORT_OPTIONS}
-        });
-    };
-
-    const setSubjectExportOption = <K extends keyof ExportOptions>(key: K, value: ExportOptions[K]) => {
-        setSubjectExportModal(prev => (prev ? {...prev, options: {...prev.options, [key]: value}} : prev));
-    };
-
-    const handleResetSubjectProgressFromContext = (subject: Subject) => {
-        closeContextMenu();
+    const handleResetSubjectProgress = (subject: Subject) => {
         if (settings.confirmResetSubjectProgress) {
-            setSimpleConfirm({
-                variant: 'resetSubject',
-                subjectId: subject.id,
-                subjectName: subject.name
-            });
-            return;
+            setResetConfirm({kind: 'subject', subject});
+        } else {
+            resetSubjectProgress(subject.id);
         }
-        resetSubjectProgress(subject.id);
     };
 
-    const handleDeleteSubjectFromContext = (subject: Subject) => {
-        closeContextMenu();
+    const handleDeleteSubject = (subject: Subject) => {
         if (settings.confirmSubjectDelete) {
             setDeleteConfirm({id: subject.id, name: subject.name});
-            return;
+        } else {
+            deleteSubject(subject.id);
         }
-        deleteSubject(subject.id);
     };
 
-    const handleMarkTopicMasteredFromContext = (subject: Subject, topic: Topic) => {
-        closeContextMenu();
-        markTopicMastered(subject.id, topic.id);
-    };
-
-    const handleResetTopicProgressFromContext = (subject: Subject, topic: Topic) => {
-        closeContextMenu();
+    const handleResetTopicProgress = (subject: Subject, topic: Topic) => {
         if (settings.confirmResetTopicProgress) {
-            setSimpleConfirm({
-                variant: 'resetTopic',
-                subjectId: subject.id,
-                subjectName: subject.name,
-                topicId: topic.id,
-                topicName: topic.name
-            });
-            return;
+            setResetConfirm({kind: 'topic', subject, topic});
+        } else {
+            resetTopicProgress(subject.id, topic.id);
         }
-        resetTopicProgress(subject.id, topic.id);
     };
 
     const getSubjectMasteryPct = (subject: Subject): number => {
-        const allQuestions = subject.topics.flatMap(topic => topic.questions);
+        const allQuestions = subject.topics.flatMap((topic) => topic.questions);
         const flatProgress = flattenProgress(progress[subject.id]);
         return calculateMastery(allQuestions, flatProgress);
     };
 
-    const getTopicMasteryPct = (subject: Subject, topic: Topic): number => {
-        const topicProgress = (progress[subject.id] || {})[topic.id] || {};
-        return calculateMastery(topic.questions, topicProgress);
-    };
+    const getTopicMasteryPct = (subject: Subject, topic: Topic): number =>
+        calculateMastery(topic.questions, progress[subject.id]?.[topic.id] ?? {});
 
     const showResetSubjectProgress =
         contextMenu?.kind === 'subject' ? getSubjectMasteryPct(contextMenu.subject) > 0 : false;
@@ -249,7 +128,6 @@ export const LeftSidebar: React.FC = () => {
 
     return (
         <div className="p-6 space-y-8">
-            {/* Header */}
             <div>
                 <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                     <Logo size={40} />
@@ -260,7 +138,7 @@ export const LeftSidebar: React.FC = () => {
                     to="/edit"
                     className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 transition-colors"
                 >
-                    <SquarePen size={16} aria-hidden />
+                    <SquarePen size={16} />
                     Edit content
                 </Link>
             </div>
@@ -282,62 +160,69 @@ export const LeftSidebar: React.FC = () => {
                 </div>
             )}
 
-            {/* Subject List */}
             <div className="space-y-4">
-                <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Subjects</h2>
+                <h2 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    Subjects
+                </h2>
                 <div className="space-y-2">
-                    {subjects.map(subject => {
+                    {subjects.map((subject) => {
                         const isActive = session.subjectId === subject.id;
-                        const allQuestions = subject.topics.flatMap(t => t.questions);
-
-                        const flatProgress = flattenProgress(progress[subject.id]);
-                        const masteryPct = calculateMastery(allQuestions, flatProgress);
+                        const questionCount = subject.topics.reduce((sum, t) => sum + t.questions.length, 0);
+                        const masteryPct = getSubjectMasteryPct(subject);
 
                         return (
                             <div
                                 key={subject.id}
-                                onContextMenu={e => openSubjectMenu(e, subject)}
-                                onTouchStart={e => startLongPress({kind: 'subject', subject}, e)}
-                                onTouchMove={onLongPressTouchMove}
-                                onTouchEnd={onLongPressTouchEnd}
-                                onTouchCancel={onLongPressTouchEnd}
-                                onClickCapture={swallowSyntheticClickAfterLongPress}
+                                onContextMenu={(e) => openMenuAtPointer(e, {kind: 'subject', subject})}
+                                {...longPressHandlers({kind: 'subject', subject})}
                                 className={clsx(
-                                    "rounded-lg border transition-all duration-200 group relative [-webkit-touch-callout:none]",
+                                    'rounded-lg border transition-all duration-200 group relative [-webkit-touch-callout:none]',
                                     isActive
-                                        ? "bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800"
-                                        : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-indigo-200 dark:hover:border-indigo-700"
+                                        ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800'
+                                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-indigo-200 dark:hover:border-indigo-700'
                                 )}
                             >
                                 <button
                                     type="button"
+                                    aria-current={isActive || undefined}
                                     onClick={() => !isActive && startSession(subject.id)}
                                     className="w-full text-left p-3 pr-20 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
                                 >
-                                    <div className={clsx("font-medium truncate mb-1", isActive ? "text-indigo-900 dark:text-indigo-300" : "text-slate-700 dark:text-slate-300")}>
+                                    <div
+                                        className={clsx(
+                                            'font-medium truncate mb-1',
+                                            isActive
+                                                ? 'text-indigo-900 dark:text-indigo-300'
+                                                : 'text-slate-700 dark:text-slate-300'
+                                        )}
+                                    >
                                         {subject.name}
                                     </div>
-                                    <div className="text-xs text-slate-500 flex gap-3">
-                                        <span>{subject.topics.length} topics</span>
-                                        <span>{allQuestions.length} questions</span>
+                                    <div className="text-xs text-slate-500 dark:text-slate-400 flex gap-3">
+                                        <span>{plural(subject.topics.length, 'topic')}</span>
+                                        <span>{plural(questionCount, 'question')}</span>
                                     </div>
                                 </button>
                                 <div className="absolute top-2.5 right-2.5 flex items-center gap-1">
-                                    <span className={clsx("text-xs font-bold px-2 py-0.5 rounded-full",
-                                        masteryPct === 100 ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
-                                    )}>
+                                    <span
+                                        className={clsx(
+                                            'text-xs font-bold px-2 py-0.5 rounded-full',
+                                            masteryPct === 100
+                                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                                : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                                        )}
+                                    >
                                         {masteryPct}%
                                     </span>
                                     <button
                                         type="button"
-                                        onClick={e => {
-                                            e.stopPropagation();
-                                            openSubjectMenuFromTrigger(subject, e.currentTarget);
-                                        }}
-                                        className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
+                                        onClick={(e) => openMenuFromButton(e, {kind: 'subject', subject})}
+                                        className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 text-slate-500 dark:text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
                                         aria-label={`Open actions for ${subject.name}`}
                                         aria-haspopup="menu"
-                                        aria-expanded={contextMenu?.kind === 'subject' && contextMenu.subject.id === subject.id}
+                                        aria-expanded={
+                                            contextMenu?.kind === 'subject' && contextMenu.subject.id === subject.id
+                                        }
                                     >
                                         <EllipsisVertical size={14} />
                                     </button>
@@ -346,81 +231,89 @@ export const LeftSidebar: React.FC = () => {
                         );
                     })}
                     {subjects.length === 0 && (
-                        <p className="text-sm text-slate-400 italic">No subjects loaded.</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 italic">No subjects loaded.</p>
                     )}
                 </div>
             </div>
 
-            {/* Topic List (if subject selected) */}
             {currentSubject && (
-                <div className="space-y-4 animate-in fade-in slide-in-from-left-4 duration-300">
+                <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                        <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                        <h2 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                             Topics in {currentSubject.name}
                         </h2>
                         {session.selectedTopicIds.length === 0 ? (
-                            <span className="text-xs text-slate-400">All Selected</span>
+                            <span className="text-xs text-slate-500 dark:text-slate-400">All selected</span>
                         ) : (
                             <button
                                 type="button"
                                 onClick={selectAllTopics}
                                 className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 font-medium transition-colors"
                             >
-                                Select All
+                                Select all
                             </button>
                         )}
                     </div>
 
                     <div className="space-y-1 max-h-[40vh] overflow-y-auto pr-2">
-                        {currentSubject.topics.map(topic => {
-                            const isSelected = session.selectedTopicIds.length === 0 || session.selectedTopicIds.includes(topic.id);
-                            const topicProgress = (progress[currentSubject.id] || {})[topic.id] || {};
-                            const masteryPct = calculateMastery(topic.questions, topicProgress);
+                        {currentSubject.topics.map((topic) => {
+                            const isSelected =
+                                session.selectedTopicIds.length === 0 || session.selectedTopicIds.includes(topic.id);
+                            const masteryPct = getTopicMasteryPct(currentSubject, topic);
+                            const menuTarget: MenuTarget = {kind: 'topic', subject: currentSubject, topic};
 
                             return (
                                 <div
                                     key={topic.id}
-                                    onContextMenu={e => openTopicMenu(e, currentSubject, topic)}
-                                    onTouchStart={e =>
-                                        startLongPress({kind: 'topic', subject: currentSubject, topic}, e)
-                                    }
-                                    onTouchMove={onLongPressTouchMove}
-                                    onTouchEnd={onLongPressTouchEnd}
-                                    onTouchCancel={onLongPressTouchEnd}
-                                    onClickCapture={swallowSyntheticClickAfterLongPress}
+                                    onContextMenu={(e) => openMenuAtPointer(e, menuTarget)}
+                                    {...longPressHandlers(menuTarget)}
                                     className="rounded-lg relative group [-webkit-touch-callout:none]"
-                                    aria-haspopup="menu"
                                 >
                                     <button
                                         type="button"
+                                        aria-pressed={isSelected}
                                         onClick={() => toggleTopic(topic.id)}
                                         className={clsx(
-                                            "w-full flex items-center gap-3 p-2 rounded-lg text-sm transition-colors",
-                                            isSelected ? "bg-white dark:bg-slate-800 shadow-sm border border-slate-200 dark:border-slate-700" : "text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                                            'w-full flex items-center gap-3 p-2 rounded-lg text-sm transition-colors',
+                                            isSelected
+                                                ? 'bg-white dark:bg-slate-800 shadow-sm border border-slate-200 dark:border-slate-700'
+                                                : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50'
                                         )}
                                     >
-                                        <div className={clsx("flex-shrink-0", isSelected ? "text-indigo-600 dark:text-indigo-400" : "text-slate-300 dark:text-slate-600")}>
+                                        <div
+                                            className={clsx(
+                                                'shrink-0',
+                                                isSelected
+                                                    ? 'text-indigo-600 dark:text-indigo-400'
+                                                    : 'text-slate-300 dark:text-slate-600'
+                                            )}
+                                        >
                                             {isSelected ? <CheckCircle2 size={18} /> : <Circle size={18} />}
                                         </div>
                                         <div className="flex-1 min-w-0 text-left">
-                                            <div className={clsx("font-medium truncate", isSelected ? "text-slate-700 dark:text-slate-200" : "text-slate-500 dark:text-slate-400")}>
+                                            <div
+                                                className={clsx(
+                                                    'font-medium truncate',
+                                                    isSelected
+                                                        ? 'text-slate-700 dark:text-slate-200'
+                                                        : 'text-slate-500 dark:text-slate-400'
+                                                )}
+                                            >
                                                 {topic.name}
+                                                <span className="sr-only">, {masteryPct}% mastered</span>
                                             </div>
                                             <progress
                                                 className="quiz-progress quiz-progress-sm quiz-progress-green"
                                                 value={masteryPct}
                                                 max={100}
-                                                aria-label={`${topic.name} mastery`}
+                                                aria-hidden
                                             />
                                         </div>
                                     </button>
                                     <button
                                         type="button"
-                                        onClick={e => {
-                                            e.stopPropagation();
-                                            openTopicMenuFromTrigger(currentSubject, topic, e.currentTarget);
-                                        }}
-                                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-indigo-400 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
+                                        onClick={(e) => openMenuFromButton(e, menuTarget)}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 text-slate-500 dark:text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
                                         aria-label={`Open actions for ${topic.name}`}
                                         aria-haspopup="menu"
                                         aria-expanded={
@@ -436,21 +329,14 @@ export const LeftSidebar: React.FC = () => {
                         })}
                     </div>
 
-                    {/* Include Mastered Toggle */}
                     <div className="pt-4 border-t border-slate-100 dark:border-slate-700">
                         <label className="flex items-center gap-3 cursor-pointer group">
-                            <div className="relative flex items-center">
-                                <input
-                                    type="checkbox"
-                                    className="toggle-switch-input"
-                                    checked={session.includeMastered}
-                                    onChange={(e) => setIncludeMastered(e.target.checked)}
-                                />
-                                <div className="toggle-switch-track"></div>
-                            </div>
+                            <ToggleSwitch checked={session.includeMastered} onChange={setIncludeMastered} />
                             <span className="text-sm font-medium text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-slate-200">
-                                Include Mastered
-                                <span className="block text-xs text-slate-400 dark:text-slate-500 font-normal">Practice mode</span>
+                                Include mastered
+                                <span className="block text-xs text-slate-500 dark:text-slate-400 font-normal">
+                                    Review questions you have already mastered
+                                </span>
                             </span>
                         </label>
                     </div>
@@ -462,56 +348,49 @@ export const LeftSidebar: React.FC = () => {
                 showResetSubjectProgress={showResetSubjectProgress}
                 showMarkTopicMastered={showMarkTopicMastered}
                 showResetTopicProgress={showResetTopicProgress}
-                onClose={closeContextMenu}
-                onQuickExportSubject={handleQuickExportSubject}
-                onExportAsSubject={handleOpenSubjectExportAs}
-                onResetSubjectProgress={handleResetSubjectProgressFromContext}
-                onDeleteSubject={handleDeleteSubjectFromContext}
-                onMarkTopicMastered={handleMarkTopicMasteredFromContext}
-                onResetTopicProgress={handleResetTopicProgressFromContext}
+                onClose={() => setContextMenu(null)}
+                onQuickExportSubject={(subject) => void performSubjectExport(subject, DEFAULT_EXPORT_OPTIONS)}
+                onExportAsSubject={setExportTarget}
+                onResetSubjectProgress={handleResetSubjectProgress}
+                onDeleteSubject={handleDeleteSubject}
+                onMarkTopicMastered={(subject, topic) => markTopicMastered(subject.id, topic.id)}
+                onResetTopicProgress={handleResetTopicProgress}
             />
 
             <SimpleConfirmModal
-                open={!!simpleConfirm}
-                title={
-                    simpleConfirm?.variant === 'resetSubject'
-                        ? 'Reset subject progress?'
-                        : 'Reset topic progress?'
-                }
-                confirmLabel={
-                    simpleConfirm?.variant === 'resetSubject' ? 'Reset progress' : 'Reset topic'
-                }
-                confirmClassName="flex-1 px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors bg-amber-600 hover:bg-amber-700 dark:bg-amber-600 dark:hover:bg-amber-500"
-                onClose={() => setSimpleConfirm(null)}
+                open={!!resetConfirm}
+                title={resetConfirm?.kind === 'subject' ? 'Reset subject progress?' : 'Reset topic progress?'}
+                confirmLabel={resetConfirm?.kind === 'subject' ? 'Reset progress' : 'Reset topic'}
+                confirmTone="warning"
+                onClose={() => setResetConfirm(null)}
                 onConfirm={() => {
-                    if (!simpleConfirm) return;
-                    if (simpleConfirm.variant === 'resetSubject') {
-                        resetSubjectProgress(simpleConfirm.subjectId);
-                    } else if (simpleConfirm.variant === 'resetTopic' && simpleConfirm.topicId) {
-                        resetTopicProgress(simpleConfirm.subjectId, simpleConfirm.topicId);
+                    if (resetConfirm?.kind === 'subject') {
+                        resetSubjectProgress(resetConfirm.subject.id);
+                    } else if (resetConfirm?.kind === 'topic') {
+                        resetTopicProgress(resetConfirm.subject.id, resetConfirm.topic.id);
                     }
-                    setSimpleConfirm(null);
+                    setResetConfirm(null);
                 }}
             >
-                {simpleConfirm?.variant === 'resetSubject' && (
+                {resetConfirm?.kind === 'subject' && (
                     <p>
                         All mastery and attempts for{' '}
-                        <strong className="text-slate-900 dark:text-white">{simpleConfirm.subjectName}</strong> will be
+                        <strong className="text-slate-900 dark:text-white">{resetConfirm.subject.name}</strong> will be
                         cleared. This cannot be undone.
                     </p>
                 )}
-                {simpleConfirm?.variant === 'resetTopic' && (
+                {resetConfirm?.kind === 'topic' && (
                     <p>
                         Progress for{' '}
-                        <strong className="text-slate-900 dark:text-white">{simpleConfirm.topicName}</strong> in{' '}
-                        {simpleConfirm.subjectName} will be cleared. This cannot be undone.
+                        <strong className="text-slate-900 dark:text-white">{resetConfirm.topic.name}</strong> in{' '}
+                        {resetConfirm.subject.name} will be cleared. This cannot be undone.
                     </p>
                 )}
             </SimpleConfirmModal>
 
             <TypeToConfirmModal
                 open={!!deleteConfirm}
-                title="Delete Subject"
+                title="Delete subject"
                 description={
                     <>
                         This will permanently delete{' '}
@@ -529,17 +408,13 @@ export const LeftSidebar: React.FC = () => {
             />
 
             <ExportOptionsModal
-                open={!!subjectExportModal}
-                title="Export Subject"
-                targetLabel={subjectExportModal?.subject.name ?? ''}
-                options={subjectExportModal?.options ?? DEFAULT_SUBJECT_EXPORT_OPTIONS}
-                setOption={setSubjectExportOption}
-                onClose={() => setSubjectExportModal(null)}
-                onExport={() => {
-                    if (!subjectExportModal) return;
-                    const {subject, options} = subjectExportModal;
-                    setSubjectExportModal(null);
-                    void performSubjectExport(subject, options);
+                open={!!exportTarget}
+                title="Export subject"
+                targetLabel={exportTarget?.name ?? ''}
+                onClose={() => setExportTarget(null)}
+                onExport={(options) => {
+                    if (exportTarget) void performSubjectExport(exportTarget, options);
+                    setExportTarget(null);
                 }}
             />
         </div>

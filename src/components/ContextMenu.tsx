@@ -7,7 +7,7 @@ type ContextMenuIcon = React.ComponentType<{size?: number; className?: string}>;
 export type ContextMenuItem = {
     id: string;
     label: string;
-    icon?: ContextMenuIcon;
+    icon: ContextMenuIcon;
     danger?: boolean;
     onSelect: () => void;
 };
@@ -18,9 +18,11 @@ type ContextMenuProps = {
     triggerEl?: HTMLElement | null;
     items: ContextMenuItem[];
     onClose: () => void;
-    minWidth?: number;
+    /** Used to keep the menu on screen near the bottom edge */
     estimatedHeight?: number;
 };
+
+const MENU_WIDTH = 220;
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({
     open,
@@ -28,7 +30,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     triggerEl,
     items,
     onClose,
-    minWidth = 220,
     estimatedHeight = 220
 }) => {
     const menuRef = useRef<HTMLDivElement>(null);
@@ -61,7 +62,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         return () => {
             document.removeEventListener('pointerdown', handlePointerDown, true);
             document.removeEventListener('keydown', handleKeyDown);
-            triggerElRef.current?.focus?.();
+            triggerElRef.current?.focus();
         };
     }, [open]);
 
@@ -76,7 +77,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         if (!menu) return;
         const menuitems = Array.from(menu.querySelectorAll<HTMLElement>('[role="menuitem"]'));
         if (menuitems.length === 0) return;
-        const active = menuitems.findIndex(el => el === document.activeElement);
+        const active = menuitems.findIndex((el) => el === document.activeElement);
         if (e.key === 'ArrowDown') {
             e.preventDefault();
             menuitems[(active + 1 + menuitems.length) % menuitems.length].focus();
@@ -95,11 +96,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     if (!open || !position) return null;
 
     const pad = 8;
-    const vw = typeof window !== 'undefined' ? window.innerWidth : position.x + minWidth;
-    const vh = typeof window !== 'undefined' ? window.innerHeight : position.y + estimatedHeight;
     const style: React.CSSProperties = {
-        left: Math.max(pad, Math.min(position.x, vw - minWidth - pad)),
-        top: Math.max(pad, Math.min(position.y, vh - estimatedHeight - pad))
+        left: Math.max(pad, Math.min(position.x, window.innerWidth - MENU_WIDTH - pad)),
+        top: Math.max(pad, Math.min(position.y, window.innerHeight - estimatedHeight - pad))
     };
 
     return createPortal(
@@ -109,10 +108,10 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             role="menu"
             tabIndex={-1}
             onKeyDown={handleMenuKeyDown}
-            className="fixed z-[100] min-w-[200px] py-1 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-xl"
+            className="fixed z-[100] w-[220px] py-1 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-xl"
             style={style}
         >
-            {items.map(item => {
+            {items.map((item) => {
                 const Icon = item.icon;
                 return (
                     <button
@@ -122,17 +121,18 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
                         className={clsx(
                             'w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm',
                             item.danger
-                                ? 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
+                                ? 'text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
                                 : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'
                         )}
-                        onClick={item.onSelect}
+                        onClick={() => {
+                            onClose();
+                            item.onSelect();
+                        }}
                     >
-                        {Icon && (
-                            <Icon
-                                size={16}
-                                className={clsx('shrink-0', !item.danger && 'text-slate-500')}
-                            />
-                        )}
+                        <Icon
+                            size={16}
+                            className={clsx('shrink-0', !item.danger && 'text-slate-500 dark:text-slate-400')}
+                        />
                         {item.label}
                     </button>
                 );

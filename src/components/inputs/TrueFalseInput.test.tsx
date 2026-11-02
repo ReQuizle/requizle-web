@@ -20,71 +20,28 @@ describe('TrueFalseInput', () => {
     });
 
     it('should render True and False buttons', () => {
-        render(
-            <TrueFalseInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        render(<TrueFalseInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
         expect(screen.getByText('True')).toBeInTheDocument();
         expect(screen.getByText('False')).toBeInTheDocument();
     });
 
     it('should call onAnswer with true when True is clicked', () => {
-        render(
-            <TrueFalseInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        render(<TrueFalseInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
         fireEvent.click(screen.getByText('True'));
         expect(mockOnAnswer).toHaveBeenCalledWith(true);
     });
 
     it('should call onAnswer with false when False is clicked', () => {
-        render(
-            <TrueFalseInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={null}
-            />
-        );
+        render(<TrueFalseInput question={createQuestion()} onAnswer={mockOnAnswer} />);
 
         fireEvent.click(screen.getByText('False'));
         expect(mockOnAnswer).toHaveBeenCalledWith(false);
     });
 
-    it('should not call onAnswer when disabled', () => {
-        render(
-            <TrueFalseInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={true}
-                submittedAnswer={null}
-            />
-        );
-
-        fireEvent.click(screen.getByText('True'));
-        fireEvent.click(screen.getByText('False'));
-        expect(mockOnAnswer).not.toHaveBeenCalled();
-    });
-
     it('should not call onAnswer after answer is submitted', () => {
-        render(
-            <TrueFalseInput
-                question={createQuestion()}
-                onAnswer={mockOnAnswer}
-                disabled={false}
-                submittedAnswer={true}
-            />
-        );
+        render(<TrueFalseInput question={createQuestion()} onAnswer={mockOnAnswer} submittedAnswer={true} />);
 
         fireEvent.click(screen.getByText('False'));
         expect(mockOnAnswer).not.toHaveBeenCalled();
@@ -92,12 +49,7 @@ describe('TrueFalseInput', () => {
 
     it('should render both buttons even when answer is submitted', () => {
         const {container} = render(
-            <TrueFalseInput
-                question={createQuestion({answer: true})}
-                onAnswer={mockOnAnswer}
-                disabled={true}
-                submittedAnswer={false}
-            />
+            <TrueFalseInput question={createQuestion({answer: true})} onAnswer={mockOnAnswer} submittedAnswer={false} />
         );
 
         const buttons = container.querySelectorAll('button');

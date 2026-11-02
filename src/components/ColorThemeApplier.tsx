@@ -5,8 +5,8 @@ import {applyDocumentTheme} from '../utils/colorThemes';
 
 export const ColorThemeApplier: React.FC = () => {
     const {theme} = useTheme();
-    const colorTheme = useQuizStore(s => s.settings.colorTheme);
-    const customAccentColor = useQuizStore(s => s.settings.customAccentColor);
+    const colorTheme = useQuizStore((s) => s.settings.colorTheme);
+    const customAccentColor = useQuizStore((s) => s.settings.customAccentColor);
 
     useEffect(() => {
         applyDocumentTheme({colorTheme, customAccentColor, appearanceMode: theme});
