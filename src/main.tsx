@@ -1,5 +1,5 @@
 /*
- * ReQuizle - A spaced repetition study tool
+ * ReQuizle - A study app for active recall with mastery tracking
  * Copyright (C) 2025 ReQuizle
  *
  * This program is free software: you can redistribute it and/or modify
@@ -13,17 +13,17 @@
  * GNU Affero General Public License for more details.
  */
 
-import {StrictMode} from 'react'
-import {createRoot} from 'react-dom/client'
-import './index.css'
-import App from './App.tsx'
-import {normalizeAppUrlTrailingSlash, restoreSpaPathFromFallbackQuery} from './utils/appBaseUrl'
+import {StrictMode} from 'react';
+import {createRoot} from 'react-dom/client';
+import './index.css';
+import App from './App';
+import {normalizeAppUrlTrailingSlash, restoreSpaPathFromFallbackQuery} from './utils/appBaseUrl';
 
-restoreSpaPathFromFallbackQuery()
-normalizeAppUrlTrailingSlash()
+restoreSpaPathFromFallbackQuery();
+normalizeAppUrlTrailingSlash();
 
 createRoot(document.getElementById('root')!).render(
     <StrictMode>
         <App />
-    </StrictMode>,
-)
+    </StrictMode>
+);

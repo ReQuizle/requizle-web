@@ -11,26 +11,11 @@ vi.mock('../context/ThemeContext', () => ({
 }));
 
 describe('ThemeToggle', () => {
-    it('should render toggle button', () => {
+    it('names the theme it switches to and switches when clicked', () => {
         render(<ThemeToggle />);
 
-        const button = screen.getByRole('button', {name: /toggle theme/i});
-        expect(button).toBeInTheDocument();
-    });
-
-    it('should call toggleTheme when clicked', () => {
-        render(<ThemeToggle />);
-
-        const button = screen.getByRole('button', {name: /toggle theme/i});
-        fireEvent.click(button);
+        fireEvent.click(screen.getByRole('button', {name: 'Switch to dark theme'}));
 
         expect(mockToggleTheme).toHaveBeenCalled();
-    });
-
-    it('should have accessible aria-label', () => {
-        render(<ThemeToggle />);
-
-        const button = screen.getByLabelText('Toggle theme');
-        expect(button).toBeInTheDocument();
     });
 });

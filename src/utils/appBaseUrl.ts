@@ -1,18 +1,15 @@
-// Vite `import.meta.env.BASE_URL` is root-relative and ends with `/`. For non-root hosts,
-// the URL without a trailing slash is a different path; many servers only serve the SPA on the slash form.
-// @see https://vitejs.dev/config/shared-options.html#base
-function getAppBasePath(): string {
-    return import.meta.env.BASE_URL;
-}
+// Vite's BASE_URL starts and ends with `/`. When the app is not at the site root, the address
+// without the final slash is a different path, and static hosts only serve the app at the slash form.
+// See https://vite.dev/config/shared-options.html#base
 
-/** Absolute URL of the app root; ends with `/` when `base` is not `/`. */
+/** Absolute URL of the app root */
 export function getCanonicalAppLocationHref(): string {
-    return new URL(getAppBasePath(), window.location.origin).href;
+    return new URL(import.meta.env.BASE_URL, window.location.origin).href;
 }
 
-/** If the location is `/{base}` without the final slash, rewrite to `/{base}/` (matches Vite + static hosting). */
+/** If the location is `/{base}` without the final slash, rewrite it to `/{base}/`. */
 export function normalizeAppUrlTrailingSlash(): void {
-    const base = getAppBasePath();
+    const base = import.meta.env.BASE_URL;
     if (base === '/') return;
 
     const baseNoSlash = base.replace(/\/$/, '');
@@ -29,16 +26,13 @@ export function restoreSpaPathFromFallbackQuery(): void {
     if (!rawPath) return;
 
     const rawQuery = searchParams.get('__rq_query');
-    const fallbackHash = window.location.hash;
-
     const normalizedPath = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
-    const basePath = getAppBasePath().replace(/\/$/, '');
-    const restoredPath = `${basePath}${normalizedPath}`;
+    const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
     const restoredQuery = rawQuery ? `?${rawQuery}` : '';
 
     window.history.replaceState(
         window.history.state,
         '',
-        `${restoredPath}${restoredQuery}${fallbackHash}`
+        `${basePath}${normalizedPath}${restoredQuery}${window.location.hash}`
     );
 }

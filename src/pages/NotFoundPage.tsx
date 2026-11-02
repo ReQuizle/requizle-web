@@ -10,7 +10,7 @@ export function NotFoundPage() {
                     <div className="flex items-center gap-3 mb-6">
                         <Logo size={40} />
                         <div>
-                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                                 ReQuizle
                             </p>
                             <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100">
@@ -20,8 +20,7 @@ export function NotFoundPage() {
                     </div>
 
                     <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
-                        The page you requested does not exist at this app path. It may have been moved,
-                        deleted, or the URL might be incorrect.
+                        There is no page at this address. The link may be wrong or out of date.
                     </p>
 
                     <div className="mt-8 flex flex-wrap gap-3">

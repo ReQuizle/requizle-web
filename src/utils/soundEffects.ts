@@ -1,17 +1,8 @@
 const MAX_GAIN = 0.07;
 
-let sharedContext: AudioContext | null = null;
+type QuizSound = 'correct' | 'incorrect' | 'skip' | 'continue';
 
-function getAudioContext(): AudioContext | null {
-    if (typeof window === 'undefined') return null;
-    if (sharedContext) return sharedContext;
-    const AC =
-        window.AudioContext ||
-        (window as unknown as {webkitAudioContext?: typeof AudioContext}).webkitAudioContext;
-    if (!AC) return null;
-    sharedContext = new AC();
-    return sharedContext;
-}
+let sharedContext: AudioContext | undefined;
 
 function beep(
     ctx: AudioContext,
@@ -34,15 +25,11 @@ function beep(
     osc.stop(start + duration + 0.03);
 }
 
-async function playSequence(kind: 'correct' | 'incorrect' | 'skip' | 'continue') {
-    const ctx = getAudioContext();
-    if (!ctx) return;
-    try {
-        if (ctx.state === 'suspended') {
-            await ctx.resume();
-        }
-    } catch {
-        return;
+async function playSequence(kind: QuizSound) {
+    sharedContext ??= new AudioContext();
+    const ctx = sharedContext;
+    if (ctx.state === 'suspended') {
+        await ctx.resume();
     }
     const t0 = ctx.currentTime;
     switch (kind) {
@@ -62,10 +49,10 @@ async function playSequence(kind: 'correct' | 'incorrect' | 'skip' | 'continue')
     }
 }
 
-/**
- * Short UI tones for quiz feedback. No external assets; uses Web Audio (requires a user gesture to unlock on some browsers).
- */
-export function playQuizSound(kind: 'correct' | 'incorrect' | 'skip' | 'continue', soundEnabled: boolean): void {
+/** Short tones for quiz feedback, made with Web Audio. */
+export function playQuizSound(kind: QuizSound, soundEnabled: boolean): void {
     if (!soundEnabled) return;
-    void playSequence(kind);
+    playSequence(kind).catch(() => {
+        // The browser can refuse to start audio, and the quiz works the same without it
+    });
 }

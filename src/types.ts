@@ -1,18 +1,13 @@
-export type QuestionType =
-    | 'multiple_choice'
-    | 'keywords'
-    | 'true_false'
-    | 'matching'
-    | 'word_bank'
-    | 'multiple_answer';
+export type QuestionType = 'multiple_choice' | 'keywords' | 'true_false' | 'matching' | 'word_bank' | 'multiple_answer';
 
-export interface BaseQuestion {
+interface BaseQuestion {
     id: string;
     type: QuestionType;
     prompt: string;
     topicId: string;
     explanation?: string;
-    media?: string; // URL/path or idb: reference for images/videos
+    /** An image or video: a URL, a path, or an `idb:` reference to a stored file */
+    media?: string;
 }
 
 export interface MultipleChoiceQuestion extends BaseQuestion {
@@ -32,7 +27,7 @@ export interface TrueFalseQuestion extends BaseQuestion {
     answer: boolean;
 }
 
-export interface MatchingPair {
+interface MatchingPair {
     left: string;
     right: string;
 }
@@ -46,13 +41,15 @@ export interface WordBankQuestion extends BaseQuestion {
     type: 'word_bank';
     sentence: string;
     wordBank: string[];
-    answers: string[]; // Correct words for each blank in order
+    /** The correct word for each blank, in order */
+    answers: string[];
 }
 
 export interface MultipleAnswerQuestion extends BaseQuestion {
     type: 'multiple_answer';
     choices: string[];
-    answerIndices: number[]; // Indices of all correct answers
+    /** Indices of all the correct choices */
+    answerIndices: number[];
 }
 
 export type Question =
@@ -82,7 +79,7 @@ export interface QuestionProgress {
     mastered: boolean;
 }
 
-// Map: subjectId -> topicId -> questionId -> QuestionProgress
+/** Progress by subject id, then topic id, then question id */
 export type ProgressMap = Record<string, Record<string, Record<string, QuestionProgress>>>;
 
 export type StudyMode = 'random' | 'topic_order';

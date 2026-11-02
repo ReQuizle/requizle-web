@@ -6,8 +6,8 @@ export function isVideoMediaUrl(url: string): boolean {
     try {
         const parsed = new URL(url, window.location.origin);
         const path = parsed.pathname.toLowerCase();
-        return VIDEO_FILE_EXTENSIONS.some(ext => path.endsWith(ext));
+        return VIDEO_FILE_EXTENSIONS.some((ext) => path.endsWith(ext));
     } catch {
-        return VIDEO_FILE_EXTENSIONS.some(ext => lowerUrl.endsWith(ext));
+        return VIDEO_FILE_EXTENSIONS.some((ext) => lowerUrl.endsWith(ext));
     }
 }
