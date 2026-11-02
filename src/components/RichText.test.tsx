@@ -2,29 +2,24 @@ import {describe, it, expect, vi} from 'vitest';
 import {render, screen} from '@testing-library/react';
 import {RichText} from './RichText';
 
-vi.mock('react-katex', () => ({
-    InlineMath: ({math}: {math: string}) => <span data-testid="inline-math">{`[INLINE:${math}]`}</span>,
-    BlockMath: ({math}: {math: string}) => <div data-testid="block-math">{`[BLOCK:${math}]`}</div>
+vi.mock('./MathFormula', () => ({
+    MathFormula: ({math, block}: {math: string; block?: boolean}) =>
+        block ? (
+            <div data-testid="block-math">{`[BLOCK:${math}]`}</div>
+        ) : (
+            <span data-testid="inline-math">{`[INLINE:${math}]`}</span>
+        )
 }));
 
 vi.mock('react-syntax-highlighter', () => ({
-    PrismAsyncLight: ({
-        children,
-        className,
-        'data-testid': testId
-    }: {
-        children: string;
-        className?: string;
-        'data-testid'?: string;
-    }) => (
-        <pre className={className} data-testid={testId}>
+    PrismAsyncLight: ({children, 'data-testid': testId}: {children: string; 'data-testid'?: string}) => (
+        <pre data-testid={testId}>
             <code>{children}</code>
         </pre>
     )
 }));
 
 describe('RichText', () => {
-
     describe('plain text', () => {
         it('should render plain text without math', () => {
             render(<RichText>Hello world</RichText>);
@@ -114,7 +109,8 @@ describe('RichText', () => {
         });
 
         it('should handle complex mixed content', () => {
-            const content = 'The quadratic formula \\(x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}\\) can be derived from: \\[ax^2 + bx + c = 0\\]';
+            const content =
+                'The quadratic formula \\(x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}\\) can be derived from: \\[ax^2 + bx + c = 0\\]';
             render(<RichText>{content}</RichText>);
 
             expect(screen.getByTestId('inline-math')).toBeInTheDocument();
@@ -251,17 +247,10 @@ describe('RichText', () => {
             expect(blocks).toHaveLength(2);
         });
 
-        it('should apply the code-block class', () => {
-            render(<RichText>{'```\ntest\n```'}</RichText>);
-
-            expect(screen.getByTestId('code-block')).toHaveClass('code-block');
-        });
-
         it('should not show language badge when no language specified', () => {
-            render(<RichText>{'```\ntest\n```'}</RichText>);
+            const {container} = render(<RichText>{'```\ntest\n```'}</RichText>);
 
-            const block = screen.getByTestId('code-block');
-            expect(block.querySelector('.code-block-lang')).toBeNull();
+            expect(container.querySelector('.code-block-lang')).toBeNull();
         });
     });
 
@@ -282,7 +271,8 @@ describe('RichText', () => {
         });
 
         it('should handle all formats mixed together', () => {
-            const content = 'Use `map()` to transform \\(n\\) items:\n```js\narr.map(x => x * 2);\n```\nResult: \\[O(n)\\]';
+            const content =
+                'Use `map()` to transform \\(n\\) items:\n```js\narr.map(x => x * 2);\n```\nResult: \\[O(n)\\]';
             render(<RichText>{content}</RichText>);
 
             expect(screen.getByTestId('inline-code')).toHaveTextContent('map()');
@@ -328,19 +318,26 @@ describe('RichText', () => {
         it('should render bold, italic, underline, strikethrough', () => {
             render(<RichText>{'**bold** *italic* __underline__ ~~strike~~'}</RichText>);
             expect(screen.getByText('bold').closest('strong')).toHaveClass('font-bold');
-            expect(screen.getByText('italic').closest('em')).toHaveClass('italic');
-            expect(screen.getByText('underline').closest('u')).toHaveClass('underline');
-            expect(screen.getByText('strike').closest('del')).toHaveClass('line-through');
+            expect(screen.getByText('italic').closest('em')).toBeInTheDocument();
+            expect(screen.getByText('underline').closest('u')).toBeInTheDocument();
+            expect(screen.getByText('strike').closest('del')).toBeInTheDocument();
         });
         it('should render italic inside bold text', () => {
             render(<RichText>{'**bold *italic***'}</RichText>);
             const italic = screen.getByText('italic');
-            expect(italic.closest('em')).toHaveClass('italic');
+            expect(italic.closest('em')).toBeInTheDocument();
             expect(italic.closest('strong')).toHaveClass('font-bold');
         });
+        it('should give every part a unique key when a line mixes many formats', () => {
+            const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+            render(<RichText>{'x *a* y *b* z *c* w ~~struck~~ **bold** end'}</RichText>);
+            expect(errorSpy).not.toHaveBeenCalled();
+            errorSpy.mockRestore();
+        });
+
         it('should render spoilers', () => {
             render(<RichText>{'||spoiler||'}</RichText>);
-            const spoiler = screen.getByTitle('Reveal Spoiler');
+            const spoiler = screen.getByTitle('Reveal spoiler');
             expect(spoiler).toBeInTheDocument();
             expect(spoiler).toHaveTextContent('spoiler');
         });
