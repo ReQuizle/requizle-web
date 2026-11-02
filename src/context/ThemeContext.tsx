@@ -1,4 +1,5 @@
 import React, {createContext, useContext, useEffect, useState} from 'react';
+import {readLocalStorage, writeLocalStorage} from '../utils/localStorage';
 
 type Theme = 'light' | 'dark';
 
@@ -11,43 +12,25 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{children: React.ReactNode}> = ({children}) => {
     const [theme, setTheme] = useState<Theme>(() => {
-        try {
-            const savedTheme = localStorage.getItem('theme');
-            if (savedTheme === 'light' || savedTheme === 'dark') {
-                return savedTheme;
-            }
-        } catch {
-            // ignore
+        const savedTheme = readLocalStorage('theme');
+        if (savedTheme === 'light' || savedTheme === 'dark') {
+            return savedTheme;
         }
-
-        if (typeof window !== 'undefined' && window.matchMedia) {
-            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-            return prefersDark ? 'dark' : 'light';
-        }
-
-        return 'light';
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     });
 
     useEffect(() => {
-        const root = window.document.documentElement;
+        const root = document.documentElement;
         root.classList.remove('light', 'dark');
         root.classList.add(theme);
-        try {
-            localStorage.setItem('theme', theme);
-        } catch {
-            // ignore
-        }
+        writeLocalStorage('theme', theme);
     }, [theme]);
 
     const toggleTheme = () => {
         setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
     };
 
-    return (
-        <ThemeContext.Provider value={{theme, toggleTheme}}>
-            {children}
-        </ThemeContext.Provider>
-    );
+    return <ThemeContext.Provider value={{theme, toggleTheme}}>{children}</ThemeContext.Provider>;
 };
 
 // eslint-disable-next-line react-refresh/only-export-components

@@ -1,8 +1,5 @@
 import {describe, it, expect, beforeEach} from 'vitest';
-import {
-    indexedDBStorage,
-    clearStoreData
-} from './indexedDBStorage';
+import {indexedDBStorage, clearStoreData} from './indexedDBStorage';
 
 import 'fake-indexeddb/auto';
 
