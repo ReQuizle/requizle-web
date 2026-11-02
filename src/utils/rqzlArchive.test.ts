@@ -1,11 +1,14 @@
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import JSZip from 'jszip';
-import {parseRqzlArchiveFile} from './rqzlArchive';
+import {createRqzlArchiveBlob, parseRqzlArchiveFile} from './rqzlArchive';
 
 const MANIFEST_NAME = 'manifest.json';
 const MANIFEST_FORMAT = 'requizle-archive-v1';
 
-async function buildArchiveFile(manifest: unknown, mediaEntries: Array<{path: string; data: string}> = []): Promise<File> {
+async function buildArchiveFile(
+    manifest: unknown,
+    mediaEntries: Array<{path: string; data: string}> = []
+): Promise<File> {
     const zip = new JSZip();
     zip.file(MANIFEST_NAME, JSON.stringify(manifest));
     for (const mediaEntry of mediaEntries) {
@@ -19,6 +22,34 @@ describe('parseRqzlArchiveFile', () => {
     afterEach(() => {
         vi.restoreAllMocks();
     });
+
+    it('reads the payload and media back from an archive it wrote', async () => {
+        const image = new Blob(['png bytes'], {type: 'image/png'});
+        const archive = await createRqzlArchiveBlob({subjects: ['s1']}, [
+            {id: 'm-1', filename: 'diagram.png', mimeType: 'image/png', blob: image}
+        ]);
+
+        const {payload, mediaEntries} = await parseRqzlArchiveFile(new File([archive], 'export.rqzl'));
+
+        expect(payload).toEqual({subjects: ['s1']});
+        expect(mediaEntries).toMatchObject([
+            {id: 'm-1', filename: 'diagram.png', mimeType: 'image/png', path: 'media/m-1'}
+        ]);
+        expect(mediaEntries[0].blob).toMatchObject({size: image.size, type: 'image/png'});
+    });
+
+    it.each(['../outside', 'media/../manifest.json', 'media/nested/file', 'media\\file', 'manifest.json'])(
+        'rejects the unsafe media path %s',
+        async (path) => {
+            const file = await buildArchiveFile({
+                format: MANIFEST_FORMAT,
+                payload: {subjects: []},
+                media: [{id: 'm-1', filename: 'a.png', mimeType: 'image/png', path}]
+            });
+
+            await expect(parseRqzlArchiveFile(file)).rejects.toThrow('unsafe media path');
+        }
+    );
 
     it('rejects archives with too many media descriptors', async () => {
         const media = Array.from({length: 501}, (_, index) => ({
@@ -58,7 +89,7 @@ describe('parseRqzlArchiveFile', () => {
                 }
                 if (path === 'media/m-1') {
                     return {
-                        async: async () => ({size: 800 * 1024 * 1024, type: 'application/octet-stream'} as Blob)
+                        async: async () => ({size: 800 * 1024 * 1024, type: 'application/octet-stream'}) as Blob
                     };
                 }
                 return null;

@@ -27,13 +27,9 @@ type ArchiveManifest = {
     media: ArchiveMediaDescriptor[];
 };
 
+/** A media path must name one file directly inside `media/`, with no way to point elsewhere. */
 function isSafeArchiveMediaPath(path: string): boolean {
-    if (!path.startsWith('media/')) return false;
-    if (path.includes('..')) return false;
-    if (path.includes('\\')) return false;
-    if (path.startsWith('/')) return false;
-    if (path === ARCHIVE_MANIFEST_FILE) return false;
-    return /^media\/[^/]+$/.test(path);
+    return /^media\/[^/\\]+$/.test(path) && !path.includes('..');
 }
 
 export async function createRqzlArchiveBlob(payload: unknown, mediaEntries: ArchiveMediaEntry[]): Promise<Blob> {
