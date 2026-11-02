@@ -1,0 +1,1 @@
+var e=(e,t)=>`${e} ${t}${e===1?``:`s`}`;export{e as t};
